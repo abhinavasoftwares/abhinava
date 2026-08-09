@@ -7,4 +7,4 @@ package.json: It tells npm:
 - scripts
 - versions
 
-- 
+- Themecontext - manages light mode and dark mode
