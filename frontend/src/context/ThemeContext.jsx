@@ -1,18 +1,35 @@
-import { createContext, useContext, useState } from "react";
+import { createContext, useContext, useState, useEffect } from "react";
 
 const ThemeContext = createContext();
 
 export function ThemeProvider({ children }) {
-  const [darkMode, setDarkMode] = useState(true);
+  // 1. Initialize state based on localStorage OR OS system preference
+  const [darkMode, setDarkMode] = useState(() => {
+    // Check if the user has a saved preference
+    const savedTheme = localStorage.getItem("app-theme");
+    if (savedTheme) {
+      return savedTheme === "dark";
+    }
+    // If no saved preference, default to their operating system's theme
+    return window.matchMedia("(prefers-color-scheme: dark)").matches;
+  });
 
+  // 2. Sync the DOM and localStorage whenever the state changes
+  useEffect(() => {
+    const root = document.documentElement;
+    
+    if (darkMode) {
+      root.classList.add("dark");
+      localStorage.setItem("app-theme", "dark");
+    } else {
+      root.classList.remove("dark");
+      localStorage.setItem("app-theme", "light");
+    }
+  }, [darkMode]);
+
+  // 3. Simple toggle function
   const toggleTheme = () => {
-    setDarkMode((current) => {
-      const newMode = !current;
-
-      document.documentElement.classList.toggle("dark", newMode);
-
-      return newMode;
-    });
+    setDarkMode((prev) => !prev);
   };
 
   return (
@@ -22,6 +39,11 @@ export function ThemeProvider({ children }) {
   );
 }
 
+// 4. Custom hook with built-in error handling
 export function useTheme() {
-  return useContext(ThemeContext);
+  const context = useContext(ThemeContext);
+  if (context === undefined) {
+    throw new Error("useTheme must be used within a ThemeProvider");
+  }
+  return context;
 }
