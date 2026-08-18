@@ -1,16 +1,15 @@
-from fastapi import FastAPI, Depends
+from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
-from services.tenant_provisioning import provision_tenant
 
 from database import SessionLocal
 from models import Client
 from schemas import ClientCreate
-from fastapi import HTTPException
-
+from services.tenant_provisioning import provision_tenant
 
 
 app = FastAPI(title="Abhinava API")
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -59,6 +58,8 @@ def create_client(
         billing_cycle=client.billing_cycle,
         subscription_status=client.subscription_status,
         start_date=client.start_date,
+        domain=client.domain,
+        modules=client.modules,
     )
 
     db.add(new_client)
@@ -74,6 +75,7 @@ def create_client(
         "message": "Client created successfully",
         "client_id": new_client.id,
     }
+
 
 @app.get("/clients")
 def get_clients(
@@ -102,12 +104,15 @@ def get_clients(
                 "billing_cycle": client.billing_cycle,
                 "subscription_status": client.subscription_status,
                 "start_date": client.start_date,
+                "domain": client.domain,
+                "modules": client.modules,
                 "created_at": client.created_at,
                 "updated_at": client.updated_at,
             }
             for client in clients
         ]
     }
+
 
 @app.get("/clients/{client_id}")
 def get_client(
@@ -146,6 +151,8 @@ def get_client(
             "billing_cycle": client.billing_cycle,
             "subscription_status": client.subscription_status,
             "start_date": client.start_date,
+            "domain": client.domain,
+            "modules": client.modules,
             "created_at": client.created_at,
             "updated_at": client.updated_at,
         }

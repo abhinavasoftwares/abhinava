@@ -1,9 +1,7 @@
-from sqlalchemy import String
-from sqlalchemy.orm import Mapped, mapped_column
 from datetime import datetime
 from uuid import uuid4
 
-from sqlalchemy import DateTime, String
+from sqlalchemy import DateTime, JSON, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from database import Base
@@ -23,9 +21,10 @@ class Client(Base):
         index=True,
         default=lambda: str(uuid4()),
     )
+
     firebase_project_id: Mapped[str | None] = mapped_column(
-    String(100),
-    nullable=True,
+        String(100),
+        nullable=True,
     )
 
     firebase_provisioning_status: Mapped[str] = mapped_column(
@@ -33,10 +32,16 @@ class Client(Base):
         default="PENDING",
     )
 
+    firebase_provisioning_error: Mapped[str | None] = mapped_column(
+        String(1000),
+        nullable=True,
+    )
+
     firebase_provisioned_at: Mapped[datetime | None] = mapped_column(
         DateTime,
         nullable=True,
     )
+
     business_name: Mapped[str] = mapped_column(String(200))
     legal_business_name: Mapped[str] = mapped_column(String(250))
     business_type: Mapped[str] = mapped_column(String(50))
@@ -60,6 +65,17 @@ class Client(Base):
     billing_cycle: Mapped[str] = mapped_column(String(30))
     subscription_status: Mapped[str] = mapped_column(String(30))
     start_date: Mapped[str] = mapped_column(String(20))
+
+    domain: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+    )
+
+    modules: Mapped[dict] = mapped_column(
+        JSON,
+        nullable=False,
+        default=dict,
+    )
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime,

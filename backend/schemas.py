@@ -22,3 +22,6 @@ class ClientCreate(BaseModel):
     billing_cycle: str
     subscription_status: str
     start_date: str
+
+    domain: str | None = None
+    modules: dict = {}
