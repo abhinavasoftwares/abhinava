@@ -1,6 +1,10 @@
+import os
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.sessions import SessionMiddleware
 from sqlalchemy.orm import Session
+from routers.platform_auth import router as platform_auth_router
+
 
 from database import SessionLocal
 from models import Client
@@ -13,6 +17,13 @@ from services.tenant_provisioning import (
 
 
 app = FastAPI(title="Abhinava API")
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=os.environ["ABHINAVA_AUTH_TRANSACTION_SECRET"],
+    https_only=True,
+    same_site="lax",
+)
+app.include_router(platform_auth_router)
 
 
 app.add_middleware(

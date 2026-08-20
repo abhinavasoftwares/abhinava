@@ -4,6 +4,7 @@ import ClientsPage from "./pages/admin/ClientsPage";
 import AddClientPage from "./pages/admin/AddClientPage";
 import ClientDetailsPage from "./pages/admin/ClientDetailsPage";
 import GoogleLoginTest from "./pages/GoogleLoginTest";
+import LoginPage from "./pages/LoginPage";
 import {
   Users,
   UserPlus,
@@ -192,6 +193,10 @@ function AdminHome() {
 function App() {
   return (
     <Routes>
+      <Route
+      path="/login"
+      element={<LoginPage />}
+    />
       <Route
         path="/admin"
         element={
