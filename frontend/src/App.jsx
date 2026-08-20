@@ -3,6 +3,7 @@ import AdminLayout from "./layouts/AdminLayout";
 import ClientsPage from "./pages/admin/ClientsPage";
 import AddClientPage from "./pages/admin/AddClientPage";
 import ClientDetailsPage from "./pages/admin/ClientDetailsPage";
+import GoogleLoginTest from "./pages/GoogleLoginTest";
 import {
   Users,
   UserPlus,
@@ -222,6 +223,10 @@ function App() {
             <ClientDetailsPage />
           </AdminLayout>
         }
+      />
+      <Route
+        path="/test/google-login"
+        element={<GoogleLoginTest />}
       />
       <Route path="*" element={<Navigate to="/admin" replace />} />
     </Routes>

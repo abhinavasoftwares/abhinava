@@ -19,6 +19,10 @@ RESOURCE_MANAGER_URL = (
     "https://cloudresourcemanager.googleapis.com/v3"
 )
 
+IAM_POLICY_URL = (
+    "https://cloudresourcemanager.googleapis.com/v1"
+)
+
 FIREBASE_URL = (
     "https://firebase.googleapis.com/v1beta1"
 )
@@ -37,6 +41,7 @@ FIRESTORE_LOCATION = "asia-south1"
 # APIs required by the tenant data plane.
 REQUIRED_APIS = [
     "firestore.googleapis.com",
+    "identitytoolkit.googleapis.com",
 ]
 
 
@@ -144,6 +149,7 @@ def _wait_for_resource_manager_operation(
     start = time.time()
 
     while True:
+
         response = session.get(url)
 
         if response.status_code != 200:
@@ -156,6 +162,7 @@ def _wait_for_resource_manager_operation(
         operation = response.json()
 
         if operation.get("done"):
+
             if "error" in operation:
                 raise RuntimeError(
                     "Google Cloud project creation failed: "
@@ -222,7 +229,192 @@ def _create_google_cloud_project(
         operation_name,
     )
 
+# ============================================================
+# PROJECT IAM
+# ============================================================
 
+ABHINAVA_ADMIN_EMAIL = "sudhamsha@abhinava.site"
+
+
+def _get_project_iam_policy(
+    session: AuthorizedSession,
+    project_id: str,
+) -> dict:
+    """
+    Get the IAM policy for a Google Cloud project.
+    """
+
+    url = (
+        f"{IAM_POLICY_URL}/projects/"
+        f"{project_id}:getIamPolicy"
+    )
+
+    response = session.post(
+        url,
+        json={},
+    )
+
+    if response.status_code != 200:
+        raise RuntimeError(
+            "Failed to get IAM policy for project "
+            f"{project_id}: "
+            f"{response.status_code} "
+            f"{response.text}"
+        )
+
+    return response.json()
+
+
+def _set_project_iam_policy(
+    session: AuthorizedSession,
+    project_id: str,
+    policy: dict,
+) -> dict:
+    """
+    Set the IAM policy for a Google Cloud project.
+    """
+
+    url = (
+        f"{IAM_POLICY_URL}/projects/"
+        f"{project_id}:setIamPolicy"
+    )
+
+    response = session.post(
+        url,
+        json={
+            "policy": policy,
+        },
+    )
+
+    if response.status_code != 200:
+        raise RuntimeError(
+            "Failed to set IAM policy for project "
+            f"{project_id}: "
+            f"{response.status_code} "
+            f"{response.text}"
+        )
+
+    return response.json()
+
+
+def _grant_project_role(
+    session: AuthorizedSession,
+    project_id: str,
+    email: str,
+    role: str,
+) -> None:
+    """
+    Grant a project-level IAM role to a user.
+
+    Idempotent:
+    - If the user already has the role, nothing changes.
+    - If the role is missing, it is added.
+    """
+
+    if not email:
+        raise RuntimeError(
+            f"Cannot grant {role}: email is empty."
+        )
+
+    policy = _get_project_iam_policy(
+        session=session,
+        project_id=project_id,
+    )
+
+    bindings = policy.setdefault(
+        "bindings",
+        [],
+    )
+
+    member = f"user:{email}"
+
+    # ---------------------------------------------------------
+    # Find existing role binding
+    # ---------------------------------------------------------
+
+    existing_binding = None
+
+    for binding in bindings:
+
+        if binding.get("role") == role:
+            existing_binding = binding
+            break
+
+    # ---------------------------------------------------------
+    # Role already exists
+    # ---------------------------------------------------------
+
+    if existing_binding:
+
+        members = existing_binding.setdefault(
+            "members",
+            [],
+        )
+
+        if member in members:
+            return
+
+        members.append(member)
+
+    # ---------------------------------------------------------
+    # Role does not exist
+    # ---------------------------------------------------------
+
+    else:
+
+        bindings.append(
+            {
+                "role": role,
+                "members": [
+                    member,
+                ],
+            }
+        )
+
+    # ---------------------------------------------------------
+    # Preserve IAM policy version
+    # ---------------------------------------------------------
+
+    policy["version"] = max(
+        policy.get("version", 1),
+        3,
+    )
+
+    _set_project_iam_policy(
+        session=session,
+        project_id=project_id,
+        policy=policy,
+    )
+
+
+def _configure_project_access(
+    session: AuthorizedSession,
+    project_id: str,
+    client: Client,
+) -> None:
+    """
+    Configure tenant project access.
+
+    Client:
+        Owner
+
+    Abhinava:
+        Editor
+
+    This function is idempotent and safe to run
+    during provisioning retries.
+    """
+
+    # ---------------------------------------------------------
+    # ABHINAVA — EDITOR
+    # ---------------------------------------------------------
+
+    _grant_project_role(
+        session=session,
+        project_id=project_id,
+        email=ABHINAVA_ADMIN_EMAIL,
+        role="roles/editor",
+    )
 # ============================================================
 # FIREBASE OPERATION
 # ============================================================
@@ -244,6 +436,7 @@ def _wait_for_firebase_operation(
     start = time.time()
 
     while True:
+
         response = session.get(url)
 
         if response.status_code != 200:
@@ -256,6 +449,7 @@ def _wait_for_firebase_operation(
         operation = response.json()
 
         if operation.get("done"):
+
             if "error" in operation:
                 raise RuntimeError(
                     "Firebase provisioning failed: "
@@ -293,6 +487,7 @@ def _enable_firebase(
     )
 
     if response.status_code not in (200, 201):
+
         # Firebase may already be enabled.
         if response.status_code == 409:
             return {
@@ -321,7 +516,204 @@ def _enable_firebase(
         operation_name,
     )
 
+# ============================================================
+# FIREBASE WEB APP
+# ============================================================
 
+def _get_firebase_web_apps(
+    session: AuthorizedSession,
+    project_id: str,
+) -> list[dict]:
+    """
+    Return all Firebase Web Apps belonging to the project.
+    """
+
+    url = (
+        f"{FIREBASE_URL}/projects/"
+        f"{project_id}/webApps"
+    )
+
+    response = session.get(url)
+
+    if response.status_code != 200:
+        raise RuntimeError(
+            "Failed to list Firebase Web Apps "
+            f"for project {project_id}: "
+            f"{response.status_code} "
+            f"{response.text}"
+        )
+
+    data = response.json()
+
+    # Firebase API returns the collection under "apps".
+    return data.get(
+        "apps",
+        [],
+    )
+
+def _create_firebase_web_app(
+    session: AuthorizedSession,
+    project_id: str,
+    display_name: str,
+) -> dict:
+    """
+    Create or reuse a Firebase Web App.
+
+    This function is idempotent.
+
+    If any Web App already exists for the tenant project,
+    the first ACTIVE Web App is reused.
+    """
+
+    # ---------------------------------------------------------
+    # STEP 1 — Check existing Web Apps
+    # ---------------------------------------------------------
+
+    web_apps = _get_firebase_web_apps(
+        session=session,
+        project_id=project_id,
+    )
+
+    if web_apps:
+
+        # Prefer an ACTIVE Web App.
+        for app in web_apps:
+
+            if app.get("state") == "ACTIVE":
+                return app
+
+        # Otherwise reuse the first existing app.
+        return web_apps[0]
+
+    # ---------------------------------------------------------
+    # STEP 2 — Create Web App
+    # ---------------------------------------------------------
+
+    url = (
+        f"{FIREBASE_URL}/projects/"
+        f"{project_id}/webApps"
+    )
+
+    payload = {
+        "displayName": display_name,
+    }
+
+    response = session.post(
+        url,
+        json=payload,
+    )
+
+    if response.status_code not in (200, 201):
+
+        # Another provisioning attempt may have created
+        # the Web App between our GET and POST.
+        if response.status_code == 409:
+
+            web_apps = _get_firebase_web_apps(
+                session=session,
+                project_id=project_id,
+            )
+
+            if web_apps:
+
+                for app in web_apps:
+
+                    if app.get("state") == "ACTIVE":
+                        return app
+
+                return web_apps[0]
+
+        raise RuntimeError(
+            "Failed to create Firebase Web App "
+            f"for project {project_id}: "
+            f"{response.status_code} "
+            f"{response.text}"
+        )
+
+    operation = response.json()
+
+    # ---------------------------------------------------------
+    # STEP 3 — Long-running operation
+    # ---------------------------------------------------------
+
+    if (
+        operation.get("name")
+        and not operation.get("appId")
+    ):
+
+        operation_name = operation["name"]
+
+        completed = _wait_for_firebase_operation(
+            session=session,
+            operation_name=operation_name,
+        )
+
+        response_data = completed.get(
+            "response",
+            {},
+        )
+
+        if response_data.get("appId"):
+            return response_data
+
+    # ---------------------------------------------------------
+    # STEP 4 — Direct Web App response
+    # ---------------------------------------------------------
+
+    if operation.get("appId"):
+        return operation
+
+    # ---------------------------------------------------------
+    # STEP 5 — Last safety check
+    # ---------------------------------------------------------
+
+    web_apps = _get_firebase_web_apps(
+        session=session,
+        project_id=project_id,
+    )
+
+    if web_apps:
+
+        for app in web_apps:
+
+            if app.get("state") == "ACTIVE":
+                return app
+
+        return web_apps[0]
+
+    raise RuntimeError(
+        "Firebase Web App creation returned an "
+        f"unexpected response: {operation}"
+    )
+
+
+def _get_firebase_web_app_config(
+    session: AuthorizedSession,
+    web_app_name: str,
+) -> dict:
+    """
+    Retrieve Firebase Web App configuration.
+
+    This is used later by the frontend/client
+    to initialize Firebase.
+    """
+
+    url = (
+        f"{FIREBASE_URL}/"
+        f"{web_app_name}/config"
+    )
+
+    response = session.get(url)
+
+    if response.status_code != 200:
+        raise RuntimeError(
+            "Failed to retrieve Firebase Web App "
+            f"configuration: "
+            f"{response.status_code} "
+            f"{response.text}"
+        )
+
+    return response.json()
 # ============================================================
 # SERVICE USAGE — ENABLE REQUIRED APIS
 # ============================================================
@@ -333,7 +725,32 @@ def _wait_for_service_usage_operation(
 ) -> dict:
     """
     Poll a Service Usage operation until completion.
+
+    Google may return DONE_OPERATION when the operation
+    is already complete. In that case, no polling is required.
     """
+
+    # ---------------------------------------------------------
+    # Already completed
+    # ---------------------------------------------------------
+
+    if operation_name in (
+        "DONE_OPERATION",
+        "operations/DONE_OPERATION",
+    ):
+        return {
+            "done": True,
+        }
+
+    # ---------------------------------------------------------
+    # Validate operation name
+    # ---------------------------------------------------------
+
+    if not operation_name.startswith("operations/"):
+        raise RuntimeError(
+            "Unexpected Service Usage operation name: "
+            f"{operation_name}"
+        )
 
     url = (
         f"{SERVICE_USAGE_URL}/{operation_name}"
@@ -342,6 +759,7 @@ def _wait_for_service_usage_operation(
     start = time.time()
 
     while True:
+
         response = session.get(url)
 
         if response.status_code != 200:
@@ -354,6 +772,7 @@ def _wait_for_service_usage_operation(
         operation = response.json()
 
         if operation.get("done"):
+
             if "error" in operation:
                 raise RuntimeError(
                     "Service Usage operation failed: "
@@ -377,42 +796,107 @@ def _enable_required_apis(
     """
     Enable all APIs required by the tenant data plane.
 
-    Currently:
+    Required APIs:
 
         firestore.googleapis.com
+        identitytoolkit.googleapis.com
     """
 
     for service_name in REQUIRED_APIS:
 
-        url = (
+        # -----------------------------------------------------
+        # STEP 1 — Check current API state
+        # -----------------------------------------------------
+
+        service_url = (
             f"{SERVICE_USAGE_URL}/projects/"
             f"{project_id}/services/"
-            f"{service_name}:enable"
+            f"{service_name}"
+        )
+
+        state_response = session.get(
+            service_url
+        )
+
+        if state_response.status_code != 200:
+            raise RuntimeError(
+                f"Failed checking API state for "
+                f"{service_name} in project "
+                f"{project_id}: "
+                f"{state_response.status_code} "
+                f"{state_response.text}"
+            )
+
+        service = state_response.json()
+
+        # -----------------------------------------------------
+        # STEP 2 — Already enabled
+        # -----------------------------------------------------
+
+        if service.get("state") == "ENABLED":
+            continue
+
+        # -----------------------------------------------------
+        # STEP 3 — Enable API
+        # -----------------------------------------------------
+
+        enable_url = (
+            f"{service_url}:enable"
         )
 
         response = session.post(
-            url,
+            enable_url,
             json={},
         )
 
-        # Already enabled / operation accepted.
+        # -----------------------------------------------------
+        # STEP 4 — Enable request accepted
+        # -----------------------------------------------------
+
         if response.status_code in (200, 201):
+
             operation = response.json()
+
+            # Google may return an already-completed
+            # operation.
+            if operation.get("done"):
+
+                if "error" in operation:
+                    raise RuntimeError(
+                        "Service Usage operation failed: "
+                        f"{operation['error']}"
+                    )
+
+                continue
 
             operation_name = operation.get("name")
 
-            if operation_name:
-                _wait_for_service_usage_operation(
-                    session,
-                    operation_name,
+            if not operation_name:
+                raise RuntimeError(
+                    f"Service Usage returned no operation "
+                    f"name while enabling "
+                    f"{service_name} for project "
+                    f"{project_id}: "
+                    f"{operation}"
                 )
 
+            _wait_for_service_usage_operation(
+                session=session,
+                operation_name=operation_name,
+            )
+
             continue
 
-        # If the API is already enabled, Google may return
-        # a conflict depending on the current state.
+        # -----------------------------------------------------
+        # STEP 5 — API became enabled between GET and POST
+        # -----------------------------------------------------
+
         if response.status_code == 409:
             continue
+
+        # -----------------------------------------------------
+        # STEP 6 — Unexpected error
+        # -----------------------------------------------------
 
         raise RuntimeError(
             f"Failed to enable API "
@@ -444,6 +928,7 @@ def _wait_for_firestore_operation(
     start = time.time()
 
     while True:
+
         response = session.get(url)
 
         if response.status_code != 200:
@@ -456,6 +941,7 @@ def _wait_for_firestore_operation(
         operation = response.json()
 
         if operation.get("done"):
+
             if "error" in operation:
                 raise RuntimeError(
                     "Firestore provisioning failed: "
@@ -505,7 +991,10 @@ def _create_firestore_database(
     max_attempts = 10
     retry_delay_seconds = 5
 
-    for attempt in range(1, max_attempts + 1):
+    for attempt in range(
+        1,
+        max_attempts + 1,
+    ):
 
         response = session.post(
             url,
@@ -518,6 +1007,7 @@ def _create_firestore_database(
         # ---------------------------------------------
 
         if response.status_code in (200, 201):
+
             operation = response.json()
 
             operation_name = operation.get("name")
@@ -549,7 +1039,9 @@ def _create_firestore_database(
         if response.status_code == 404:
 
             if attempt < max_attempts:
-                time.sleep(retry_delay_seconds)
+                time.sleep(
+                    retry_delay_seconds
+                )
                 continue
 
             raise RuntimeError(
@@ -610,6 +1102,8 @@ def provision_tenant(
           ↓
         Firebase
           ↓
+        Required APIs
+          ↓
         Firestore Native
           ↓
         asia-south1
@@ -618,6 +1112,7 @@ def provision_tenant(
     """
 
     try:
+
         # -------------------------------------------------
         # STEP 1 — Mark provisioning started
         # -------------------------------------------------
@@ -638,10 +1133,39 @@ def provision_tenant(
         session = _get_google_session()
 
         # -------------------------------------------------
-        # STEP 3 — Generate unique tenant project ID
+        # STEP 3 — Resolve tenant project ID
         # -------------------------------------------------
 
-        project_id = _generate_project_id(client)
+        # If this client already has a project from a
+        # previous provisioning attempt, reuse it.
+        #
+        # This is critical for recovery.
+        #
+        # FAILED
+        #   ↓
+        # existing firebase_project_id
+        #   ↓
+        # retry
+        #   ↓
+        # same project
+        #
+        # Do NOT create another project.
+
+        if client.firebase_project_id:
+
+            project_id = (
+                client.firebase_project_id
+            )
+
+        else:
+
+            project_id = _generate_project_id(
+                client
+            )
+
+        # -------------------------------------------------
+        # STEP 4 — Generate project display name
+        # -------------------------------------------------
 
         def _generate_project_display_name(
             client: Client,
@@ -653,30 +1177,71 @@ def provision_tenant(
             """
 
             suffix = " - Abhinava"
-            max_business_length = 30 - len(suffix)
 
-            business_name = client.business_name.strip()
+            max_business_length = (
+                30 - len(suffix)
+            )
+
+            business_name = (
+                client.business_name.strip()
+            )
 
             if not business_name:
                 business_name = "Client"
 
-            business_name = business_name[:max_business_length].rstrip()
+            business_name = (
+                business_name[
+                    :max_business_length
+                ]
+                .rstrip()
+            )
 
-            return f"{business_name}{suffix}"
-
-        # -------------------------------------------------
-        # STEP 4 — Create Google Cloud project
-        # -------------------------------------------------
-
-        _create_google_cloud_project(
-            session=session,
-            project_id=project_id,
-            display_name=_generate_project_display_name(client),
-        )
+            return (
+                f"{business_name}{suffix}"
+            )
 
         # -------------------------------------------------
-        # STEP 5 — Add Firebase
+        # STEP 5 — Create Google Cloud project if required
         # -------------------------------------------------
+
+        if not client.firebase_project_id:
+
+            _create_google_cloud_project(
+                session=session,
+                project_id=project_id,
+                display_name=(
+                    _generate_project_display_name(
+                        client
+                    )
+                ),
+            )
+
+            # Save immediately because the project now exists.
+            #
+            # If a later provisioning step fails,
+            # this ID is retained for recovery.
+
+            client.firebase_project_id = (
+                project_id
+            )
+
+            db.commit()
+            db.refresh(client)
+
+        # -------------------------------------------------
+        # STEP 6 — Project ID already persisted
+        #
+        # For new clients it was saved above.
+        # For retrying clients it already existed.
+        # -------------------------------------------------
+
+        # -------------------------------------------------
+        # STEP 7 — Add Firebase
+        # -------------------------------------------------
+
+        # -------------------------------------------------
+# STEP 7 — Add Firebase
+# -------------------------------------------------
 
         _enable_firebase(
             session=session,
@@ -684,7 +1249,42 @@ def provision_tenant(
         )
 
         # -------------------------------------------------
-        # STEP 6 — Enable required APIs
+        # STEP 7A — Create Firebase Web App
+        # -------------------------------------------------
+
+        web_app = _create_firebase_web_app(
+            session=session,
+            project_id=project_id,
+            display_name=(
+                f"{client.business_name} Web"
+            ),
+        )
+
+        web_app_id = web_app.get("appId")
+
+        if not web_app_id:
+            raise RuntimeError(
+                "Firebase Web App was created but "
+                "no appId was returned."
+            )
+
+        client.firebase_web_app_id = web_app_id
+
+        db.commit()
+        db.refresh(client)
+
+        # -------------------------------------------------
+        # STEP 7B — Configure project access
+        # -------------------------------------------------
+
+        _configure_project_access(
+            session=session,
+            project_id=project_id,
+            client=client,
+        )
+
+        # -------------------------------------------------
+        # STEP 8 — Enable required APIs
         # -------------------------------------------------
 
         _enable_required_apis(
@@ -693,7 +1293,7 @@ def provision_tenant(
         )
 
         # -------------------------------------------------
-        # STEP 7 — Create Firestore database
+        # STEP 9 — Create Firestore database
         # -------------------------------------------------
 
         _create_firestore_database(
@@ -702,12 +1302,12 @@ def provision_tenant(
         )
 
         # -------------------------------------------------
-        # STEP 8 — Save Firebase project ID
+        # STEP 10 — Mark provisioning complete
         # -------------------------------------------------
 
-        client.firebase_project_id = project_id
-
-        client.firebase_provisioning_status = "READY"
+        client.firebase_provisioning_status = (
+            "READY"
+        )
 
         client.firebase_provisioning_error = None
 
@@ -721,15 +1321,27 @@ def provision_tenant(
         return client
 
     except Exception as exc:
+
         # -------------------------------------------------
         # Provisioning failed
         # -------------------------------------------------
 
         db.rollback()
 
-        client.firebase_provisioning_status = "FAILED"
+        # IMPORTANT:
+        # Do not clear firebase_project_id here.
+        #
+        # If the Google Cloud project was already created,
+        # we want to retain its ID so provisioning can later
+        # be retried/recovered.
 
-        client.firebase_provisioning_error = str(exc)
+        client.firebase_provisioning_status = (
+            "FAILED"
+        )
+
+        client.firebase_provisioning_error = (
+            str(exc)
+        )
 
         db.commit()
         db.refresh(client)

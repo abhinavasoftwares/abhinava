@@ -5,7 +5,11 @@ from sqlalchemy.orm import Session
 from database import SessionLocal
 from models import Client
 from schemas import ClientCreate
-from services.tenant_provisioning import provision_tenant
+from services.tenant_provisioning import (
+    provision_tenant,
+    _get_google_session,
+    _get_firebase_web_app_config,
+)
 
 
 app = FastAPI(title="Abhinava API")
@@ -15,6 +19,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "https://sturdy-train-77rj957xr4pp2x675-5173.app.github.dev",
+        "https://sturdy-train-77rj957xr4pp2x675-5174.app.github.dev",
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -157,3 +162,68 @@ def get_client(
             "updated_at": client.updated_at,
         }
     }
+
+@app.get("/clients/{client_id}/firebase-config")
+def get_client_firebase_config(
+    client_id: int,
+    db: Session = Depends(get_db),
+):
+    client = (
+        db.query(Client)
+        .filter(Client.id == client_id)
+        .first()
+    )
+
+    if client is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Client not found",
+        )
+
+    if client.firebase_provisioning_status != "READY":
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Firebase provisioning is not ready. "
+                f"Current status: "
+                f"{client.firebase_provisioning_status}"
+            ),
+        )
+
+    if not client.firebase_project_id:
+        raise HTTPException(
+            status_code=500,
+            detail="Firebase project ID is missing",
+        )
+
+    if not client.firebase_web_app_id:
+        raise HTTPException(
+            status_code=500,
+            detail="Firebase Web App ID is missing",
+        )
+
+    try:
+        session = _get_google_session()
+
+        web_app_name = (
+            f"projects/{client.firebase_project_id}/"
+            f"webApps/{client.firebase_web_app_id}"
+        )
+
+        config = _get_firebase_web_app_config(
+            session=session,
+            web_app_name=web_app_name,
+        )
+
+        return {
+            "tenantId": client.tenant_id,
+            "clientId": client.id,
+            "businessName": client.business_name,
+            "firebase": config,
+        }
+
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=str(exc),
+        )

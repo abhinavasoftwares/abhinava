@@ -27,6 +27,11 @@ class Client(Base):
         nullable=True,
     )
 
+    firebase_web_app_id: Mapped[str | None] = mapped_column(
+        String(150),
+        nullable=True,
+    )
+
     firebase_provisioning_status: Mapped[str] = mapped_column(
         String(30),
         default="PENDING",
