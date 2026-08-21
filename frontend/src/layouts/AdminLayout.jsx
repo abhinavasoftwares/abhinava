@@ -1,193 +1,390 @@
 import { useState, useEffect } from "react";
 import { NavLink, useLocation } from "react-router-dom";
+import { useAuth } from "../context/AuthContext";
 import {
-  FileChartColumn,
-  LayoutDashboard,
-  LogOut,
-  Settings,
-  Sun,
+  TrendingUp,
+  Plus,
   Users,
-  Moon,
-  Bell,
+  Activity,
+  ArrowUpRight,
+  Clock,
+  Gem,
+  ClipboardCheck,
+  LayoutDashboard,
+  FileChartColumn,
+  Settings,
+  LogOut,
   Menu,
   X,
-  Command,
 } from "lucide-react";
-import { useTheme } from "../context/ThemeContext";
 
-function AdminLayout({ children }) {
-  const { darkMode, toggleTheme } = useTheme();
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+// ============================================================================
+// SHARED CONSTANTS & DATA
+// ============================================================================
+const GOLD = "#c59b27";
+
+const stats = [
+  { label: "Bespoke Orders", value: "24", delta: "+4", icon: Gem },
+  { label: "Pending Appraisals", value: "8", delta: "-2", icon: ClipboardCheck },
+];
+
+const transactions = [
+  { client: "Eleanor Vance", service: "Diamond Sourcing", date: "Oct 24", amount: "₹1,45,000" },
+  { client: "Marcus Cole", service: "Watch Servicing", date: "Oct 24", amount: "₹8,500" },
+  { client: "Sophia Reed", service: "Bespoke Ring", date: "Oct 23", amount: "₹2,20,000" },
+  { client: "James Sterling", service: "Appraisal", date: "Oct 22", amount: "₹1,500" },
+  { client: "Nadia Rao", service: "Restoration", date: "Oct 21", amount: "₹32,000" },
+];
+
+const sessions = [
+  { name: "Sarah Jenkins", role: "Viewing Portfolio", time: "2 min" },
+  { name: "David Chen", role: "Checkout Pending", time: "Just now" },
+  { name: "Amelia Croft", role: "Consultation Call", time: "15 min" },
+  { name: "Elena Gilbert", role: "Browsing Rings", time: "4 min" },
+  { name: "Marcus Cole", role: "Invoice Paid", time: "1 hr" },
+];
+
+const spark = [38, 52, 44, 61, 55, 72, 66, 84, 78, 96];
+
+const noScroll = "[&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]";
+const card =
+  "rounded-2xl border border-slate-200/70 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)]";
+
+// ============================================================================
+// SPARKLINE COMPONENT
+// ============================================================================
+function Sparkline() {
+  const max = Math.max(...spark);
+  const pts = spark
+    .map((v, i) => `${(i / (spark.length - 1)) * 100},${40 - (v / max) * 34}`)
+    .join(" ");
+  return (
+    <svg viewBox="0 0 100 40" preserveAspectRatio="none" className="h-full w-full">
+      <defs>
+        <linearGradient id="sparkFill" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={GOLD} stopOpacity="0.22" />
+          <stop offset="100%" stopColor={GOLD} stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      <polygon points={`0,40 ${pts} 100,40`} fill="url(#sparkFill)" />
+      <polyline
+        points={pts}
+        fill="none"
+        stroke={GOLD}
+        strokeWidth="1.5"
+        vectorEffect="non-scaling-stroke"
+        strokeLinejoin="round"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+// ============================================================================
+// 1. ADMIN LAYOUT
+// ============================================================================
+export function AdminLayout({ children }) {
+  const { user, logout } = useAuth();
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const location = useLocation();
 
-  // Close menu and unlock scroll when changing routes
   useEffect(() => {
-    setMobileMenuOpen(false);
-    document.body.style.overflow = "auto";
+    setSidebarOpen(false);
   }, [location.pathname]);
 
-  const handleMenuToggle = () => {
-    setMobileMenuOpen(!mobileMenuOpen);
-    document.body.style.overflow = !mobileMenuOpen ? "hidden" : "auto";
-  };
-
   const navigation = [
-    { name: "Dashboard", path: "/admin", icon: LayoutDashboard },
+    { name: "Overview", path: "/admin", icon: LayoutDashboard },
     { name: "Clients", path: "/admin/clients", icon: Users },
-    { name: "Reports", path: "/admin/reports", icon: FileChartColumn },
-    { name: "Settings", path: "/admin/settings", icon: Settings },
+    { name: "Ledger", path: "/admin/reports", icon: FileChartColumn },
+    { name: "Preferences", path: "/admin/settings", icon: Settings },
   ];
 
   return (
-    <div className="min-h-screen bg-[#F8F9FA] text-gray-900 antialiased transition-colors dark:bg-[#050505] dark:text-gray-100">
+    <div className="flex min-h-screen w-full flex-col lg:flex-row lg:h-screen lg:overflow-hidden bg-slate-50/60 font-sans text-slate-900">
       
-      {/* =========================================================
-          FIXED TOP NAVBAR (Full Width)
-      ========================================================= */}
-      <header className="fixed inset-x-0 top-0 z-50 flex h-16 w-full items-center justify-between border-b border-gray-200 bg-white/80 px-4 backdrop-blur-xl sm:px-6 lg:px-8 dark:border-neutral-800 dark:bg-[#0a0a0a]/80">
-        
-        {/* Left Side: Brand Logo & Name */}
-        <div className="flex shrink-0 items-center gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-[12px] bg-indigo-600 text-white shadow-inner">
-            <Command size={18} strokeWidth={2.5} />
-          </div>
-          {/* Always show name, or hide on very small screens if preferred. Keeping it visible for brand presence. */}
-          <span className="text-lg font-bold tracking-tight text-gray-900 dark:text-white">
-            Abhinava
-          </span>
-        </div>
-
-        {/* Right Side: Navigation & Actions (Desktop - hidden on sm and md) */}
-        <div className="hidden lg:flex lg:items-center lg:gap-8">
-          
-          {/* Nav Links */}
-          <nav className="flex items-center gap-1">
-            {navigation.map((item) => {
-              const Icon = item.icon;
-              return (
-                <NavLink
-                  key={item.name}
-                  to={item.path}
-                  className={({ isActive }) =>
-                    `group flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold transition-colors ${
-                      isActive
-                        ? "bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-400"
-                        : "text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-neutral-800 dark:hover:text-white"
-                    }`
-                  }
-                >
-                  <Icon size={16} strokeWidth={2} />
-                  <span>{item.name}</span>
-                </NavLink>
-              );
-            })}
-          </nav>
-
-          <div className="h-6 w-[1px] bg-gray-200 dark:bg-neutral-800" />
-
-          {/* Quick Actions */}
-          <div className="flex items-center gap-2">
-            <button className="flex h-9 w-9 items-center justify-center rounded-lg text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-neutral-800 dark:hover:text-white">
-              <Bell size={18} />
-            </button>
-            <button
-              onClick={toggleTheme}
-              className="flex h-9 w-9 items-center justify-center rounded-lg text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-neutral-800 dark:hover:text-white"
-            >
-              {darkMode ? <Sun size={18} /> : <Moon size={18} />}
-            </button>
-            <button className="flex h-9 w-9 items-center justify-center rounded-lg text-gray-500 transition-colors hover:bg-red-50 hover:text-red-600 dark:text-gray-400 dark:hover:bg-red-500/10 dark:hover:text-red-400">
-              <LogOut size={18} />
-            </button>
-          </div>
-        </div>
-
-        {/* Right Side: Hamburger Menu (Small & Medium Screens Only) */}
-        <div className="flex items-center lg:hidden">
-          <button
-            onClick={handleMenuToggle}
-            className="flex h-10 w-10 items-center justify-center rounded-lg bg-gray-100 text-gray-900 transition-colors dark:bg-neutral-800 dark:text-white"
-          >
-            {mobileMenuOpen ? <X size={20} /> : <Menu size={20} />}
-          </button>
-        </div>
-      </header>
-
-      {/* =========================================================
-          FULL-SCREEN MOBILE MENU (lg:hidden)
-      ========================================================= */}
-      {mobileMenuOpen && (
-        <div className="fixed inset-0 z-[100] flex flex-col bg-white/95 backdrop-blur-xl animate-in fade-in zoom-in-95 duration-200 lg:hidden dark:bg-[#050505]/95">
-          
-          <div className="flex h-16 items-center justify-between border-b border-gray-200 px-4 sm:px-6 dark:border-neutral-800">
-            <div className="flex items-center gap-3">
-              <div className="flex h-9 w-9 items-center justify-center rounded-[12px] bg-indigo-600 text-white shadow-inner">
-                <Command size={18} strokeWidth={2.5} />
-              </div>
-              <span className="text-lg font-bold tracking-tight text-gray-900 dark:text-white">Abhinava</span>
-            </div>
-            <button
-              onClick={handleMenuToggle}
-              className="flex h-10 w-10 items-center justify-center rounded-lg bg-gray-100 text-gray-900 transition-colors dark:bg-neutral-800 dark:text-white"
-            >
-              <X size={20} />
-            </button>
-          </div>
-
-          <div className="flex flex-1 flex-col justify-between overflow-y-auto px-4 py-8 sm:px-6">
-            <nav className="flex flex-col gap-2">
-              {navigation.map((item) => {
-                const Icon = item.icon;
-                return (
-                  <NavLink
-                    key={item.name}
-                    to={item.path}
-                    className={({ isActive }) =>
-                      `flex items-center gap-4 rounded-2xl px-5 py-4 text-lg font-bold transition-all ${
-                        isActive
-                          ? "bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-400"
-                          : "text-gray-600 hover:bg-gray-50 dark:text-gray-400 dark:hover:bg-neutral-800 dark:hover:text-white"
-                      }`
-                    }
-                  >
-                    <Icon size={24} strokeWidth={2} />
-                    {item.name}
-                  </NavLink>
-                );
-              })}
-            </nav>
-
-            <div className="mt-8 flex flex-col gap-4 border-t border-gray-200 pt-8 dark:border-neutral-800">
-              <button
-                onClick={toggleTheme}
-                className="flex items-center gap-4 rounded-2xl px-5 py-4 text-lg font-bold text-gray-600 transition-colors hover:bg-gray-50 dark:text-gray-400 dark:hover:bg-neutral-800 dark:hover:text-white"
-              >
-                {darkMode ? <Sun size={24} /> : <Moon size={24} />}
-                {darkMode ? "Switch to Light Mode" : "Switch to Dark Mode"}
-              </button>
-              
-              <button className="flex items-center gap-4 rounded-2xl bg-red-50 px-5 py-4 text-lg font-bold text-red-600 transition-colors hover:bg-red-100 dark:bg-red-500/10 dark:text-red-400 dark:hover:bg-red-500/20">
-                <LogOut size={24} />
-                Sign Out
-              </button>
-            </div>
-          </div>
-        </div>
+      {/* Mobile Overlay */}
+      {sidebarOpen && (
+        <div 
+          className="fixed inset-0 z-40 bg-slate-900/10 backdrop-blur-sm lg:hidden"
+          onClick={() => setSidebarOpen(false)}
+        />
       )}
 
-      {/* =========================================================
-          MAIN CANVAS
-      ========================================================= */}
-      {/* 
-        pt-24 (96px) ensures the content clears the 64px header 
-        and adds a clean 32px gap before the page content begins.
-      */}
-      <main className="mx-auto max-w-7xl px-4 pb-20 pt-24 sm:px-6 lg:px-8">
-        {children}
-      </main>
-      
+      {/* Persistent Sidebar */}
+      <aside
+        className={`fixed inset-y-0 left-0 z-50 flex w-[260px] flex-col border-r border-slate-200/70 bg-white transition-transform duration-300 ease-in-out lg:static lg:translate-x-0 ${
+          sidebarOpen ? "translate-x-0 shadow-2xl" : "-translate-x-full"
+        }`}
+      >
+        <div className="flex h-[72px] shrink-0 items-center justify-between px-6 border-b border-slate-100">
+          <div className="flex items-center gap-2.5">
+            <Gem size={18} color={GOLD} strokeWidth={2.5} />
+            <span className="text-lg font-bold tracking-tight text-slate-900">Abhinava</span>
+          </div>
+          <button onClick={() => setSidebarOpen(false)} className="text-slate-400 lg:hidden">
+            <X size={20} strokeWidth={2} />
+          </button>
+        </div>
+
+        <nav className={`flex-1 overflow-y-auto py-4 px-3 ${noScroll}`}>
+          <div className="space-y-1">
+            {navigation.map((item) => (
+              <NavLink
+                key={item.name}
+                to={item.path}
+                end={item.path === "/admin"}
+                className={({ isActive }) =>
+                  `flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-all ${
+                    isActive 
+                      ? "bg-slate-50 font-semibold shadow-[0_1px_2px_rgba(15,23,42,0.03)] border border-slate-100/50" 
+                      : "text-slate-500 hover:bg-slate-50 hover:text-slate-900 font-medium border border-transparent"
+                  }`
+                }
+                style={({ isActive }) => (isActive ? { color: GOLD } : {})}
+              >
+                {({ isActive }) => (
+                  <>
+                    <item.icon size={16} strokeWidth={isActive ? 2.5 : 2} />
+                    <span>{item.name}</span>
+                  </>
+                )}
+              </NavLink>
+            ))}
+          </div>
+        </nav>
+
+        <div className="shrink-0 p-4 border-t border-slate-100">
+          <button type="button"
+            onClick={logout} className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-slate-500 transition-all hover:bg-red-50 hover:text-red-600">
+            <LogOut size={16} strokeWidth={2} />
+            <span>Sign Out</span>
+          </button>
+        </div>
+      </aside>
+
+      {/* Main Content Pane */}
+      <div className="flex flex-1 flex-col min-w-0 lg:overflow-hidden">
+        
+        {/* Mobile Header */}
+        <header className="flex h-14 shrink-0 items-center justify-between border-b border-slate-200/70 bg-white px-4 lg:hidden">
+          <button onClick={() => setSidebarOpen(true)} className="text-slate-600">
+            <Menu size={20} strokeWidth={2} />
+          </button>
+          <div className="flex items-center gap-2 text-sm font-bold">
+            <Gem size={14} color={GOLD} /> Abhinava
+          </div>
+        </header>
+
+        {/* Dynamic Page Rendering */}
+        <main className="flex-1 lg:overflow-hidden">
+          {children}
+        </main>
+
+      </div>
     </div>
   );
 }
 
-export default AdminLayout;
+// ============================================================================
+// 2. DASHBOARD VIEW (Responsive: Natural scroll on mobile, Locked height on desktop)
+// ============================================================================
+export function Dashboard() {
+  return (
+    <div
+      className={`h-full w-full overflow-y-auto lg:overflow-hidden ${noScroll} bg-slate-50/60 p-4 sm:p-5 lg:p-6`}
+    >
+      <div className="mx-auto flex h-full max-w-[1600px] flex-col gap-4">
+        {/* Header */}
+        <header className="grid shrink-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
+          <div className="min-w-0">
+            <h1 className="truncate text-base font-semibold tracking-tight text-slate-900 sm:text-lg">
+              Atelier Overview
+            </h1>
+            <p className="truncate text-[11px] text-slate-500">
+              Fiscal period · October 2026
+            </p>
+          </div>
+          <button
+            className="flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-[11px] font-semibold text-white shadow-sm transition hover:opacity-90"
+            style={{ backgroundColor: GOLD }}
+          >
+            <Plus size={14} strokeWidth={2.5} /> New Order
+          </button>
+        </header>
+
+        {/* Body */}
+        <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-12">
+          {/* Left column */}
+          <div className="flex min-h-0 flex-col gap-4 lg:col-span-8">
+            {/* KPI strip */}
+            <div className="grid shrink-0 grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+              <div className={`${card} col-span-1 p-4 sm:col-span-2`}>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+                      Total Revenue
+                    </p>
+                    <p className="mt-1 truncate text-2xl font-semibold tracking-tight text-slate-900">
+                      ₹24,50,000
+                    </p>
+                  </div>
+                  <span className="flex shrink-0 items-center gap-1 rounded-md bg-emerald-50 px-2 py-1 text-[10px] font-semibold text-emerald-600">
+                    <TrendingUp size={12} strokeWidth={2.5} /> 12.5%
+                  </span>
+                </div>
+                <div className="mt-3 h-14">
+                  <Sparkline />
+                </div>
+              </div>
+
+              {stats.map(({ label, value, delta, icon: Icon }) => (
+                <div key={label} className={`${card} flex flex-col justify-between p-4`}>
+                  <div className="flex items-center justify-between">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+                      {label}
+                    </p>
+                    <Icon size={14} className="shrink-0 text-slate-300" />
+                  </div>
+                  <div className="mt-4 flex items-baseline gap-2">
+                    <span className="text-2xl font-semibold tracking-tight text-slate-900">
+                      {value}
+                    </span>
+                    <span className="text-[11px] font-semibold text-slate-400">{delta}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Ledger */}
+            <section className={`${card} flex min-h-0 flex-1 flex-col overflow-hidden`}>
+              <div className="flex shrink-0 items-center justify-between border-b border-slate-100 px-4 py-3">
+                <h2 className="text-[13px] font-semibold text-slate-900">Recent Transactions</h2>
+                <button
+                  className="flex items-center gap-1 text-[11px] font-semibold transition hover:text-slate-900"
+                  style={{ color: GOLD }}
+                >
+                  Open Ledger <ArrowUpRight size={13} />
+                </button>
+              </div>
+
+              <div className={`min-h-0 flex-1 overflow-y-auto ${noScroll}`}>
+                {/* Table on md+ */}
+                <table className="hidden w-full text-left text-[13px] md:table">
+                  <thead className="sticky top-0 z-10 bg-white text-[10px] uppercase tracking-[0.12em] text-slate-400">
+                    <tr className="border-b border-slate-100">
+                      <th className="px-4 py-2.5 font-semibold">Client</th>
+                      <th className="px-4 py-2.5 font-semibold">Service</th>
+                      <th className="px-4 py-2.5 font-semibold">Date</th>
+                      <th className="px-4 py-2.5 text-right font-semibold">Amount</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50">
+                    {transactions.map((row) => (
+                      <tr key={row.client} className="transition hover:bg-slate-50/70">
+                        <td className="px-4 py-2.5 font-medium text-slate-900">{row.client}</td>
+                        <td className="px-4 py-2.5 text-slate-500">{row.service}</td>
+                        <td className="px-4 py-2.5 text-xs text-slate-400">{row.date}</td>
+                        <td className="px-4 py-2.5 text-right font-semibold tabular-nums text-slate-900">
+                          {row.amount}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+
+                {/* Cards below md */}
+                <div className="flex flex-col gap-2 p-3 md:hidden">
+                  {transactions.map((row) => (
+                    <div
+                      key={row.client}
+                      className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-xl border border-slate-100 bg-slate-50/50 px-3 py-2.5"
+                    >
+                      <div className="min-w-0">
+                        <p className="truncate text-[13px] font-semibold text-slate-900">
+                          {row.client}
+                        </p>
+                        <p className="truncate text-[11px] text-slate-500">
+                          {row.service} · {row.date}
+                        </p>
+                      </div>
+                      <span className="shrink-0 text-[13px] font-semibold tabular-nums text-slate-900">
+                        {row.amount}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </section>
+          </div>
+
+          {/* Right column */}
+          <div className="flex min-h-0 flex-col gap-4 lg:col-span-4">
+            <section className={`${card} shrink-0 p-4`}>
+              <h2 className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+                Quick Actions
+              </h2>
+              <div className="mt-3 grid grid-cols-2 gap-2 lg:grid-cols-1">
+                {[
+                  { label: "New Bespoke Order", icon: Plus },
+                  { label: "Register Client", icon: Users },
+                ].map(({ label, icon: Icon }) => (
+                  <button
+                    key={label}
+                    className="flex items-center gap-2.5 rounded-xl border border-slate-100 bg-slate-50/70 px-3 py-2.5 text-left text-[12px] font-semibold text-slate-700 transition hover:border-slate-200 hover:bg-white hover:text-slate-900"
+                  >
+                    <span
+                      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-white shadow-sm"
+                      style={{ color: GOLD }}
+                    >
+                      <Icon size={15} strokeWidth={2.5} />
+                    </span>
+                    <span className="min-w-0 truncate">{label}</span>
+                  </button>
+                ))}
+              </div>
+            </section>
+
+            <section className={`${card} flex min-h-0 flex-1 flex-col overflow-hidden`}>
+              <div className="flex shrink-0 items-center justify-between border-b border-slate-100 px-4 py-3">
+                <h2 className="text-[13px] font-semibold text-slate-900">Active Sessions</h2>
+                <span className="flex items-center gap-1 rounded-md bg-emerald-50 px-2 py-1 text-[10px] font-semibold tracking-wide text-emerald-600">
+                  <Activity size={11} strokeWidth={2.5} /> LIVE
+                </span>
+              </div>
+
+              <div className={`min-h-0 flex-1 overflow-y-auto p-2 ${noScroll}`}>
+                <div className="flex flex-col gap-1">
+                  {sessions.map((user) => (
+                    <div
+                      key={user.name}
+                      className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-xl px-2 py-2 transition hover:bg-slate-50"
+                    >
+                      <div className="flex min-w-0 items-center gap-2.5">
+                        <span
+                          className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-50 text-[11px] font-semibold"
+                          style={{ color: GOLD }}
+                        >
+                          {user.name.charAt(0)}
+                          <span className="absolute bottom-0 right-0 h-2 w-2 rounded-full border-2 border-white bg-emerald-500" />
+                        </span>
+                        <div className="min-w-0">
+                          <p className="truncate text-[12px] font-semibold text-slate-900">
+                            {user.name}
+                          </p>
+                          <p className="truncate text-[11px] text-slate-500">{user.role}</p>
+                        </div>
+                      </div>
+                      <span className="flex shrink-0 items-center gap-1 text-[10px] text-slate-400">
+                        <Clock size={10} /> {user.time}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </section>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

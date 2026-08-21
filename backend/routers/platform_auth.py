@@ -5,7 +5,7 @@ from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
 from database import SessionLocal
-from models import PlatformAuditEvent
+from models import PlatformAuditEvent, PlatformUser
 from services.platform_auth_transaction import (
     consume_auth_transaction,
     create_auth_transaction,
@@ -23,6 +23,8 @@ from services.platform_oidc import (
 )
 from services.platform_session import (
     create_platform_session,
+    get_active_platform_session,
+    revoke_platform_session,
 )
 
 
@@ -82,6 +84,116 @@ def _write_audit_event(
     db.commit()
 
 
+# ============================================================================
+# CURRENT PLATFORM USER
+# ============================================================================
+
+@router.get("/me")
+async def get_current_platform_user(
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    raw_session_token = request.cookies.get(
+        SESSION_COOKIE_NAME
+    )
+
+    if not raw_session_token:
+        raise HTTPException(
+            status_code=401,
+            detail="Not authenticated.",
+        )
+
+    session = get_active_platform_session(
+        db=db,
+        raw_token=raw_session_token,
+    )
+
+    if session is None:
+        raise HTTPException(
+            status_code=401,
+            detail="Session is invalid or expired.",
+        )
+
+    platform_user = (
+        db.query(PlatformUser)
+        .filter(
+            PlatformUser.id
+            == session.platform_user_id
+        )
+        .first()
+    )
+
+    if platform_user is None:
+        raise HTTPException(
+            status_code=401,
+            detail="Platform user no longer exists.",
+        )
+
+    return {
+        "id": str(platform_user.id),
+        "email": platform_user.email,
+        "display_name": platform_user.display_name,
+        "role": platform_user.role,
+        "status": platform_user.status,
+    }
+
+@router.post("/logout")
+async def platform_logout(
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    raw_session_token = request.cookies.get(
+        SESSION_COOKIE_NAME
+    )
+
+    if raw_session_token:
+        session = get_active_platform_session(
+            db=db,
+            raw_token=raw_session_token,
+        )
+
+        if session is not None:
+            revoke_platform_session(
+                db=db,
+                raw_token=raw_session_token,
+            )
+
+            _write_audit_event(
+                db,
+                event_type="PLATFORM_LOGOUT",
+                outcome="SUCCESS",
+                actor_platform_user_id=session.platform_user_id,
+                target_type="PLATFORM_USER",
+                target_id=str(session.platform_user_id),
+                ip_address=_client_ip(request),
+                user_agent=request.headers.get(
+                    "user-agent"
+                ),
+                metadata={
+                    "provider": "platform_session",
+                },
+            )
+
+    response = {
+        "message": "Logged out successfully."
+    }
+
+    redirect_response = RedirectResponse(
+        url=get_frontend_url(),
+        status_code=303,
+    )
+
+    redirect_response.delete_cookie(
+        key=SESSION_COOKIE_NAME,
+        path="/",
+    )
+
+    return redirect_response
+
+# ============================================================================
+# GOOGLE LOGIN
+# ============================================================================
+
 @router.get("/google/login")
 async def google_login(
     request: Request,
@@ -129,6 +241,10 @@ async def google_login(
         status_code=302,
     )
 
+
+# ============================================================================
+# GOOGLE CALLBACK
+# ============================================================================
 
 @router.get("/google/callback")
 async def google_callback(
@@ -313,6 +429,10 @@ async def google_callback(
             status_code=500,
             detail="Platform identity resolution failed.",
         )
+
+    # ------------------------------------------------------------------------
+    # Create platform session
+    # ------------------------------------------------------------------------
 
     try:
         raw_session_token, session = create_platform_session(

@@ -21,6 +21,8 @@ import {
 import { Link, useNavigate } from "react-router-dom";
 import { useForm } from "react-hook-form";
 
+const GOLD = "#c59b27";
+
 const STEPS = [
   {
     id: 0,
@@ -153,7 +155,6 @@ function AddClientPage() {
 
   const handlePlanChange = (event) => {
     const plan = event.target.value;
-
     setValue("plan", plan);
 
     if (plan === "overall") {
@@ -174,23 +175,18 @@ function AddClientPage() {
         legal_business_name: data.legalBusinessName,
         business_type: data.businessType,
         country: data.country,
-
         business_email: data.businessEmail,
         business_phone: data.businessPhone,
-
         owner_name: data.ownerName,
         owner_email: data.ownerEmail,
         owner_phone: data.ownerPhone,
         owner_role: data.ownerRole,
-
         pan: data.pan,
         gstin: data.gstin || null,
-
         plan: data.plan,
         billing_cycle: data.billingCycle,
         subscription_status: data.subscriptionStatus,
         start_date: data.startDate,
-
         domain: data.domain || null,
         modules: data.modules || {},
       };
@@ -210,15 +206,13 @@ function AddClientPage() {
 
       if (!response.ok) {
         throw new Error(
-          result?.detail ||
-            result?.message ||
-            "Unable to create client."
+          result?.detail || result?.message || "Unable to create client."
         );
       }
 
       setSubmitStatus("success");
       setSubmitMessage(
-        `${data.businessName} has been created and its Firebase workspace is ready.`
+        `${data.businessName} has been created and its workspace is ready.`
       );
 
       setTimeout(() => {
@@ -230,7 +224,6 @@ function AddClientPage() {
       }, 800);
     } catch (error) {
       console.error("Client creation failed:", error);
-
       setSubmitStatus("error");
       setSubmitMessage(
         error instanceof Error
@@ -247,9 +240,7 @@ function AddClientPage() {
     const isStepValid = await trigger(fieldsToValidate);
 
     if (isStepValid) {
-      setCurrentStep((prev) =>
-        Math.min(prev + 1, STEPS.length - 1)
-      );
+      setCurrentStep((prev) => Math.min(prev + 1, STEPS.length - 1));
     }
   };
 
@@ -258,45 +249,44 @@ function AddClientPage() {
   };
 
   const handleFormSubmit = (event) => {
-  if (currentStep !== STEPS.length - 1) {
-    event.preventDefault();
-    return;
-  }
-
-  handleSubmit(onSubmit)(event);
-};
+    if (currentStep !== STEPS.length - 1) {
+      event.preventDefault();
+      return;
+    }
+    handleSubmit(onSubmit)(event);
+  };
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="h-full w-full overflow-y-auto lg:overflow-hidden flex flex-col gap-4 bg-slate-50/60 p-4 sm:p-5 lg:p-6 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+      
       {/* ---------------- HEADER ---------------- */}
-      <div className="flex shrink-0 items-center justify-between pb-4">
+      <div className="flex shrink-0 items-center justify-between">
         <div>
           <Link
             to="/admin/clients"
-            className="mb-2 inline-flex items-center gap-2 text-xs font-semibold text-gray-500 transition hover:text-gray-900 dark:text-gray-400 dark:hover:text-white"
+            className="mb-1 inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500 transition hover:text-slate-900"
           >
-            <ArrowLeft size={14} /> Back
+            <ArrowLeft size={14} /> Back to Directory
           </Link>
 
-          <h1 className="text-2xl font-bold tracking-tight text-gray-900 dark:text-white">
-            Add Client
+          <h1 className="text-xl font-bold tracking-tight text-slate-900 sm:text-2xl">
+            Add New Client
           </h1>
         </div>
 
         <div className="text-right">
-          <p className="text-xs font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400">
+          <p className="text-[10px] font-bold uppercase tracking-wider text-[#c59b27]">
             Step {currentStep + 1} of {STEPS.length}
           </p>
-
-          <p className="text-sm font-medium text-gray-500 dark:text-gray-400">
+          <p className="text-xs font-semibold text-slate-600">
             {STEPS[currentStep].title}
           </p>
         </div>
       </div>
 
-      {/* ---------------- STEPPER UI ---------------- */}
-      <div className="mb-6 hidden shrink-0 sm:block">
-        <div className="flex items-center justify-between rounded-[20px] border border-gray-200 bg-white p-2 dark:border-neutral-800 dark:bg-[#171717]">
+      {/* ---------------- STEPPER UI (Desktop) ---------------- */}
+      <div className="hidden shrink-0 sm:block">
+        <div className="flex items-center justify-between rounded-2xl border border-slate-200/70 bg-white p-2 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
           {STEPS.map((step, index) => {
             const Icon = step.icon;
             const isActive = currentStep === index;
@@ -305,42 +295,31 @@ function AddClientPage() {
             return (
               <div
                 key={step.id}
-                className={`flex flex-1 items-center justify-center gap-3 rounded-[16px] px-4 py-3 transition-colors ${
+                className={`flex flex-1 items-center justify-center gap-3 rounded-xl px-3 py-2.5 transition-colors ${
                   isActive
-                    ? "bg-indigo-50 dark:bg-indigo-500/10"
+                    ? "bg-[#faf8f3]"
                     : isCompleted
-                    ? "text-emerald-600 dark:text-emerald-400"
-                    : "text-gray-400 dark:text-gray-600"
+                    ? "text-emerald-600"
+                    : "text-slate-400"
                 }`}
               >
                 <div
-                  className={`flex h-8 w-8 items-center justify-center rounded-full ${
+                  className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold ${
                     isActive
-                      ? "bg-indigo-600 text-white"
+                      ? "bg-slate-900 text-[#e6cda3]"
                       : isCompleted
-                      ? "bg-emerald-100 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400"
-                      : "bg-gray-100 dark:bg-neutral-800"
+                      ? "bg-emerald-100 text-emerald-600"
+                      : "bg-slate-100 text-slate-500"
                   }`}
                 >
-                  {isCompleted ? (
-                    <Check size={16} strokeWidth={3} />
-                  ) : (
-                    <Icon size={16} />
-                  )}
+                  {isCompleted ? <Check size={14} strokeWidth={3} /> : <Icon size={14} />}
                 </div>
 
                 <div className="hidden text-left lg:block">
-                  <p
-                    className={`text-sm font-bold ${
-                      isActive
-                        ? "text-indigo-900 dark:text-indigo-100"
-                        : ""
-                    }`}
-                  >
+                  <p className={`text-xs font-bold ${isActive ? "text-slate-900" : "text-slate-500"}`}>
                     {step.title}
                   </p>
-
-                  <p className="text-[10px] font-semibold uppercase tracking-wider opacity-70">
+                  <p className="text-[9px] font-semibold uppercase tracking-wider text-slate-400">
                     {step.subtitle}
                   </p>
                 </div>
@@ -351,17 +330,18 @@ function AddClientPage() {
       </div>
 
       {/* ---------------- MOBILE PROGRESS ---------------- */}
-      <div className="mb-6 h-1.5 w-full overflow-hidden rounded-full bg-gray-200 sm:hidden dark:bg-neutral-800">
+      <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-200 sm:hidden">
         <div
-          className="h-full bg-indigo-600 transition-all duration-300 dark:bg-indigo-500"
+          className="h-full transition-all duration-300"
           style={{
             width: `${((currentStep + 1) / STEPS.length) * 100}%`,
+            backgroundColor: GOLD,
           }}
         />
       </div>
 
       {/* ---------------- FORM CONTAINER ---------------- */}
-      <div className="flex min-h-[400px] flex-1 flex-col rounded-[24px] border border-gray-200 bg-white shadow-sm dark:border-neutral-800 dark:bg-[#121212]">
+      <div className="min-h-0 flex-1 flex flex-col rounded-2xl border border-slate-200/70 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)] overflow-hidden">
         <form
           onSubmit={handleFormSubmit}
           onKeyDown={(event) => {
@@ -369,113 +349,63 @@ function AddClientPage() {
               event.preventDefault();
             }
           }}
-          className="flex h-full flex-col p-5 sm:p-8"
+          className="flex h-full flex-col p-4 sm:p-6 overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]"
         >
-          {/* ---------------- NAVIGATION ---------------- */}
-          <div className="mb-6 flex shrink-0 items-center justify-between border-b border-gray-100 pb-5 dark:border-neutral-800/50">
+          {/* ---------------- NAVIGATION BUTTONS ---------------- */}
+          <div className="mb-4 flex shrink-0 items-center justify-between border-b border-slate-100 pb-4">
             <button
               type="button"
               onClick={handlePrev}
               disabled={currentStep === 0 || isSubmitting}
-              className={`flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold transition ${
+              className={`flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-semibold transition ${
                 currentStep === 0
                   ? "invisible"
-                  : "border border-gray-200 hover:bg-gray-50 dark:border-neutral-800 dark:hover:bg-neutral-800"
+                  : "border border-slate-200 bg-white hover:bg-slate-50 text-slate-700"
               }`}
             >
-              <ChevronLeft size={16} />
-              Back
+              <ChevronLeft size={14} /> Back
             </button>
 
             {currentStep < STEPS.length - 1 ? (
               <button
                 type="button"
                 onClick={handleNext}
-                className="flex items-center gap-2 rounded-xl bg-gray-900 px-6 py-2.5 text-sm font-semibold text-white transition hover:bg-gray-800 dark:bg-white dark:text-gray-900 dark:hover:bg-gray-200"
+                className="flex items-center gap-1.5 rounded-xl bg-slate-900 px-5 py-2 text-xs font-semibold text-white transition hover:bg-slate-800"
               >
-                Next Step
-                <ChevronRight size={16} />
+                Next Step <ChevronRight size={14} />
               </button>
             ) : (
               <button
                 type="submit"
                 disabled={isSubmitting}
-                className={`flex items-center gap-2 rounded-xl px-6 py-2.5 text-sm font-semibold text-white shadow-md transition ${
-                  isSubmitting
-                    ? "cursor-not-allowed bg-indigo-400"
-                    : "bg-indigo-600 shadow-indigo-500/20 hover:bg-indigo-700"
-                }`}
+                className="flex items-center gap-1.5 rounded-xl px-5 py-2 text-xs font-semibold text-white shadow-sm transition hover:opacity-90"
+                style={{ backgroundColor: GOLD }}
               >
                 {isSubmitting ? (
                   <>
-                    <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                    <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/30 border-t-white" />
                     Provisioning...
                   </>
                 ) : (
                   <>
-                    Create Client
-                    <Check size={16} strokeWidth={3} />
+                    Create Client <Check size={14} strokeWidth={3} />
                   </>
                 )}
               </button>
             )}
           </div>
 
-          {/* ---------------- SUBMITTING ---------------- */}
-          {isSubmitting && (
-            <div className="mb-6 flex items-center gap-4 rounded-2xl border border-indigo-200 bg-indigo-50 px-5 py-4 dark:border-indigo-500/20 dark:bg-indigo-500/10">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-indigo-600 text-white">
-                <span className="h-5 w-5 animate-spin rounded-full border-2 border-white/30 border-t-white" />
-              </div>
-
-              <div>
-                <p className="text-sm font-bold text-indigo-900 dark:text-indigo-100">
-                  Provisioning client...
-                </p>
-
-                <p className="mt-0.5 text-xs text-indigo-700 dark:text-indigo-300">
-                  Creating the client workspace and Firebase environment.
-                  Please wait.
-                </p>
-              </div>
-            </div>
-          )}
-
-          {/* ---------------- SUCCESS ---------------- */}
+          {/* STATUS MESSAGES */}
           {submitStatus === "success" && !isSubmitting && (
-            <div className="mb-6 flex items-center gap-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-4 dark:border-emerald-500/20 dark:bg-emerald-500/10">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-white">
-                <Check size={20} strokeWidth={3} />
-              </div>
-
-              <div>
-                <p className="text-sm font-bold text-emerald-900 dark:text-emerald-100">
-                  Client created successfully
-                </p>
-
-                <p className="mt-0.5 text-xs text-emerald-700 dark:text-emerald-300">
-                  {submitMessage}
-                </p>
-              </div>
+            <div className="mb-4 flex items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs text-emerald-800">
+              <Check size={16} className="text-emerald-600" />
+              <span>{submitMessage}</span>
             </div>
           )}
 
-          {/* ---------------- ERROR ---------------- */}
           {submitStatus === "error" && !isSubmitting && (
-            <div className="mb-6 flex items-center gap-4 rounded-2xl border border-red-200 bg-red-50 px-5 py-4 dark:border-red-500/20 dark:bg-red-500/10">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-red-600 text-white">
-                !
-              </div>
-
-              <div>
-                <p className="text-sm font-bold text-red-900 dark:text-red-100">
-                  Client creation failed
-                </p>
-
-                <p className="mt-0.5 text-xs text-red-700 dark:text-red-300">
-                  {submitMessage}
-                </p>
-              </div>
+            <div className="mb-4 flex items-center gap-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs text-rose-800">
+              <span>{submitMessage}</span>
             </div>
           )}
 
@@ -483,86 +413,49 @@ function AddClientPage() {
           <div className="flex-1">
             {/* STEP 0: BUSINESS DETAILS */}
             {currentStep === 0 && (
-              <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 animate-in fade-in slide-in-from-right-4 duration-300">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div>
-                  <label className="text-xs font-bold uppercase tracking-wider text-gray-500">
-                    Business Name
-                  </label>
-
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Business Name</label>
                   <input
                     type="text"
                     placeholder="ABC Jewellers"
-                    {...register("businessName", {
-                      required: "Required",
-                    })}
-                    className="mt-1.5 w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm outline-none transition focus:border-indigo-500 dark:border-neutral-800 dark:bg-[#171717] dark:focus:border-indigo-500"
+                    {...register("businessName", { required: "Required" })}
+                    className="mt-1 w-full rounded-xl border border-slate-200 bg-[#faf8f3]/50 px-3.5 py-2.5 text-xs outline-none transition focus:border-[#c59b27]"
                   />
-
-                  {errors.businessName && (
-                    <p className="mt-1 text-xs font-medium text-red-500">
-                      {errors.businessName.message}
-                    </p>
-                  )}
+                  {errors.businessName && <p className="mt-1 text-[11px] text-rose-500">{errors.businessName.message}</p>}
                 </div>
 
                 <div>
-                  <label className="text-xs font-bold uppercase tracking-wider text-gray-500">
-                    Legal Business Name
-                  </label>
-
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Legal Business Name</label>
                   <input
                     type="text"
                     placeholder="ABC Jewellers Pvt Ltd"
-                    {...register("legalBusinessName", {
-                      required: "Required",
-                    })}
-                    className="mt-1.5 w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm outline-none transition focus:border-indigo-500 dark:border-neutral-800 dark:bg-[#171717]"
+                    {...register("legalBusinessName", { required: "Required" })}
+                    className="mt-1 w-full rounded-xl border border-slate-200 bg-[#faf8f3]/50 px-3.5 py-2.5 text-xs outline-none transition focus:border-[#c59b27]"
                   />
-
-                  {errors.legalBusinessName && (
-                    <p className="mt-1 text-xs font-medium text-red-500">
-                      {errors.legalBusinessName.message}
-                    </p>
-                  )}
+                  {errors.legalBusinessName && <p className="mt-1 text-[11px] text-rose-500">{errors.legalBusinessName.message}</p>}
                 </div>
 
                 <div>
-                  <label className="text-xs font-bold uppercase tracking-wider text-gray-500">
-                    Business Type
-                  </label>
-
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Business Type</label>
                   <select
-                    {...register("businessType", {
-                      required: "Required",
-                    })}
-                    className="mt-1.5 w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm outline-none dark:border-neutral-800 dark:bg-[#171717]"
+                    {...register("businessType", { required: "Required" })}
+                    className="mt-1 w-full rounded-xl border border-slate-200 bg-[#faf8f3]/50 px-3.5 py-2.5 text-xs outline-none transition focus:border-[#c59b27]"
                   >
                     <option value="">Select type</option>
                     <option value="proprietorship">Proprietorship</option>
                     <option value="partnership">Partnership</option>
                     <option value="llp">LLP</option>
-                    <option value="private_limited">
-                      Private Limited
-                    </option>
+                    <option value="private_limited">Private Limited</option>
                   </select>
-
-                  {errors.businessType && (
-                    <p className="mt-1 text-xs font-medium text-red-500">
-                      {errors.businessType.message}
-                    </p>
-                  )}
+                  {errors.businessType && <p className="mt-1 text-[11px] text-rose-500">{errors.businessType.message}</p>}
                 </div>
 
                 <div>
-                  <label className="text-xs font-bold uppercase tracking-wider text-gray-500">
-                    Country
-                  </label>
-
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Country</label>
                   <select
-                    {...register("country", {
-                      required: "Required",
-                    })}
-                    className="mt-1.5 w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm outline-none dark:border-neutral-800 dark:bg-[#171717]"
+                    {...register("country", { required: "Required" })}
+                    className="mt-1 w-full rounded-xl border border-slate-200 bg-[#faf8f3]/50 px-3.5 py-2.5 text-xs outline-none transition focus:border-[#c59b27]"
                   >
                     <option value="India">India</option>
                     <option value="US">United States</option>
@@ -570,131 +463,70 @@ function AddClientPage() {
                 </div>
 
                 <div>
-                  <label className="text-xs font-bold uppercase tracking-wider text-gray-500">
-                    Business Email
-                  </label>
-
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Business Email</label>
                   <input
                     type="email"
                     placeholder="contact@abc.com"
-                    {...register("businessEmail", {
-                      required: "Required",
-                      pattern: {
-                        value: /^\S+@\S+$/i,
-                        message: "Invalid email",
-                      },
-                    })}
-                    className="mt-1.5 w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm outline-none transition focus:border-indigo-500 dark:border-neutral-800 dark:bg-[#171717]"
+                    {...register("businessEmail", { required: "Required", pattern: { value: /^\S+@\S+$/i, message: "Invalid email" } })}
+                    className="mt-1 w-full rounded-xl border border-slate-200 bg-[#faf8f3]/50 px-3.5 py-2.5 text-xs outline-none transition focus:border-[#c59b27]"
                   />
-
-                  {errors.businessEmail && (
-                    <p className="mt-1 text-xs font-medium text-red-500">
-                      {errors.businessEmail.message}
-                    </p>
-                  )}
+                  {errors.businessEmail && <p className="mt-1 text-[11px] text-rose-500">{errors.businessEmail.message}</p>}
                 </div>
 
                 <div>
-                  <label className="text-xs font-bold uppercase tracking-wider text-gray-500">
-                    Business Phone
-                  </label>
-
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Business Phone</label>
                   <input
                     type="tel"
                     placeholder="+91 XXXXX XXXXX"
-                    {...register("businessPhone", {
-                      required: "Required",
-                    })}
-                    className="mt-1.5 w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm outline-none transition focus:border-indigo-500 dark:border-neutral-800 dark:bg-[#171717]"
+                    {...register("businessPhone", { required: "Required" })}
+                    className="mt-1 w-full rounded-xl border border-slate-200 bg-[#faf8f3]/50 px-3.5 py-2.5 text-xs outline-none transition focus:border-[#c59b27]"
                   />
-
-                  {errors.businessPhone && (
-                    <p className="mt-1 text-xs font-medium text-red-500">
-                      {errors.businessPhone.message}
-                    </p>
-                  )}
+                  {errors.businessPhone && <p className="mt-1 text-[11px] text-rose-500">{errors.businessPhone.message}</p>}
                 </div>
               </div>
             )}
 
             {/* STEP 1: OWNER DETAILS */}
             {currentStep === 1 && (
-              <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 animate-in fade-in slide-in-from-right-4 duration-300">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div>
-                  <label className="text-xs font-bold uppercase tracking-wider text-gray-500">
-                    Owner Name
-                  </label>
-
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Owner Name</label>
                   <input
                     type="text"
                     placeholder="Full name"
-                    {...register("ownerName", {
-                      required: "Required",
-                    })}
-                    className="mt-1.5 w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm outline-none focus:border-indigo-500 dark:border-neutral-800 dark:bg-[#171717]"
+                    {...register("ownerName", { required: "Required" })}
+                    className="mt-1 w-full rounded-xl border border-slate-200 bg-[#faf8f3]/50 px-3.5 py-2.5 text-xs outline-none transition focus:border-[#c59b27]"
                   />
-
-                  {errors.ownerName && (
-                    <p className="mt-1 text-xs text-red-500">
-                      {errors.ownerName.message}
-                    </p>
-                  )}
+                  {errors.ownerName && <p className="mt-1 text-[11px] text-rose-500">{errors.ownerName.message}</p>}
                 </div>
 
                 <div>
-                  <label className="text-xs font-bold uppercase tracking-wider text-gray-500">
-                    Owner Email
-                  </label>
-
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Owner Email</label>
                   <input
                     type="email"
                     placeholder="owner@example.com"
-                    {...register("ownerEmail", {
-                      required: "Required",
-                      pattern: {
-                        value: /^\S+@\S+$/i,
-                        message: "Invalid email",
-                      },
-                    })}
-                    className="mt-1.5 w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm outline-none focus:border-indigo-500 dark:border-neutral-800 dark:bg-[#171717]"
+                    {...register("ownerEmail", { required: "Required", pattern: { value: /^\S+@\S+$/i, message: "Invalid email" } })}
+                    className="mt-1 w-full rounded-xl border border-slate-200 bg-[#faf8f3]/50 px-3.5 py-2.5 text-xs outline-none transition focus:border-[#c59b27]"
                   />
-
-                  {errors.ownerEmail && (
-                    <p className="mt-1 text-xs text-red-500">
-                      {errors.ownerEmail.message}
-                    </p>
-                  )}
+                  {errors.ownerEmail && <p className="mt-1 text-[11px] text-rose-500">{errors.ownerEmail.message}</p>}
                 </div>
 
                 <div>
-                  <label className="text-xs font-bold uppercase tracking-wider text-gray-500">
-                    Owner Phone
-                  </label>
-
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Owner Phone</label>
                   <input
                     type="tel"
                     placeholder="+91 XXXXX XXXXX"
-                    {...register("ownerPhone", {
-                      required: "Required",
-                    })}
-                    className="mt-1.5 w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm outline-none focus:border-indigo-500 dark:border-neutral-800 dark:bg-[#171717]"
+                    {...register("ownerPhone", { required: "Required" })}
+                    className="mt-1 w-full rounded-xl border border-slate-200 bg-[#faf8f3]/50 px-3.5 py-2.5 text-xs outline-none transition focus:border-[#c59b27]"
                   />
-
-                  {errors.ownerPhone && (
-                    <p className="mt-1 text-xs text-red-500">
-                      {errors.ownerPhone.message}
-                    </p>
-                  )}
+                  {errors.ownerPhone && <p className="mt-1 text-[11px] text-rose-500">{errors.ownerPhone.message}</p>}
                 </div>
 
                 <div>
-                  <label className="text-xs font-bold uppercase tracking-wider text-gray-500">
-                    Account Role
-                  </label>
-
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Account Role</label>
                   <select
                     {...register("ownerRole")}
-                    className="mt-1.5 w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm outline-none dark:border-neutral-800 dark:bg-[#171717]"
+                    className="mt-1 w-full rounded-xl border border-slate-200 bg-[#faf8f3]/50 px-3.5 py-2.5 text-xs outline-none transition focus:border-[#c59b27]"
                   >
                     <option value="owner">Owner</option>
                     <option value="admin">Administrator</option>
@@ -705,73 +537,44 @@ function AddClientPage() {
 
             {/* STEP 2: DOCUMENTS */}
             {currentStep === 2 && (
-              <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 animate-in fade-in slide-in-from-right-4 duration-300">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div>
-                  <label className="text-xs font-bold uppercase tracking-wider text-gray-500">
-                    PAN
-                  </label>
-
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">PAN</label>
                   <input
                     type="text"
                     placeholder="ABCDE1234F"
-                    {...register("pan", {
-                      required: "Required",
-                      pattern: {
-                        value: /^[A-Z]{5}[0-9]{4}[A-Z]{1}$/,
-                        message: "Invalid PAN format",
-                      },
-                    })}
-                    className="mt-1.5 w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm uppercase outline-none focus:border-indigo-500 dark:border-neutral-800 dark:bg-[#171717]"
+                    {...register("pan", { required: "Required", pattern: { value: /^[A-Z]{5}[0-9]{4}[A-Z]{1}$/, message: "Invalid PAN format" } })}
+                    className="mt-1 w-full rounded-xl border border-slate-200 bg-[#faf8f3]/50 px-3.5 py-2.5 text-xs uppercase outline-none transition focus:border-[#c59b27]"
                   />
-
-                  {errors.pan && (
-                    <p className="mt-1 text-xs text-red-500">
-                      {errors.pan.message}
-                    </p>
-                  )}
+                  {errors.pan && <p className="mt-1 text-[11px] text-rose-500">{errors.pan.message}</p>}
                 </div>
 
                 <div>
-                  <label className="text-xs font-bold uppercase tracking-wider text-gray-500">
-                    GSTIN (Optional)
-                  </label>
-
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">GSTIN (Optional)</label>
                   <input
                     type="text"
                     placeholder="22AAAAA0000A1Z5"
                     {...register("gstin")}
-                    className="mt-1.5 w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm uppercase outline-none focus:border-indigo-500 dark:border-neutral-800 dark:bg-[#171717]"
+                    className="mt-1 w-full rounded-xl border border-slate-200 bg-[#faf8f3]/50 px-3.5 py-2.5 text-xs uppercase outline-none transition focus:border-[#c59b27]"
                   />
                 </div>
 
                 <div>
-                  <label className="text-xs font-bold uppercase tracking-wider text-gray-500">
-                    Aadhaar (Optional)
-                  </label>
-
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Aadhaar (Optional)</label>
                   <input
                     type="text"
                     placeholder="XXXX XXXX XXXX"
                     {...register("aadhaar")}
-                    className="mt-1.5 w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm outline-none focus:border-indigo-500 dark:border-neutral-800 dark:bg-[#171717]"
+                    className="mt-1 w-full rounded-xl border border-slate-200 bg-[#faf8f3]/50 px-3.5 py-2.5 text-xs outline-none transition focus:border-[#c59b27]"
                   />
                 </div>
 
                 <div>
-                  <label className="text-xs font-bold uppercase tracking-wider text-gray-500">
-                    Client Agreement
-                  </label>
-
-                  <label className="mt-1.5 flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl border border-dashed border-gray-300 bg-gray-50 px-4 py-3 text-sm text-gray-500 transition hover:border-indigo-400 hover:text-indigo-600 dark:border-neutral-700 dark:bg-[#171717] dark:hover:border-indigo-500">
-                    <Upload size={16} />
-                    <span>Upload PDF/Word</span>
-
-                    <input
-                      type="file"
-                      accept=".pdf,.doc,.docx"
-                      {...register("agreement")}
-                      className="hidden"
-                    />
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Client Agreement</label>
+                  <label className="mt-1 flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl border border-dashed border-slate-200 bg-[#faf8f3]/50 px-3.5 py-2.5 text-xs text-slate-500 transition hover:border-[#c59b27]">
+                    <Upload size={14} />
+                    <span>Upload Document</span>
+                    <input type="file" accept=".pdf,.doc,.docx" {...register("agreement")} className="hidden" />
                   </label>
                 </div>
               </div>
@@ -779,66 +582,38 @@ function AddClientPage() {
 
             {/* STEP 3: SUBSCRIPTION */}
             {currentStep === 3 && (
-              <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 animate-in fade-in slide-in-from-right-4 duration-300">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div>
-                  <label className="text-xs font-bold uppercase tracking-wider text-gray-500">
-                    Plan Type
-                  </label>
-
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Plan Type</label>
                   <select
-                    {...register("plan", {
-                      required: "Required",
-                      onChange: handlePlanChange,
-                    })}
-                    className="mt-1.5 w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm outline-none dark:border-neutral-800 dark:bg-[#171717]"
+                    {...register("plan", { required: "Required", onChange: handlePlanChange })}
+                    className="mt-1 w-full rounded-xl border border-slate-200 bg-[#faf8f3]/50 px-3.5 py-2.5 text-xs outline-none transition focus:border-[#c59b27]"
                   >
                     <option value="">Select plan</option>
-                    <option value="overall">
-                      Overall Software
-                    </option>
-                    <option value="module">
-                      Module Based
-                    </option>
+                    <option value="overall">Overall Software</option>
+                    <option value="module">Module Based</option>
                   </select>
-
-                  {errors.plan && (
-                    <p className="mt-1 text-xs text-red-500">
-                      {errors.plan.message}
-                    </p>
-                  )}
+                  {errors.plan && <p className="mt-1 text-[11px] text-rose-500">{errors.plan.message}</p>}
                 </div>
 
                 <div>
-                  <label className="text-xs font-bold uppercase tracking-wider text-gray-500">
-                    Billing Cycle
-                  </label>
-
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Billing Cycle</label>
                   <select
-                    {...register("billingCycle", {
-                      required: "Required",
-                    })}
-                    className="mt-1.5 w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm outline-none dark:border-neutral-800 dark:bg-[#171717]"
+                    {...register("billingCycle", { required: "Required" })}
+                    className="mt-1 w-full rounded-xl border border-slate-200 bg-[#faf8f3]/50 px-3.5 py-2.5 text-xs outline-none transition focus:border-[#c59b27]"
                   >
                     <option value="">Select cycle</option>
                     <option value="annual">Annual</option>
                     <option value="monthly">Monthly</option>
                   </select>
-
-                  {errors.billingCycle && (
-                    <p className="mt-1 text-xs text-red-500">
-                      {errors.billingCycle.message}
-                    </p>
-                  )}
+                  {errors.billingCycle && <p className="mt-1 text-[11px] text-rose-500">{errors.billingCycle.message}</p>}
                 </div>
 
                 <div>
-                  <label className="text-xs font-bold uppercase tracking-wider text-gray-500">
-                    Status
-                  </label>
-
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Status</label>
                   <select
                     {...register("subscriptionStatus")}
-                    className="mt-1.5 w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm outline-none dark:border-neutral-800 dark:bg-[#171717]"
+                    className="mt-1 w-full rounded-xl border border-slate-200 bg-[#faf8f3]/50 px-3.5 py-2.5 text-xs outline-none transition focus:border-[#c59b27]"
                   >
                     <option value="active">Active</option>
                     <option value="pending">Pending</option>
@@ -846,145 +621,69 @@ function AddClientPage() {
                 </div>
 
                 <div>
-                  <label className="text-xs font-bold uppercase tracking-wider text-gray-500">
-                    Start Date
-                  </label>
-
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Start Date</label>
                   <input
                     type="date"
-                    {...register("startDate", {
-                      required: "Required",
-                    })}
-                    className="mt-1.5 w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm outline-none dark:border-neutral-800 dark:bg-[#171717]"
+                    {...register("startDate", { required: "Required" })}
+                    className="mt-1 w-full rounded-xl border border-slate-200 bg-[#faf8f3]/50 px-3.5 py-2.5 text-xs outline-none transition focus:border-[#c59b27]"
                   />
-
-                  {errors.startDate && (
-                    <p className="mt-1 text-xs text-red-500">
-                      {errors.startDate.message}
-                    </p>
-                  )}
+                  {errors.startDate && <p className="mt-1 text-[11px] text-rose-500">{errors.startDate.message}</p>}
                 </div>
               </div>
             )}
 
             {/* STEP 4: DOMAIN & MODULES */}
             {currentStep === 4 && (
-              <div className="animate-in fade-in slide-in-from-right-4 duration-300">
-                <div className="mb-6">
-                  <label className="text-xs font-bold uppercase tracking-wider text-gray-500">
-                    Business Domain
-                  </label>
-
+              <div>
+                <div className="mb-4">
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Business Domain</label>
                   <select
-                    {...register("domain", {
-                      required: "Required",
-                    })}
-                    className="mt-1.5 w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm outline-none focus:border-indigo-500 dark:border-neutral-800 dark:bg-[#171717] sm:max-w-md"
+                    {...register("domain", { required: "Required" })}
+                    className="mt-1 w-full rounded-xl border border-slate-200 bg-[#faf8f3]/50 px-3.5 py-2.5 text-xs outline-none transition focus:border-[#c59b27] sm:max-w-md"
                   >
-                    <option value="jewelry">
-                      Jewelry
-                    </option>
+                    <option value="jewelry">Jewelry</option>
                   </select>
-
-                  {errors.domain && (
-                    <p className="mt-1 text-xs text-red-500">
-                      {errors.domain.message}
-                    </p>
-                  )}
                 </div>
 
-                <div className="mb-4 flex items-center justify-between">
-                  <div>
-                    <h2 className="text-sm font-bold text-gray-900 dark:text-white">
-                      Enabled Modules
-                    </h2>
-
-                    <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                      Select the modules this client will have access to.
-                    </p>
-                  </div>
-
+                <div className="mb-3 flex items-center justify-between">
+                  <h2 className="text-xs font-bold text-slate-900">Enabled Modules</h2>
                   {selectedPlan === "overall" && (
-                    <span className="rounded-lg bg-indigo-50 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-400">
+                    <span className="rounded-md bg-emerald-50 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-emerald-600">
                       Full Software
                     </span>
                   )}
                 </div>
 
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-4">
                   {JEWELRY_MODULES.map((module) => {
                     const Icon = module.icon;
-                    const isChecked =
-                      selectedModules[module.key] === true;
+                    const isChecked = selectedModules[module.key] === true;
 
                     return (
                       <label
                         key={module.key}
-                        className={`group relative flex cursor-pointer items-start gap-3 rounded-2xl border p-4 transition ${
+                        className={`flex cursor-pointer items-center justify-between rounded-xl border p-3 transition ${
                           isChecked
-                            ? "border-indigo-300 bg-indigo-50/60 dark:border-indigo-500/40 dark:bg-indigo-500/10"
-                            : "border-gray-200 bg-gray-50/50 hover:border-gray-300 dark:border-neutral-800 dark:bg-[#171717] dark:hover:border-neutral-700"
-                        } ${
-                          selectedPlan === "overall"
-                            ? "cursor-not-allowed opacity-80"
-                            : ""
-                        }`}
+                            ? "border-[#c59b27]/40 bg-[#faf8f3]"
+                            : "border-slate-200/70 bg-white"
+                        } ${selectedPlan === "overall" ? "cursor-not-allowed opacity-80" : ""}`}
                       >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${isChecked ? "bg-[#c59b27] text-white" : "bg-slate-100 text-slate-400"}`}>
+                            <Icon size={14} />
+                          </div>
+                          <span className="text-xs font-bold text-slate-900 truncate">{module.label}</span>
+                        </div>
                         <input
                           type="checkbox"
                           {...register(`modules.${module.key}`)}
                           disabled={selectedPlan === "overall"}
-                          className="sr-only"
+                          className="h-3.5 w-3.5 rounded border-slate-300 text-[#c59b27] focus:ring-[#c59b27]"
                         />
-
-                        <div
-                          className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${
-                            isChecked
-                              ? "bg-indigo-600 text-white"
-                              : "bg-gray-200 text-gray-500 dark:bg-neutral-800 dark:text-gray-400"
-                          }`}
-                        >
-                          <Icon size={17} />
-                        </div>
-
-                        <div className="min-w-0 flex-1">
-                          <p className="text-sm font-bold text-gray-900 dark:text-white">
-                            {module.label}
-                          </p>
-
-                          <p className="mt-0.5 text-[11px] leading-4 text-gray-500 dark:text-gray-400">
-                            {module.description}
-                          </p>
-                        </div>
-
-                        <div
-                          className={`mt-1 flex h-4 w-4 shrink-0 items-center justify-center rounded border ${
-                            isChecked
-                              ? "border-indigo-600 bg-indigo-600 text-white"
-                              : "border-gray-300 dark:border-neutral-700"
-                          }`}
-                        >
-                          {isChecked && (
-                            <Check size={11} strokeWidth={3} />
-                          )}
-                        </div>
                       </label>
                     );
                   })}
                 </div>
-
-                {selectedPlan === "module" && (
-                  <p className="mt-4 text-xs font-medium text-gray-500 dark:text-gray-400">
-                    Module Based plan selected — choose the modules required
-                    by this client.
-                  </p>
-                )}
-
-                {selectedPlan === "overall" && (
-                  <p className="mt-4 text-xs font-medium text-indigo-600 dark:text-indigo-400">
-                    Overall Software includes all available Jewelry modules.
-                  </p>
-                )}
               </div>
             )}
           </div>
