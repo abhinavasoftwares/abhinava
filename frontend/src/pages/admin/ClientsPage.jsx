@@ -47,19 +47,42 @@ function ClientsPage() {
       try {
         setLoading(true);
         setError("");
-        const response = await fetch(`${API_URL}/clients`);
-        if (!response.ok) throw new Error("Failed to fetch clients");
+
+        const response = await fetch(`${API_URL}/clients`, {
+          credentials: "include",
+        });
+
+        if (response.status === 401) {
+          navigate("/login", { replace: true });
+          return;
+        }
+
+        if (response.status === 403) {
+          throw new Error(
+            "You do not have permission to view clients."
+          );
+        }
+
+        if (!response.ok) {
+          throw new Error(
+            `Failed to fetch clients (${response.status})`
+          );
+        }
+
         const data = await response.json();
         setClients(data.clients);
       } catch (error) {
         console.error("Error fetching clients:", error);
-        setError("Unable to load clients.");
+        setError(
+          error.message || "Unable to load clients."
+        );
       } finally {
         setLoading(false);
       }
     };
+
     fetchClients();
-  }, []);
+  }, [navigate]);
 
   const filteredClients = useMemo(() => {
     return clients.filter((client) => {

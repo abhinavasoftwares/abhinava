@@ -25,3 +25,13 @@ class ClientCreate(BaseModel):
 
     domain: str | None = None
     modules: dict = {}
+
+    # ---------------------------------------------------------
+    # CLIENT-OWNED FIREBASE PROJECT
+    # ---------------------------------------------------------
+
+    firebase_project_id: str
+
+
+class FirebaseConnectionRequest(BaseModel):
+    firebase_project_id: str

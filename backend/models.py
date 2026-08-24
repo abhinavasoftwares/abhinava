@@ -57,6 +57,10 @@ class Client(Base):
     )
 
     business_name: Mapped[str] = mapped_column(String(200))
+    logo_url: Mapped[str | None] = mapped_column(
+        String(500),
+        nullable=True,
+    )
     legal_business_name: Mapped[str] = mapped_column(String(250))
     business_type: Mapped[str] = mapped_column(String(50))
     country: Mapped[str] = mapped_column(String(100))
@@ -84,7 +88,12 @@ class Client(Base):
         String(255),
         nullable=True,
     )
-
+    crm_domain: Mapped[str | None] = mapped_column(
+        String(255),
+        unique=True,
+        nullable=True,
+        index=True,
+    )
     modules: Mapped[dict] = mapped_column(
         JSON,
         nullable=False,

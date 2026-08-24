@@ -1,11 +1,42 @@
-import { Navigate, Route, Routes } from "react-router-dom";
+import {
+  Navigate,
+  Outlet,
+  Route,
+  Routes,
+} from "react-router-dom";
+
 import ProtectedRoute from "./components/ProtectedRoute";
-import {AdminLayout,Dashboard} from "./layouts/AdminLayout";
+
+import {
+  AdminLayout,
+  Dashboard,
+} from "./layouts/AdminLayout";
+
 import ClientsPage from "./pages/admin/ClientsPage";
 import AddClientPage from "./pages/admin/AddClientPage";
 import ClientDetailsPage from "./pages/admin/ClientDetailsPage";
+
+import CrmProtectedRoute from "./crm/components/CrmProtectedRoute";
+import CrmLayout from "./crm/layouts/CrmLayout";
+import CrmDashboardPage from "./crm/pages/CrmDashboardPage";
+
 import GoogleLoginTest from "./pages/GoogleLoginTest";
 import LoginPage from "./pages/LoginPage";
+
+import { AuthProvider } from "./context/AuthContext";
+
+import { TenantProvider } from "./crm/context/TenantContext";
+import { CrmAuthProvider } from "./crm/context/CrmAuthContext";
+
+import CrmLoginPage from "./crm/pages/CrmLoginPage";
+
+import KareegarCalculationSettingsPage from "./crm/modules/kareegar/pages/KareegarCalculationSettingsPage";
+import KareegarManagementPage from "./crm/modules/kareegar/pages/KareegarManagementPage";
+import CrmKareegarDirectoryPage from "./crm/pages/CrmKareegarDirectoryPage";
+
+import CrmSettingsPage from "./crm/pages/CrmSettingsPage";
+import CrmKareegarSettingsPage from "./crm/pages/CrmKareegarSettingsPage";
+
 import {
   Users,
   UserPlus,
@@ -18,6 +49,7 @@ import {
   ArrowRight,
   Activity,
 } from "lucide-react";
+
 
 function AdminHome() {
   const clientMetrics = [
@@ -78,20 +110,28 @@ function AdminHome() {
   ];
 
   return (
-    // 'h-full overflow-y-auto' locks this view into the AdminLayout without breaking the screen height
     <div className="h-full w-full overflow-y-auto bg-[#faf8f3] p-4 pb-12 sm:p-6 lg:p-8 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
       <div className="mx-auto flex max-w-7xl flex-col gap-8">
-        
+
         {/* ---------------- PAGE HEADER ---------------- */}
+
         <div className="flex flex-col gap-3">
           <div className="inline-flex items-center gap-1.5 self-start rounded-lg bg-[#c59b27]/10 px-2.5 py-1 text-xs font-bold uppercase tracking-wider text-[#c59b27]">
-            <Activity size={14} strokeWidth={2.5} />
-            <span>Live Overview</span>
+            <Activity
+              size={14}
+              strokeWidth={2.5}
+            />
+
+            <span>
+              Live Overview
+            </span>
           </div>
+
           <div>
             <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
               Dashboard
             </h1>
+
             <p className="mt-1 text-sm font-medium text-slate-500">
               Real-time metrics and platform analytics for Abhinava.
             </p>
@@ -99,154 +139,449 @@ function AdminHome() {
         </div>
 
         {/* ---------------- CLIENT METRICS ---------------- */}
+
         <section>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {clientMetrics.map((metric) => (
-              <div
-                key={metric.label}
-                className="group relative flex flex-col justify-between overflow-hidden rounded-[24px] border border-slate-200/60 bg-white p-5 shadow-sm transition-all hover:-translate-y-1 hover:shadow-md"
-              >
-                <div className="flex items-start justify-between">
-                  <div>
-                    <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400">
-                      {metric.label}
-                    </p>
-                    <p className="mt-1.5 text-3xl font-bold tracking-tight text-slate-900">
-                      {metric.value}
-                    </p>
+
+            {clientMetrics.map(
+              (metric) => (
+                <div
+                  key={metric.label}
+                  className="group relative flex flex-col justify-between overflow-hidden rounded-[24px] border border-slate-200/60 bg-white p-5 shadow-sm transition-all hover:-translate-y-1 hover:shadow-md"
+                >
+
+                  <div className="flex items-start justify-between">
+
+                    <div>
+                      <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400">
+                        {metric.label}
+                      </p>
+
+                      <p className="mt-1.5 text-3xl font-bold tracking-tight text-slate-900">
+                        {metric.value}
+                      </p>
+                    </div>
+
+                    <div
+                      className={`flex h-12 w-12 items-center justify-center rounded-[16px] transition-transform group-hover:scale-105 ${metric.bg}`}
+                    >
+                      <metric.icon
+                        size={22}
+                        className={metric.color}
+                        strokeWidth={2}
+                      />
+                    </div>
+
                   </div>
-                  <div
-                    className={`flex h-12 w-12 items-center justify-center rounded-[16px] transition-transform group-hover:scale-105 ${metric.bg}`}
-                  >
-                    <metric.icon size={22} className={metric.color} strokeWidth={2} />
-                  </div>
+
+                  {metric.trend && (
+                    <div className="mt-5 flex items-center gap-1.5 text-xs font-bold text-emerald-600">
+
+                      <TrendingUp
+                        size={14}
+                        strokeWidth={2.5}
+                      />
+
+                      <span>
+                        {metric.trend}
+                      </span>
+
+                    </div>
+                  )}
+
                 </div>
-                {metric.trend && (
-                  <div className="mt-5 flex items-center gap-1.5 text-xs font-bold text-emerald-600">
-                    <TrendingUp size={14} strokeWidth={2.5} />
-                    <span>{metric.trend}</span>
-                  </div>
-                )}
-              </div>
-            ))}
+              )
+            )}
+
           </div>
         </section>
 
         {/* ---------------- FINANCIAL METRICS ---------------- */}
+
         <section>
+
           <h2 className="mb-4 text-[11px] font-bold uppercase tracking-widest text-slate-400">
             Financial Performance
           </h2>
+
           <div className="grid gap-4 sm:grid-cols-3">
-            {financialMetrics.map((metric) => (
-              <div
-                key={metric.label}
-                className={`group relative overflow-hidden rounded-[24px] border p-5 shadow-sm transition-all hover:-translate-y-1 hover:shadow-md ${
-                  metric.highlight
-                    ? "border-[#c59b27]/20 bg-gradient-to-br from-[#faf8f3] to-white"
-                    : "border-slate-200/60 bg-white"
-                }`}
-              >
-                <div className="flex items-center gap-4">
-                  <div
-                    className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-[18px] transition-transform group-hover:scale-105 ${metric.bg}`}
-                  >
-                    <metric.icon size={26} className={metric.color} strokeWidth={2} />
+
+            {financialMetrics.map(
+              (metric) => (
+                <div
+                  key={metric.label}
+                  className={`group relative overflow-hidden rounded-[24px] border p-5 shadow-sm transition-all hover:-translate-y-1 hover:shadow-md ${
+                    metric.highlight
+                      ? "border-[#c59b27]/20 bg-gradient-to-br from-[#faf8f3] to-white"
+                      : "border-slate-200/60 bg-white"
+                  }`}
+                >
+
+                  <div className="flex items-center gap-4">
+
+                    <div
+                      className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-[18px] transition-transform group-hover:scale-105 ${metric.bg}`}
+                    >
+                      <metric.icon
+                        size={26}
+                        className={metric.color}
+                        strokeWidth={2}
+                      />
+                    </div>
+
+                    <div>
+
+                      <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400">
+                        {metric.label}
+                      </p>
+
+                      <p className="mt-1 text-2xl font-bold tracking-tight text-slate-900">
+                        {metric.value}
+                      </p>
+
+                    </div>
+
                   </div>
-                  <div>
-                    <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400">
-                      {metric.label}
-                    </p>
-                    <p className="mt-1 text-2xl font-bold tracking-tight text-slate-900">
-                      {metric.value}
-                    </p>
-                  </div>
+
                 </div>
-              </div>
-            ))}
+              )
+            )}
+
           </div>
+
         </section>
 
         {/* ---------------- IMMEDIATE ACTIONS ---------------- */}
+
         <section>
+
           <div className="mb-4 flex items-center justify-between">
+
             <h2 className="text-[11px] font-bold uppercase tracking-widest text-slate-400">
               Pending Tasks
             </h2>
+
             <button className="flex items-center gap-1.5 text-xs font-bold text-[#c59b27] transition hover:text-slate-900">
-              View all <ArrowRight size={14} strokeWidth={2.5} />
+
+              View all
+
+              <ArrowRight
+                size={14}
+                strokeWidth={2.5}
+              />
+
             </button>
+
           </div>
 
           <div className="flex flex-col items-center justify-center rounded-[24px] border border-dashed border-slate-200 bg-white py-12 text-center shadow-sm transition-colors hover:border-slate-300">
+
             <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-[18px] bg-emerald-50">
-              <CheckCircle2 size={28} className="text-emerald-500" strokeWidth={2.5} />
+
+              <CheckCircle2
+                size={28}
+                className="text-emerald-500"
+                strokeWidth={2.5}
+              />
+
             </div>
+
             <h3 className="text-base font-bold text-slate-900">
               You're all caught up!
             </h3>
+
             <p className="mt-1.5 max-w-sm text-sm font-medium text-slate-500">
               No immediate actions required. Your workspace is currently up to date.
             </p>
+
           </div>
+
         </section>
-        
+
       </div>
     </div>
   );
 }
 
+
+/* ============================================================
+   ADMIN AUTH LAYOUT
+   ============================================================ */
+
+function AdminAuthLayout() {
+  return (
+    <AuthProvider>
+      <ProtectedRoute>
+        <AdminLayout>
+          <Outlet />
+        </AdminLayout>
+      </ProtectedRoute>
+    </AuthProvider>
+  );
+}
+
+
+/* ============================================================
+   CRM APP LAYOUT
+   ============================================================ */
+
+function CrmAppLayout() {
+  return (
+    <TenantProvider>
+      <CrmAuthProvider>
+        <Outlet />
+      </CrmAuthProvider>
+    </TenantProvider>
+  );
+}
+
+
+/* ============================================================
+   APPLICATION ROUTES
+   ============================================================ */
+
 function App() {
   return (
     <Routes>
-      <Route path="/login" element={<LoginPage />} />
+
+      {/* ======================================================
+          ABHINAVA PLATFORM LOGIN
+          ====================================================== */}
+
       <Route
-        path="/admin"
+        path="/login"
+        element={<LoginPage />}
+      />
+
+
+      {/* ======================================================
+          ABHINAVA PLATFORM
+          ====================================================== */}
+
+      <Route element={<AdminAuthLayout />}>
+
+        <Route
+          path="/admin"
+          element={<Dashboard />}
+        />
+
+        <Route
+          path="/admin/clients"
+          element={<ClientsPage />}
+        />
+
+        <Route
+          path="/admin/clients/new"
+          element={<AddClientPage />}
+        />
+
+        <Route
+          path="/admin/clients/:clientId"
+          element={<ClientDetailsPage />}
+        />
+
+      </Route>
+
+
+      {/* ======================================================
+          GOOGLE LOGIN TEST
+          ====================================================== */}
+
+      <Route
+        path="/test/google-login"
+        element={<GoogleLoginTest />}
+      />
+
+
+      {/* ======================================================
+          CLIENT CRM
+          ====================================================== */}
+
+      <Route element={<CrmAppLayout />}>
+
+        {/* ------------------------------------------------------
+            CRM LOGIN
+        ------------------------------------------------------ */}
+
+        <Route
+          path="/crm"
+          element={<CrmLoginPage />}
+        />
+
+
+        {/* ------------------------------------------------------
+            CRM DASHBOARD
+        ------------------------------------------------------ */}
+
+        <Route
+          path="/crm/dashboard"
+          element={
+            <CrmProtectedRoute>
+              <CrmLayout>
+                <CrmDashboardPage />
+              </CrmLayout>
+            </CrmProtectedRoute>
+          }
+        />
+
+
+        {/* ======================================================
+            KAREEGAR MANAGEMENT
+        ====================================================== */}
+
+        {/* ------------------------------------------------------
+            KAREEGAR FORMS
+
+            One page contains:
+            - B2B
+              - Assignment
+              - Return
+
+            - B2J
+              - Assignment
+              - Return
+        ------------------------------------------------------ */}
+
+        <Route
+          path="/crm/kareegar/forms"
+          element={
+            <CrmProtectedRoute>
+              <CrmLayout>
+                <KareegarManagementPage />
+              </CrmLayout>
+            </CrmProtectedRoute>
+          }
+        />
+
+
+        {/* ------------------------------------------------------
+            KAREEGAR LEDGER
+        ------------------------------------------------------ */}
+
+        <Route
+          path="/crm/kareegar/ledger"
+          element={
+            <CrmProtectedRoute>
+              <CrmLayout>
+                <div className="flex h-full w-full items-center justify-center bg-white p-6">
+                  <div className="rounded-2xl border border-[#E2E8E4] bg-[#F5F7F5] px-8 py-6 text-center">
+                    <h1 className="text-lg font-bold text-[#1B241E]">
+                      Kareegar Ledger
+                    </h1>
+
+                    <p className="mt-2 text-sm font-medium text-[#68786D]">
+                      Ledger module will be implemented next.
+                    </p>
+                  </div>
+                </div>
+              </CrmLayout>
+            </CrmProtectedRoute>
+          }
+        />
+
+
+        {/* ------------------------------------------------------
+            KAREEGAR REPORTS
+        ------------------------------------------------------ */}
+
+        <Route
+          path="/crm/kareegar/reports"
+          element={
+            <CrmProtectedRoute>
+              <CrmLayout>
+                <div className="flex h-full w-full items-center justify-center bg-white p-6">
+                  <div className="rounded-2xl border border-[#E2E8E4] bg-[#F5F7F5] px-8 py-6 text-center">
+                    <h1 className="text-lg font-bold text-[#1B241E]">
+                      Kareegar Reports
+                    </h1>
+
+                    <p className="mt-2 text-sm font-medium text-[#68786D]">
+                      Reports module will be implemented next.
+                    </p>
+                  </div>
+                </div>
+              </CrmLayout>
+            </CrmProtectedRoute>
+          }
+        />
+
+
+        {/* ======================================================
+            CRM SETTINGS
+        ====================================================== */}
+
+        <Route
+          path="/crm/settings"
+          element={
+            <CrmProtectedRoute>
+              <CrmLayout>
+                <CrmSettingsPage />
+              </CrmLayout>
+            </CrmProtectedRoute>
+          }
+        />
+
+
+        {/* ------------------------------------------------------
+            KAREEGAR SETTINGS
+        ------------------------------------------------------ */}
+
+        <Route
+          path="/crm/settings/kareegar"
+          element={
+            <CrmProtectedRoute>
+              <CrmLayout>
+                <CrmKareegarSettingsPage />
+              </CrmLayout>
+            </CrmProtectedRoute>
+          }
+        />
+
+
+        {/* ------------------------------------------------------
+            KAREEGAR CALCULATION SETTINGS
+        ------------------------------------------------------ */}
+
+        <Route
+          path="/crm/kareegar/settings/calculations"
+          element={
+            <CrmProtectedRoute>
+              <CrmLayout>
+                <KareegarCalculationSettingsPage />
+              </CrmLayout>
+            </CrmProtectedRoute>
+          }
+        />
+        <Route
+          path="/crm/settings/kareegar/directory"
+          element={
+            <CrmProtectedRoute>
+              <CrmLayout>
+                <CrmKareegarDirectoryPage />
+              </CrmLayout>
+            </CrmProtectedRoute>
+          }
+        />
+      </Route>
+
+
+      {/* ======================================================
+          FALLBACK
+      ====================================================== */}
+
+      <Route
+        path="*"
         element={
-          <ProtectedRoute>
-            <AdminLayout>
-              <AdminHome />
-            </AdminLayout>
-          </ProtectedRoute>
+          <Navigate
+            to="/admin"
+            replace
+          />
         }
       />
 
-      <Route
-        path="/admin/clients"
-        element={
-          <ProtectedRoute>
-            <AdminLayout>
-              <ClientsPage />
-            </AdminLayout>
-          </ProtectedRoute>
-        }
-      />
-
-      <Route
-        path="/admin/clients/new"
-        element={
-          <ProtectedRoute>
-            <AdminLayout>
-              <AddClientPage />
-            </AdminLayout>
-          </ProtectedRoute>
-        }
-      />
-
-      <Route
-        path="/admin/clients/:clientId"
-        element={
-          <ProtectedRoute>
-            <AdminLayout>
-              <ClientDetailsPage />
-            </AdminLayout>
-          </ProtectedRoute>
-        }
-      />
-      <Route path="/test/google-login" element={<GoogleLoginTest />} />
-      <Route path="*" element={<Navigate to="/admin" replace />} />
     </Routes>
   );
 }
+
 
 export default App;

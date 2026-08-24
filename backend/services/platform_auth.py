@@ -10,6 +10,9 @@ from services.platform_oidc import (
     build_google_authorization_url,
     get_google_oidc_configuration,
 )
+from services.platform_dependencies import (
+    get_current_platform_user,
+)
 
 
 router = APIRouter(

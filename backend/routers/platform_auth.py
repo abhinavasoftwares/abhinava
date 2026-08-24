@@ -26,6 +26,9 @@ from services.platform_session import (
     get_active_platform_session,
     revoke_platform_session,
 )
+from services.platform_dependencies import (
+    get_current_platform_user,
+)
 
 
 router = APIRouter(
@@ -89,46 +92,11 @@ def _write_audit_event(
 # ============================================================================
 
 @router.get("/me")
-async def get_current_platform_user(
-    request: Request,
-    db: Session = Depends(get_db),
+async def get_current_platform_user_info(
+    platform_user: PlatformUser = Depends(
+        get_current_platform_user
+    ),
 ):
-    raw_session_token = request.cookies.get(
-        SESSION_COOKIE_NAME
-    )
-
-    if not raw_session_token:
-        raise HTTPException(
-            status_code=401,
-            detail="Not authenticated.",
-        )
-
-    session = get_active_platform_session(
-        db=db,
-        raw_token=raw_session_token,
-    )
-
-    if session is None:
-        raise HTTPException(
-            status_code=401,
-            detail="Session is invalid or expired.",
-        )
-
-    platform_user = (
-        db.query(PlatformUser)
-        .filter(
-            PlatformUser.id
-            == session.platform_user_id
-        )
-        .first()
-    )
-
-    if platform_user is None:
-        raise HTTPException(
-            status_code=401,
-            detail="Platform user no longer exists.",
-        )
-
     return {
         "id": str(platform_user.id),
         "email": platform_user.email,

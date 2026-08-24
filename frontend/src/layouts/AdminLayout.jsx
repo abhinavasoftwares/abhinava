@@ -1,6 +1,5 @@
 import { useState, useEffect } from "react";
-import { NavLink, useLocation } from "react-router-dom";
-import { useAuth } from "../context/AuthContext";
+import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
   TrendingUp,
   Plus,
@@ -84,9 +83,10 @@ function Sparkline() {
 // 1. ADMIN LAYOUT
 // ============================================================================
 export function AdminLayout({ children }) {
-  const { user, logout } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const location = useLocation();
+  const navigate = useNavigate();
+  const API_URL = import.meta.env.VITE_API_BASE_URL;
 
   useEffect(() => {
     setSidebarOpen(false);
@@ -99,8 +99,21 @@ export function AdminLayout({ children }) {
     { name: "Preferences", path: "/admin/settings", icon: Settings },
   ];
 
+    const handleLogout = async () => {
+    try {
+      await fetch(`${API_URL}/auth/logout`, {
+        method: "POST",
+        credentials: "include",
+      });
+    } catch (error) {
+      console.error("Logout request failed:", error);
+    } finally {
+      navigate("/login", { replace: true });
+    }
+  };
+
   return (
-    <div className="flex min-h-screen w-full flex-col lg:flex-row lg:h-screen lg:overflow-hidden bg-slate-50/60 font-sans text-slate-900">
+    <div className="flex min-h-screen w-full flex-col lg:flex-row lg:h-screen lg:overflow-hidden bg-white font-sans text-slate-900">
       
       {/* Mobile Overlay */}
       {sidebarOpen && (
@@ -119,7 +132,7 @@ export function AdminLayout({ children }) {
         <div className="flex h-[72px] shrink-0 items-center justify-between px-6 border-b border-slate-100">
           <div className="flex items-center gap-2.5">
             <Gem size={18} color={GOLD} strokeWidth={2.5} />
-            <span className="text-lg font-bold tracking-tight text-slate-900">Abhinava</span>
+            <span className="text-lg font-bold tracking-tight text-slate-900">Abhinava Softwares</span>
           </div>
           <button onClick={() => setSidebarOpen(false)} className="text-slate-400 lg:hidden">
             <X size={20} strokeWidth={2} />
@@ -155,7 +168,8 @@ export function AdminLayout({ children }) {
 
         <div className="shrink-0 p-4 border-t border-slate-100">
           <button type="button"
-            onClick={logout} className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-slate-500 transition-all hover:bg-red-50 hover:text-red-600">
+                  onClick={handleLogout}
+                  className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-slate-500 transition-all hover:bg-red-50 hover:text-red-600">
             <LogOut size={16} strokeWidth={2} />
             <span>Sign Out</span>
           </button>
