@@ -2,6 +2,7 @@ import {
   addDoc,
   collection,
   doc,
+  getDocs,
   onSnapshot,
   orderBy,
   query,
@@ -15,10 +16,8 @@ const COLLECTION_NAME =
   "kareegarOrnamentCategories";
 
 function getCollection() {
-  const firestore = getCrmFirestore();
-
   return collection(
-    firestore,
+    getCrmFirestore(),
     COLLECTION_NAME
   );
 }
@@ -35,11 +34,12 @@ export function subscribeToKareegarOrnamentCategories(
   return onSnapshot(
     categoriesQuery,
     (snapshot) => {
-      const categories =
-        snapshot.docs.map((item) => ({
+      const categories = snapshot.docs.map(
+        (item) => ({
           id: item.id,
           ...item.data(),
-        }));
+        })
+      );
 
       callback(categories);
     },
@@ -57,7 +57,8 @@ export function subscribeToKareegarOrnamentCategories(
 export async function createKareegarOrnamentCategory(
   name
 ) {
-  const trimmedName = name.trim();
+  const trimmedName =
+    String(name || "").trim();
 
   if (!trimmedName) {
     throw new Error(
@@ -65,20 +66,41 @@ export async function createKareegarOrnamentCategory(
     );
   }
 
-  // Duplicate validation is also handled by the
-  // settings UI. Firestore remains the source of truth.
-  const document = await addDoc(
-    getCollection(),
-    {
-      name: trimmedName,
-      status: "ACTIVE",
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    }
+  const existingSnapshot =
+    await getDocs(
+      query(
+        getCollection(),
+        orderBy("name", "asc")
+      )
+    );
+
+  const duplicate = existingSnapshot.docs.some(
+    (item) =>
+      String(item.data()?.name || "")
+        .trim()
+        .toLowerCase() ===
+      trimmedName.toLowerCase()
   );
 
+  if (duplicate) {
+    throw new Error(
+      "This ornament category already exists."
+    );
+  }
+
+  const reference =
+    await addDoc(
+      getCollection(),
+      {
+        name: trimmedName,
+        status: "ACTIVE",
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      }
+    );
+
   return {
-    id: document.id,
+    id: reference.id,
     name: trimmedName,
     status: "ACTIVE",
   };
@@ -105,7 +127,8 @@ export async function updateKareegarOrnamentCategoryStatus(
 
   await updateDoc(
     doc(
-      getCollection(),
+      getCrmFirestore(),
+      COLLECTION_NAME,
       categoryId
     ),
     {

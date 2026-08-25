@@ -15,6 +15,8 @@ import {
 import ClientsPage from "./pages/admin/ClientsPage";
 import AddClientPage from "./pages/admin/AddClientPage";
 import ClientDetailsPage from "./pages/admin/ClientDetailsPage";
+import KareegarLedgerPage from "./crm/modules/kareegar/pages/KareegarLedgerPage";
+import KareegarReportsPage from "./crm/modules/kareegar/pages/KareegarReportsPage";
 
 import CrmProtectedRoute from "./crm/components/CrmProtectedRoute";
 import CrmLayout from "./crm/layouts/CrmLayout";
@@ -36,6 +38,7 @@ import CrmKareegarDirectoryPage from "./crm/pages/CrmKareegarDirectoryPage";
 
 import CrmSettingsPage from "./crm/pages/CrmSettingsPage";
 import CrmKareegarSettingsPage from "./crm/pages/CrmKareegarSettingsPage";
+import KareegarOrnamentCategoriesPage from "./crm/modules/kareegar/pages/KareegarOrnamentCategoriesPage";
 
 import {
   Users,
@@ -463,17 +466,7 @@ function App() {
           element={
             <CrmProtectedRoute>
               <CrmLayout>
-                <div className="flex h-full w-full items-center justify-center bg-white p-6">
-                  <div className="rounded-2xl border border-[#E2E8E4] bg-[#F5F7F5] px-8 py-6 text-center">
-                    <h1 className="text-lg font-bold text-[#1B241E]">
-                      Kareegar Ledger
-                    </h1>
-
-                    <p className="mt-2 text-sm font-medium text-[#68786D]">
-                      Ledger module will be implemented next.
-                    </p>
-                  </div>
-                </div>
+                <KareegarLedgerPage />
               </CrmLayout>
             </CrmProtectedRoute>
           }
@@ -489,17 +482,7 @@ function App() {
           element={
             <CrmProtectedRoute>
               <CrmLayout>
-                <div className="flex h-full w-full items-center justify-center bg-white p-6">
-                  <div className="rounded-2xl border border-[#E2E8E4] bg-[#F5F7F5] px-8 py-6 text-center">
-                    <h1 className="text-lg font-bold text-[#1B241E]">
-                      Kareegar Reports
-                    </h1>
-
-                    <p className="mt-2 text-sm font-medium text-[#68786D]">
-                      Reports module will be implemented next.
-                    </p>
-                  </div>
-                </div>
+                <KareegarReportsPage />
               </CrmLayout>
             </CrmProtectedRoute>
           }
@@ -558,6 +541,17 @@ function App() {
             <CrmProtectedRoute>
               <CrmLayout>
                 <CrmKareegarDirectoryPage />
+              </CrmLayout>
+            </CrmProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/crm/kareegar/settings/ornament-categories"
+          element={
+            <CrmProtectedRoute>
+              <CrmLayout>
+                <KareegarOrnamentCategoriesPage />
               </CrmLayout>
             </CrmProtectedRoute>
           }

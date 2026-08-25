@@ -1,9 +1,10 @@
 import { useState } from "react";
-import { Calculator, Users, Settings2 } from "lucide-react";
+import { Calculator, Users, Settings2,ShapesIcon} from "lucide-react";
 
 import KareegarCalculationSettingsPage from "./KareegarCalculationSettingsPage";
+import KareegarOrnamentCategoriesPage from "./KareegarOrnamentCategoriesPage";
 
-export default function KareegarSettingsPage() {
+// export default function KareegarSettingsPage() {
   const [section, setSection] = useState("directory");
 
   return (
@@ -55,6 +56,20 @@ export default function KareegarSettingsPage() {
             <Calculator size={14} />
             Calculations
           </button>
+          <button
+            type="button"
+            onClick={() =>
+              setSection("ornamentCategories")
+            }
+            className={`flex items-center gap-2 rounded-lg px-5 py-2 text-xs font-bold transition-all duration-300 whitespace-nowrap ${
+              section === "ornamentCategories"
+                ? "bg-white text-[#345343] shadow-sm border border-[#E2E8E4]/60"
+                : "text-[#87968C] hover:text-[#1B241E] border border-transparent"
+            }`}
+          >
+            <ShapesIcon size={14} />
+            Ornament Categories
+          </button>
         </div>
       </div>
 
@@ -62,8 +77,17 @@ export default function KareegarSettingsPage() {
           SETTINGS CONTENT
       ================================================== */}
       <main className="flex-1 animate-in fade-in duration-500">
-        {section === "directory" && <KareegarDirectory />}
-        {section === "calculations" && <KareegarCalculationSettingsPage />}
+        {section === "directory" && (
+          <KareegarDirectory />
+        )}
+
+        {section === "calculations" && (
+          <KareegarCalculationSettingsPage />
+        )}
+
+        {section === "ornamentCategories" && (
+          <KareegarOrnamentCategoriesPage />
+        )}
       </main>
 
     </div>

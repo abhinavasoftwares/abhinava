@@ -32,18 +32,24 @@ export function useKareegarOrnamentCategories({
     const unsubscribe =
       subscribeToKareegarOrnamentCategories(
         (items) => {
-          const filtered = activeOnly
-            ? items.filter(
-                (item) =>
-                  item.status ===
-                  "ACTIVE"
-              )
-            : items;
+          const filtered =
+            activeOnly
+              ? items.filter(
+                  (item) =>
+                    item.status ===
+                    "ACTIVE"
+                )
+              : items;
 
           setCategories(filtered);
           setLoading(false);
         },
         (error) => {
+          console.error(
+            "Ornament category listener failed:",
+            error
+          );
+
           setError(
             error.message ||
               "Failed to load ornament categories."

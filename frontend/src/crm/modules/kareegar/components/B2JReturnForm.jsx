@@ -10,6 +10,7 @@ import { useKareegarEmployees } from "../hooks/useKareegarEmployees";
 import { useKareegarReturns } from "../hooks/useKareegarReturns";
 import { useKareegarCalculationConfig } from "../hooks/useKareegarCalculationConfig";
 import { calculateB2CReturn } from "../calculations/engine";
+import { useKareegarOrnamentCategories } from "../hooks/useKareegarOrnamentCategories";
 
 const PRESET_PURITY_VALUES = [
   91.7,
@@ -86,13 +87,22 @@ export default function B2JReturnForm({ onSuccess }) {
     loading: configLoading,
   } = useKareegarCalculationConfig();
 
-  const [formData, setFormData] = useState({
+  const {
+  categories: ornamentCategories,
+  loading: ornamentCategoriesLoading,
+} =
+  useKareegarOrnamentCategories({
+    activeOnly: true,
+  });
+
+  const [formData, setFormData] =
+  useState({
     employeeId: "",
     returnedWeight: "",
     wastage: "",
     rawMaterialPurity: "",
     stoneCharges: "",
-    ornamentCategory: "",
+    ornamentCategoryId: "",
     remarks: "",
   });
 
@@ -202,13 +212,10 @@ export default function B2JReturnForm({ onSuccess }) {
       return;
     }
 
-    if (
-      !formData.ornamentCategory.trim()
-    ) {
+    if (!formData.ornamentCategoryId) {
       setToast({
         type: "error",
-        message:
-          "Ornament category is required.",
+        message: "Select ornament category.",
       });
 
       return;
@@ -233,6 +240,12 @@ export default function B2JReturnForm({ onSuccess }) {
     // --------------------------------------------------------
 
     try {
+      const selectedCategory =
+      ornamentCategories.find(
+        (category) =>
+          category.id ===
+          formData.ornamentCategoryId
+      );
       await addReturn({
         type: "B2J",
 
@@ -254,8 +267,11 @@ export default function B2JReturnForm({ onSuccess }) {
 
         stoneCharges,
 
-        ornamentCategory:
-          formData.ornamentCategory.trim(),
+        ornamentCategoryId:
+          selectedCategory?.id || null,
+
+        ornamentCategoryName:
+          selectedCategory?.name || "",
 
         remarks:
           formData.remarks.trim(),
@@ -275,7 +291,7 @@ export default function B2JReturnForm({ onSuccess }) {
         wastage: "",
         rawMaterialPurity: "",
         stoneCharges: "",
-        ornamentCategory: "",
+        ornamentCategoryId: "",
         remarks: "",
       });
 
@@ -293,7 +309,8 @@ export default function B2JReturnForm({ onSuccess }) {
   const disabled =
     saving ||
     employeesLoading ||
-    configLoading;
+    configLoading ||
+    ornamentCategoriesLoading;
 
   // ==========================================================
   // RENDER
@@ -497,22 +514,38 @@ export default function B2JReturnForm({ onSuccess }) {
           <div className="space-y-1">
             <label className="text-[10px] font-bold uppercase tracking-wider text-[#87968C]">
               Ornament Category{" "}
-              <span className="text-rose-500">
-                *
-              </span>
+              <span className="text-rose-500">*</span>
             </label>
 
-            <input
-              type="text"
-              name="ornamentCategory"
+            <select
+              name="ornamentCategoryId"
               value={
-                formData.ornamentCategory
+                formData.ornamentCategoryId
               }
               onChange={handleChange}
-              disabled={disabled}
-              placeholder="e.g. Ring, Chain..."
-              className="w-full rounded-lg border border-[#E2E8E4] bg-[#F5F7F5] px-3 py-2 text-sm font-semibold text-[#1B241E] outline-none placeholder:text-[#A3B0AA] focus:border-[#345343] focus:bg-white disabled:opacity-60"
-            />
+              disabled={
+                disabled ||
+                ornamentCategoriesLoading
+              }
+              className="w-full rounded-lg border border-[#E2E8E4] bg-[#F5F7F5] px-3 py-2 text-sm font-semibold text-[#1B241E] outline-none focus:border-[#345343] focus:bg-white disabled:opacity-60"
+            >
+              <option value="">
+                {ornamentCategoriesLoading
+                  ? "Loading..."
+                  : "-- Choose Category --"}
+              </option>
+
+              {ornamentCategories.map(
+                (category) => (
+                  <option
+                    key={category.id}
+                    value={category.id}
+                  >
+                    {category.name}
+                  </option>
+                )
+              )}
+            </select>
           </div>
 
           {/* ==================================================
