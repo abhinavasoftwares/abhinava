@@ -15,12 +15,6 @@ import {
 import ClientsPage from "./pages/admin/ClientsPage";
 import AddClientPage from "./pages/admin/AddClientPage";
 import ClientDetailsPage from "./pages/admin/ClientDetailsPage";
-import KareegarLedgerPage from "./crm/modules/kareegar/pages/KareegarLedgerPage";
-import KareegarReportsPage from "./crm/modules/kareegar/pages/KareegarReportsPage";
-
-import CrmProtectedRoute from "./crm/components/CrmProtectedRoute";
-import CrmLayout from "./crm/layouts/CrmLayout";
-import CrmDashboardPage from "./crm/pages/CrmDashboardPage";
 
 import GoogleLoginTest from "./pages/GoogleLoginTest";
 import LoginPage from "./pages/LoginPage";
@@ -31,14 +25,41 @@ import { TenantProvider } from "./crm/context/TenantContext";
 import { CrmAuthProvider } from "./crm/context/CrmAuthContext";
 
 import CrmLoginPage from "./crm/pages/CrmLoginPage";
+import CrmLayout from "./crm/layouts/CrmLayout";
+import CrmDashboardPage from "./crm/pages/CrmDashboardPage";
+
+import CrmProtectedRoute from "./crm/components/CrmProtectedRoute";
+
+/* ============================================================
+   KAREEGAR
+============================================================ */
+
+import KareegarManagementPage from "./crm/modules/kareegar/pages/KareegarManagementPage";
+import KareegarLedgerPage from "./crm/modules/kareegar/pages/KareegarLedgerPage";
+import KareegarReportsPage from "./crm/modules/kareegar/pages/KareegarReportsPage";
 
 import KareegarCalculationSettingsPage from "./crm/modules/kareegar/pages/KareegarCalculationSettingsPage";
-import KareegarManagementPage from "./crm/modules/kareegar/pages/KareegarManagementPage";
+import KareegarOrnamentCategoriesPage from "./crm/modules/kareegar/pages/KareegarOrnamentCategoriesPage";
+
 import CrmKareegarDirectoryPage from "./crm/pages/CrmKareegarDirectoryPage";
+
+/* ============================================================
+   CRM SETTINGS
+============================================================ */
 
 import CrmSettingsPage from "./crm/pages/CrmSettingsPage";
 import CrmKareegarSettingsPage from "./crm/pages/CrmKareegarSettingsPage";
-import KareegarOrnamentCategoriesPage from "./crm/modules/kareegar/pages/KareegarOrnamentCategoriesPage";
+
+/* ============================================================
+   INVESTMENT
+============================================================ */
+
+import InvestmentSchemesPage from "./crm/modules/investment/pages/InvestmentSchemesPage";
+import InvestmentInvestorsPage from "./crm/modules/investment/pages/InvestmentInvestorsPage";
+
+/* ============================================================
+   ICONS
+============================================================ */
 
 import {
   Users,
@@ -53,6 +74,10 @@ import {
   Activity,
 } from "lucide-react";
 
+
+/* ============================================================
+   ADMIN HOME
+============================================================ */
 
 function AdminHome() {
   const clientMetrics = [
@@ -116,7 +141,9 @@ function AdminHome() {
     <div className="h-full w-full overflow-y-auto bg-[#faf8f3] p-4 pb-12 sm:p-6 lg:p-8 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
       <div className="mx-auto flex max-w-7xl flex-col gap-8">
 
-        {/* ---------------- PAGE HEADER ---------------- */}
+        {/* ==================================================
+            PAGE HEADER
+        ================================================== */}
 
         <div className="flex flex-col gap-3">
           <div className="inline-flex items-center gap-1.5 self-start rounded-lg bg-[#c59b27]/10 px-2.5 py-1 text-xs font-bold uppercase tracking-wider text-[#c59b27]">
@@ -141,138 +168,134 @@ function AdminHome() {
           </div>
         </div>
 
-        {/* ---------------- CLIENT METRICS ---------------- */}
+
+        {/* ==================================================
+            CLIENT METRICS
+        ================================================== */}
 
         <section>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
 
-            {clientMetrics.map(
-              (metric) => (
-                <div
-                  key={metric.label}
-                  className="group relative flex flex-col justify-between overflow-hidden rounded-[24px] border border-slate-200/60 bg-white p-5 shadow-sm transition-all hover:-translate-y-1 hover:shadow-md"
-                >
+            {clientMetrics.map((metric) => (
+              <div
+                key={metric.label}
+                className="group relative flex flex-col justify-between overflow-hidden rounded-[24px] border border-slate-200/60 bg-white p-5 shadow-sm transition-all hover:-translate-y-1 hover:shadow-md"
+              >
+                <div className="flex items-start justify-between">
 
-                  <div className="flex items-start justify-between">
+                  <div>
+                    <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400">
+                      {metric.label}
+                    </p>
 
-                    <div>
-                      <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400">
-                        {metric.label}
-                      </p>
-
-                      <p className="mt-1.5 text-3xl font-bold tracking-tight text-slate-900">
-                        {metric.value}
-                      </p>
-                    </div>
-
-                    <div
-                      className={`flex h-12 w-12 items-center justify-center rounded-[16px] transition-transform group-hover:scale-105 ${metric.bg}`}
-                    >
-                      <metric.icon
-                        size={22}
-                        className={metric.color}
-                        strokeWidth={2}
-                      />
-                    </div>
-
+                    <p className="mt-1.5 text-3xl font-bold tracking-tight text-slate-900">
+                      {metric.value}
+                    </p>
                   </div>
 
-                  {metric.trend && (
-                    <div className="mt-5 flex items-center gap-1.5 text-xs font-bold text-emerald-600">
-
-                      <TrendingUp
-                        size={14}
-                        strokeWidth={2.5}
-                      />
-
-                      <span>
-                        {metric.trend}
-                      </span>
-
-                    </div>
-                  )}
+                  <div
+                    className={`flex h-12 w-12 items-center justify-center rounded-[16px] transition-transform group-hover:scale-105 ${metric.bg}`}
+                  >
+                    <metric.icon
+                      size={22}
+                      className={metric.color}
+                      strokeWidth={2}
+                    />
+                  </div>
 
                 </div>
-              )
-            )}
+
+                {metric.trend && (
+                  <div className="mt-5 flex items-center gap-1.5 text-xs font-bold text-emerald-600">
+                    <TrendingUp
+                      size={14}
+                      strokeWidth={2.5}
+                    />
+
+                    <span>
+                      {metric.trend}
+                    </span>
+                  </div>
+                )}
+
+              </div>
+            ))}
 
           </div>
         </section>
 
-        {/* ---------------- FINANCIAL METRICS ---------------- */}
+
+        {/* ==================================================
+            FINANCIAL METRICS
+        ================================================== */}
 
         <section>
-
           <h2 className="mb-4 text-[11px] font-bold uppercase tracking-widest text-slate-400">
             Financial Performance
           </h2>
 
           <div className="grid gap-4 sm:grid-cols-3">
 
-            {financialMetrics.map(
-              (metric) => (
-                <div
-                  key={metric.label}
-                  className={`group relative overflow-hidden rounded-[24px] border p-5 shadow-sm transition-all hover:-translate-y-1 hover:shadow-md ${
-                    metric.highlight
-                      ? "border-[#c59b27]/20 bg-gradient-to-br from-[#faf8f3] to-white"
-                      : "border-slate-200/60 bg-white"
-                  }`}
-                >
+            {financialMetrics.map((metric) => (
+              <div
+                key={metric.label}
+                className={`group relative overflow-hidden rounded-[24px] border p-5 shadow-sm transition-all hover:-translate-y-1 hover:shadow-md ${
+                  metric.highlight
+                    ? "border-[#c59b27]/20 bg-gradient-to-br from-[#faf8f3] to-white"
+                    : "border-slate-200/60 bg-white"
+                }`}
+              >
+                <div className="flex items-center gap-4">
 
-                  <div className="flex items-center gap-4">
+                  <div
+                    className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-[18px] transition-transform group-hover:scale-105 ${metric.bg}`}
+                  >
+                    <metric.icon
+                      size={26}
+                      className={metric.color}
+                      strokeWidth={2}
+                    />
+                  </div>
 
-                    <div
-                      className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-[18px] transition-transform group-hover:scale-105 ${metric.bg}`}
-                    >
-                      <metric.icon
-                        size={26}
-                        className={metric.color}
-                        strokeWidth={2}
-                      />
-                    </div>
+                  <div>
+                    <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400">
+                      {metric.label}
+                    </p>
 
-                    <div>
-
-                      <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400">
-                        {metric.label}
-                      </p>
-
-                      <p className="mt-1 text-2xl font-bold tracking-tight text-slate-900">
-                        {metric.value}
-                      </p>
-
-                    </div>
-
+                    <p className="mt-1 text-2xl font-bold tracking-tight text-slate-900">
+                      {metric.value}
+                    </p>
                   </div>
 
                 </div>
-              )
-            )}
+              </div>
+            ))}
 
           </div>
-
         </section>
 
-        {/* ---------------- IMMEDIATE ACTIONS ---------------- */}
+
+        {/* ==================================================
+            PENDING TASKS
+        ================================================== */}
 
         <section>
-
           <div className="mb-4 flex items-center justify-between">
 
             <h2 className="text-[11px] font-bold uppercase tracking-widest text-slate-400">
               Pending Tasks
             </h2>
 
-            <button className="flex items-center gap-1.5 text-xs font-bold text-[#c59b27] transition hover:text-slate-900">
-
+            <button
+              type="button"
+              className="flex items-center gap-1.5 text-xs font-bold text-[#c59b27] transition hover:text-slate-900"
+            >
               View all
 
               <ArrowRight
                 size={14}
                 strokeWidth={2.5}
               />
-
             </button>
 
           </div>
@@ -280,13 +303,11 @@ function AdminHome() {
           <div className="flex flex-col items-center justify-center rounded-[24px] border border-dashed border-slate-200 bg-white py-12 text-center shadow-sm transition-colors hover:border-slate-300">
 
             <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-[18px] bg-emerald-50">
-
               <CheckCircle2
                 size={28}
                 className="text-emerald-500"
                 strokeWidth={2.5}
               />
-
             </div>
 
             <h3 className="text-base font-bold text-slate-900">
@@ -298,7 +319,6 @@ function AdminHome() {
             </p>
 
           </div>
-
         </section>
 
       </div>
@@ -309,7 +329,7 @@ function AdminHome() {
 
 /* ============================================================
    ADMIN AUTH LAYOUT
-   ============================================================ */
+============================================================ */
 
 function AdminAuthLayout() {
   return (
@@ -326,7 +346,7 @@ function AdminAuthLayout() {
 
 /* ============================================================
    CRM APP LAYOUT
-   ============================================================ */
+============================================================ */
 
 function CrmAppLayout() {
   return (
@@ -341,7 +361,7 @@ function CrmAppLayout() {
 
 /* ============================================================
    APPLICATION ROUTES
-   ============================================================ */
+============================================================ */
 
 function App() {
   return (
@@ -349,7 +369,7 @@ function App() {
 
       {/* ======================================================
           ABHINAVA PLATFORM LOGIN
-          ====================================================== */}
+      ====================================================== */}
 
       <Route
         path="/login"
@@ -359,7 +379,7 @@ function App() {
 
       {/* ======================================================
           ABHINAVA PLATFORM
-          ====================================================== */}
+      ====================================================== */}
 
       <Route element={<AdminAuthLayout />}>
 
@@ -388,7 +408,7 @@ function App() {
 
       {/* ======================================================
           GOOGLE LOGIN TEST
-          ====================================================== */}
+      ====================================================== */}
 
       <Route
         path="/test/google-login"
@@ -398,7 +418,7 @@ function App() {
 
       {/* ======================================================
           CLIENT CRM
-          ====================================================== */}
+      ====================================================== */}
 
       <Route element={<CrmAppLayout />}>
 
@@ -429,20 +449,11 @@ function App() {
 
 
         {/* ======================================================
-            KAREEGAR MANAGEMENT
+            KAREEGAR
         ====================================================== */}
 
         {/* ------------------------------------------------------
             KAREEGAR FORMS
-
-            One page contains:
-            - B2B
-              - Assignment
-              - Return
-
-            - B2J
-              - Assignment
-              - Return
         ------------------------------------------------------ */}
 
         <Route
@@ -522,6 +533,22 @@ function App() {
 
 
         {/* ------------------------------------------------------
+            KAREEGAR DIRECTORY
+        ------------------------------------------------------ */}
+
+        <Route
+          path="/crm/settings/kareegar/directory"
+          element={
+            <CrmProtectedRoute>
+              <CrmLayout>
+                <CrmKareegarDirectoryPage />
+              </CrmLayout>
+            </CrmProtectedRoute>
+          }
+        />
+
+
+        {/* ------------------------------------------------------
             KAREEGAR CALCULATION SETTINGS
         ------------------------------------------------------ */}
 
@@ -535,16 +562,11 @@ function App() {
             </CrmProtectedRoute>
           }
         />
-        <Route
-          path="/crm/settings/kareegar/directory"
-          element={
-            <CrmProtectedRoute>
-              <CrmLayout>
-                <CrmKareegarDirectoryPage />
-              </CrmLayout>
-            </CrmProtectedRoute>
-          }
-        />
+
+
+        {/* ------------------------------------------------------
+            KAREEGAR ORNAMENT CATEGORIES
+        ------------------------------------------------------ */}
 
         <Route
           path="/crm/kareegar/settings/ornament-categories"
@@ -556,6 +578,38 @@ function App() {
             </CrmProtectedRoute>
           }
         />
+
+
+        {/* ======================================================
+            INVESTMENT
+        ====================================================== */}
+
+        {/* ------------------------------------------------------
+            INVESTMENT SCHEMES
+        ------------------------------------------------------ */}
+
+        <Route
+          path="/crm/investment/schemes"
+          element={
+            <CrmProtectedRoute>
+              <CrmLayout>
+                <InvestmentSchemesPage />
+              </CrmLayout>
+            </CrmProtectedRoute>
+          }
+        />
+
+        <Route
+            path="/crm/investment/investors"
+            element={
+              <CrmProtectedRoute>
+                <CrmLayout>
+                  <InvestmentInvestorsPage />
+                </CrmLayout>
+              </CrmProtectedRoute>
+            }
+        />
+
       </Route>
 
 

@@ -8,7 +8,7 @@ let app = null;
 let auth = null;
 let googleProvider = null;
 
-export async function initializeFirebase(clientId) {
+export async function initializeFirebase() {
   const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
   if (!API_BASE_URL) {
@@ -18,7 +18,7 @@ export async function initializeFirebase(clientId) {
   }
 
   const response = await fetch(
-    `${API_BASE_URL}/clients/${clientId}/firebase-config`
+    `${API_BASE_URL}/crm/firebase-config`
   );
 
   if (!response.ok) {

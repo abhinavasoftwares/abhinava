@@ -19,3 +19,7 @@ dist/
 # OS
 .DS_Store
 Thumbs.db
+
+
+# Local development tools
+backend/cloud-sql-proxy.exe
