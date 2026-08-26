@@ -26,7 +26,7 @@ export function useInvestmentInvestors() {
     useState("");
 
   useEffect(() => {
-    let unsubscribe;
+    let unsubscribe = () => {};
 
     try {
       const firestore =
@@ -43,36 +43,35 @@ export function useInvestmentInvestors() {
         )
       );
 
-      unsubscribe =
-        onSnapshot(
-          reference,
-          (snapshot) => {
-            const data =
-              snapshot.docs.map(
-                (item) => ({
-                  id: item.id,
-                  ...item.data(),
-                })
-              );
-
-            setInvestors(data);
-            setLoading(false);
-            setError("");
-          },
-          (snapshotError) => {
-            console.error(
-              "Investment investor listener error:",
-              snapshotError
+      unsubscribe = onSnapshot(
+        reference,
+        (snapshot) => {
+          const data =
+            snapshot.docs.map(
+              (item) => ({
+                id: item.id,
+                ...item.data(),
+              })
             );
 
-            setError(
-              snapshotError.message ||
-                "Failed to load investors."
-            );
+          setInvestors(data);
+          setLoading(false);
+          setError("");
+        },
+        (snapshotError) => {
+          console.error(
+            "Investment investor listener error:",
+            snapshotError
+          );
 
-            setLoading(false);
-          }
-        );
+          setError(
+            snapshotError.message ||
+              "Failed to load investors."
+          );
+
+          setLoading(false);
+        }
+      );
     } catch (initializationError) {
       console.error(
         "Failed to initialize investor listener:",
@@ -88,9 +87,7 @@ export function useInvestmentInvestors() {
     }
 
     return () => {
-      if (unsubscribe) {
-        unsubscribe();
-      }
+      unsubscribe();
     };
   }, []);
 

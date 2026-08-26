@@ -1,335 +1,188 @@
 import {
+  addDoc,
   collection,
   doc,
-  runTransaction,
+  getDoc,
   serverTimestamp,
+  updateDoc,
 } from "firebase/firestore";
 
 import { getCrmFirestore } from "../../../firebase";
 
-const ACCOUNTS_COLLECTION =
-  "investmentAccounts";
-
-const SCHEMES_COLLECTION =
-  "investmentSchemes";
-
-
-function formatAccountNumber(
-  prefix,
-  sequence
-) {
-  return `${prefix}-${String(sequence).padStart(3, "0")}`;
-}
-
+const INVESTMENT_ACCOUNTS_COLLECTION = "investmentAccounts";
 
 /**
- * Creates an investment account and atomically
- * reserves the next account number for the scheme.
+ * Create an investment account.
  *
- * Example:
- *
- * prefix = "K12"
- *
- * 1 -> K12-001
- * 2 -> K12-002
- * 3 -> K12-003
+ * IMPORTANT:
+ * - Scheme defines the standard minimum.
+ * - Account decides whether that minimum is enforced.
+ * - Scheme snapshot is stored so historical accounts remain auditable
+ *   even if the scheme configuration changes later.
  */
 export async function createInvestmentAccount({
   investorId,
   scheme,
-  monthlyAmount,
+  accountNumber,
+  contributionValue,
   startDate,
+  minimumRestrictionEnabled = true,
 }) {
   if (!investorId) {
-    throw new Error(
-      "Investor is required."
-    );
+    throw new Error("Investor ID is required.");
   }
 
   if (!scheme?.id) {
+    throw new Error("Investment scheme is required.");
+  }
+
+  if (!accountNumber) {
+    throw new Error("Account number is required.");
+  }
+
+  const value = Number(contributionValue);
+
+  if (!Number.isFinite(value) || value <= 0) {
+    throw new Error("Contribution must be greater than zero.");
+  }
+
+  const installmentConfig = scheme.installmentConfig || {};
+
+  const unit =
+    installmentConfig.unit ||
+    (String(scheme.schemeType || "").toUpperCase().includes("GOLD")
+      ? "GOLD_GRAMS"
+      : "AMOUNT");
+
+  const frequency =
+    installmentConfig.frequency || "MONTHLY";
+
+  const schemeMinimum =
+    Number(installmentConfig.minimumAmount || 0);
+
+  const minimumEnabled =
+    Boolean(minimumRestrictionEnabled);
+
+  // Server-side/client-side service validation.
+  // The account keeps the decision permanently.
+  if (minimumEnabled && schemeMinimum > 0 && value < schemeMinimum) {
     throw new Error(
-      "Investment scheme is required."
+      unit === "GOLD_GRAMS"
+        ? `Minimum investment is ${schemeMinimum} g.`
+        : `Minimum investment is ₹${schemeMinimum.toLocaleString("en-IN")}.`
     );
   }
 
-  if (!startDate) {
-    throw new Error(
-      "Investment start date is required."
-    );
-  }
-
-  const amount =
-    Number(monthlyAmount);
-
-  if (
-    !Number.isFinite(amount) ||
-    amount <= 0
-  ) {
-    throw new Error(
-      "Enter a valid monthly amount."
-    );
-  }
-
-  const minimumAmount =
-    Number(
-      scheme.monthlyAmount
-    );
-
-  if (
-    !Number.isFinite(
-      minimumAmount
-    ) ||
-    minimumAmount <= 0
-  ) {
-    throw new Error(
-      "Selected scheme has an invalid monthly amount."
-    );
-  }
-
-  if (
-    amount < minimumAmount
-  ) {
-    throw new Error(
-      `Monthly amount cannot be less than ₹${minimumAmount.toLocaleString(
-        "en-IN"
-      )}.`
-    );
-  }
-
-
-  const prefix =
-    String(
-      scheme.accountNumberPrefix ||
-      ""
-    ).trim();
-
-
-  if (!prefix) {
-    throw new Error(
-      "The selected scheme does not have an account number theme configured."
-    );
-  }
-
-
-  const firestore =
-    getCrmFirestore();
-
-
-  const schemeReference =
-    doc(
-      firestore,
-      SCHEMES_COLLECTION,
-      scheme.id
-    );
-
-
-  const accountReference =
-    doc(
-      collection(
-        firestore,
-        ACCOUNTS_COLLECTION
-      )
-    );
-
-
-  let createdAccount = null;
-
-
-  await runTransaction(
-    firestore,
-    async (transaction) => {
-
-      const schemeSnapshot =
-        await transaction.get(
-          schemeReference
-        );
-
-
-      if (!schemeSnapshot.exists()) {
-        throw new Error(
-          "Investment scheme no longer exists."
-        );
-      }
-
-
-      const currentScheme =
-        schemeSnapshot.data();
-
-
-      if (
-        currentScheme.status !==
-        "ACTIVE"
-      ) {
-        throw new Error(
-          "The selected investment scheme is no longer active."
-        );
-      }
-
-
-      const currentMinimum =
-        Number(
-          currentScheme.monthlyAmount
-        );
-
-
-      if (
-        !Number.isFinite(
-          currentMinimum
-        ) ||
-        currentMinimum <= 0
-      ) {
-        throw new Error(
-          "Investment scheme has an invalid monthly amount."
-        );
-      }
+  const db = getCrmFirestore();
 
+  const accountData = {
+    investorId,
 
-      if (
-        amount < currentMinimum
-      ) {
-        throw new Error(
-          `Monthly amount must be at least ₹${currentMinimum.toLocaleString(
-            "en-IN"
-          )}.`
-        );
-      }
+    schemeId: scheme.id,
 
+    accountNumber,
 
-      const currentPrefix =
-        String(
-          currentScheme.accountNumberPrefix ||
-          ""
-        ).trim();
+    status: "ACTIVE",
 
+    contribution: {
+      value,
+      unit,
+      frequency,
+    },
 
-      if (!currentPrefix) {
-        throw new Error(
-          "The selected scheme does not have an account number theme configured."
-        );
-      }
+    minimumRestriction: {
+      enabled: minimumEnabled,
+      schemeMinimum,
+      unit,
+    },
 
+    schemeSnapshot: {
+      id: scheme.id,
+      schemeCode: scheme.schemeCode || "",
+      schemeName: scheme.schemeName || "",
+      schemeType: scheme.schemeType || "",
 
-      /*
-       * nextAccountNumber belongs to the scheme.
-       *
-       * If it does not exist, start at 1.
-       */
-      const nextNumber =
-        Number(
-          currentScheme.nextAccountNumber
-        ) || 1;
+      installmentConfig: {
+        ...installmentConfig,
+      },
 
+      durationConfig: {
+        ...(scheme.durationConfig || {
+          enabled: false,
+          months: null,
+        }),
+      },
 
-      const accountNumber =
-        formatAccountNumber(
-          currentPrefix,
-          nextNumber
-        );
+      interestConfig: {
+        ...(scheme.interestConfig || {}),
+      },
 
+      benefitConfig: {
+        ...(scheme.benefitConfig || {}),
+      },
+    },
 
-      /*
-       * Reserve the next number.
-       */
-      transaction.update(
-        schemeReference,
-        {
-          nextAccountNumber:
-            nextNumber + 1,
+    startDate,
 
-          updatedAt:
-            serverTimestamp(),
-        }
-      );
+    // Legacy-compatible fields.
+    // These can be removed later after the migration is complete.
+    monthlyAmount:
+      unit === "AMOUNT" ? value : null,
 
+    monthlyGoldGrams:
+      unit === "GOLD_GRAMS" ? value : null,
 
-      /*
-       * Create the investment account.
-       */
-      transaction.set(
-        accountReference,
-        {
-          investorId,
+    totalPaid: 0,
 
-          schemeId:
-            scheme.id,
+    totalGoldCredited: 0,
 
-          schemeName:
-            currentScheme.schemeName ||
-            "",
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  };
 
-          schemeType:
-            currentScheme.schemeType ||
-            "",
-
-          accountNumber,
-
-          accountNumberPrefix:
-            currentPrefix,
-
-          accountSequence:
-            nextNumber,
-
-          monthlyAmount:
-            amount,
-
-          schemeMinimumAmount:
-            currentMinimum,
-
-          startDate,
-
-          status: "ACTIVE",
-
-          createdAt:
-            serverTimestamp(),
-
-          updatedAt:
-            serverTimestamp(),
-        }
-      );
-
-
-      createdAccount = {
-        id:
-          accountReference.id,
-
-        investorId,
-
-        schemeId:
-          scheme.id,
-
-        schemeName:
-          currentScheme.schemeName ||
-          "",
-
-        schemeType:
-          currentScheme.schemeType ||
-          "",
-
-        accountNumber,
-
-        accountNumberPrefix:
-          currentPrefix,
-
-        accountSequence:
-          nextNumber,
-
-        monthlyAmount:
-          amount,
-
-        schemeMinimumAmount:
-          currentMinimum,
-
-        startDate,
-
-        status: "ACTIVE",
-      };
-    }
+  const reference = collection(
+    db,
+    INVESTMENT_ACCOUNTS_COLLECTION
   );
 
+  const created = await addDoc(
+    reference,
+    accountData
+  );
 
-  return createdAccount;
+  return {
+    id: created.id,
+    ...accountData,
+  };
 }
 
+/**
+ * Fetch a single investment account.
+ */
+export async function getInvestmentAccount(accountId) {
+  if (!accountId) {
+    throw new Error("Account ID is required.");
+  }
+
+  const db = getCrmFirestore();
+
+  const reference = doc(
+    db,
+    INVESTMENT_ACCOUNTS_COLLECTION,
+    accountId
+  );
+
+  const snapshot = await getDoc(reference);
+
+  if (!snapshot.exists()) {
+    throw new Error("Investment account not found.");
+  }
+
+  return {
+    id: snapshot.id,
+    ...snapshot.data(),
+  };
+}
 
 /**
  * Update an investment account.
@@ -339,82 +192,19 @@ export async function updateInvestmentAccount(
   updates
 ) {
   if (!accountId) {
-    throw new Error(
-      "Investment account ID is required."
-    );
+    throw new Error("Account ID is required.");
   }
 
+  const db = getCrmFirestore();
 
-  const firestore =
-    getCrmFirestore();
-
-
-  const reference =
-    doc(
-      firestore,
-      ACCOUNTS_COLLECTION,
-      accountId
-    );
-
-
-  await runTransaction(
-    firestore,
-    async (transaction) => {
-
-      const snapshot =
-        await transaction.get(
-          reference
-        );
-
-
-      if (!snapshot.exists()) {
-        throw new Error(
-          "Investment account not found."
-        );
-      }
-
-
-      transaction.update(
-        reference,
-        {
-          ...updates,
-
-          updatedAt:
-            serverTimestamp(),
-        }
-      );
-    }
+  const reference = doc(
+    db,
+    INVESTMENT_ACCOUNTS_COLLECTION,
+    accountId
   );
 
-
-  return {
-    id: accountId,
+  await updateDoc(reference, {
     ...updates,
-  };
-}
-
-
-/**
- * Activate / deactivate account.
- */
-export async function updateInvestmentAccountStatus(
-  accountId,
-  status
-) {
-  if (
-    status !== "ACTIVE" &&
-    status !== "INACTIVE"
-  ) {
-    throw new Error(
-      "Invalid investment account status."
-    );
-  }
-
-
-  return updateInvestmentAccount(
-    accountId,
-    {
-      status,
-    }
-  );
+    updatedAt: serverTimestamp(),
+  });
 }

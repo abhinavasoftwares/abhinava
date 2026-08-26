@@ -1,4 +1,8 @@
-import { useEffect, useState } from "react";
+import {
+  useEffect,
+  useState,
+} from "react";
+
 import {
   collection,
   onSnapshot,
@@ -8,50 +12,83 @@ import {
 
 import { getCrmFirestore } from "../../../firebase";
 
-const COLLECTION = "investmentSchemes";
+const COLLECTION =
+  "investmentSchemes";
 
 export function useInvestmentSchemes() {
-  const [schemes, setSchemes] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  const [schemes, setSchemes] =
+    useState([]);
+
+  const [loading, setLoading] =
+    useState(true);
+
+  const [error, setError] =
+    useState("");
 
   useEffect(() => {
-    const firestore = getCrmFirestore();
+    let unsubscribe = () => {};
 
-    const reference = query(
-      collection(firestore, COLLECTION),
-      orderBy("createdAt", "desc")
-    );
+    try {
+      const firestore =
+        getCrmFirestore();
 
-    const unsubscribe = onSnapshot(
-      reference,
-      (snapshot) => {
-        setSchemes(
-          snapshot.docs.map((item) => ({
-            id: item.id,
-            ...item.data(),
-          }))
-        );
+      const reference = query(
+        collection(
+          firestore,
+          COLLECTION
+        ),
+        orderBy(
+          "createdAt",
+          "desc"
+        )
+      );
 
-        setLoading(false);
-        setError("");
-      },
-      (snapshotError) => {
-        console.error(
-          "Investment scheme listener error:",
-          snapshotError
-        );
+      unsubscribe = onSnapshot(
+        reference,
+        (snapshot) => {
+          const data =
+            snapshot.docs.map(
+              (item) => ({
+                id: item.id,
+                ...item.data(),
+              })
+            );
 
-        setError(
-          snapshotError.message ||
-            "Failed to load investment schemes."
-        );
+          setSchemes(data);
+          setLoading(false);
+          setError("");
+        },
+        (snapshotError) => {
+          console.error(
+            "Investment scheme listener error:",
+            snapshotError
+          );
 
-        setLoading(false);
-      }
-    );
+          setError(
+            snapshotError.message ||
+              "Failed to load investment schemes."
+          );
 
-    return () => unsubscribe();
+          setLoading(false);
+        }
+      );
+    } catch (initializationError) {
+      console.error(
+        "Failed to initialize scheme listener:",
+        initializationError
+      );
+
+      setError(
+        initializationError.message ||
+          "Failed to initialize investment schemes."
+      );
+
+      setLoading(false);
+    }
+
+    return () => {
+      unsubscribe();
+    };
   }, []);
 
   return {

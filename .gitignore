@@ -23,3 +23,5 @@ Thumbs.db
 
 # Local development tools
 backend/cloud-sql-proxy.exe
+abhinava.dump
+cloud-sql-proxy

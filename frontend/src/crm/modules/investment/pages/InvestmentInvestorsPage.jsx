@@ -3,21 +3,28 @@ import {
   AlertCircle,
   CheckCircle2,
   ChevronDown,
+  ChevronUp,
+  ChevronsUpDown,
   Edit3,
+  Eye,
+  Download,
   Loader2,
   Plus,
+  Phone,
   Power,
   Search,
   UserRound,
   X,
-  Download,
-  Phone,
-  Mail,
+  ArrowRight,
+  Settings2,
+  Wallet,
+  CreditCard,
   MapPin,
   CalendarDays,
-  ArrowRight,
-  Wallet
+  Mail
 } from "lucide-react";
+import { collection, onSnapshot, orderBy, query } from "firebase/firestore";
+import { useNavigate, Link } from "react-router-dom";
 
 import { useInvestmentInvestors } from "../hooks/useInvestmentInvestors";
 import { useInvestmentSchemes } from "../hooks/useInvestmentSchemes";
@@ -27,7 +34,11 @@ import {
   updateInvestmentInvestorStatus,
 } from "../services/investmentInvestors";
 import { createInvestmentAccount } from "../services/investmentAccounts";
+import { getCrmFirestore } from "../../../firebase";
 
+// ============================================================
+// CONSTANTS & CONFIG
+// ============================================================
 const INITIAL_FORM = {
   fullName: "",
   mobileNumber: "",
@@ -40,25 +51,25 @@ const INITIAL_FORM = {
   state: "",
   pincode: "",
   schemeId: "",
-  monthlyAmount: "",
+  contributionValue: "",
   startDate: "",
+  minimumRestrictionEnabled: true,
 };
 
+const INVESTMENT_ACCOUNTS_COLLECTION = "investmentAccounts";
+const ITEMS_PER_PAGE = 15;
+
 // ============================================================
-// UI COMPONENTS
+// REUSABLE UI COMPONENTS
 // ============================================================
 function InputField({ label, name, value, onChange, type = "text", placeholder = "", required = false, disabled = false, prefix = "" }) {
   return (
-    <div className="space-y-1.5">
-      <label className="text-[10px] font-bold uppercase tracking-wider text-[#87968C]">
+    <div className="space-y-1.5 w-full">
+      <label className="text-[10px] font-bold uppercase tracking-wider text-[#68786D]">
         {label} {required && <span className="text-rose-500">*</span>}
       </label>
-      <div className="flex overflow-hidden rounded-xl border border-[#E2E8E4] bg-[#F5F7F5] transition-all focus-within:border-[#345343] focus-within:bg-white focus-within:ring-2 focus-within:ring-[#345343]/20 shadow-sm disabled:opacity-60">
-        {prefix && (
-          <span className="flex items-center border-r border-[#E2E8E4] px-4 text-sm font-bold text-[#68786D]">
-            {prefix}
-          </span>
-        )}
+      <div className="flex overflow-hidden rounded-xl border border-[#E2E8E4] bg-white transition-all focus-within:border-[#345343] focus-within:ring-2 focus-within:ring-[#345343]/20 shadow-sm disabled:opacity-60">
+        {prefix && <span className="flex items-center bg-[#F5F7F5] border-r border-[#E2E8E4] px-3.5 text-xs font-bold text-[#68786D]">{prefix}</span>}
         <input
           type={type}
           name={name}
@@ -66,7 +77,7 @@ function InputField({ label, name, value, onChange, type = "text", placeholder =
           onChange={onChange}
           placeholder={placeholder}
           disabled={disabled}
-          className="w-full bg-transparent px-4 py-3 text-sm font-semibold text-[#1B241E] outline-none placeholder:text-[#A3B0AA]"
+          className="w-full bg-transparent px-3.5 py-2.5 text-sm font-semibold text-[#1B241E] outline-none placeholder:text-[#A3B0AA] placeholder:font-medium disabled:cursor-not-allowed"
         />
       </div>
     </div>
@@ -75,8 +86,8 @@ function InputField({ label, name, value, onChange, type = "text", placeholder =
 
 function SelectField({ label, name, value, onChange, children, required = false, disabled = false }) {
   return (
-    <div className="space-y-1.5">
-      <label className="text-[10px] font-bold uppercase tracking-wider text-[#87968C]">
+    <div className="space-y-1.5 w-full">
+      <label className="text-[10px] font-bold uppercase tracking-wider text-[#68786D]">
         {label} {required && <span className="text-rose-500">*</span>}
       </label>
       <div className="relative">
@@ -85,11 +96,11 @@ function SelectField({ label, name, value, onChange, children, required = false,
           value={value}
           onChange={onChange}
           disabled={disabled}
-          className="w-full appearance-none rounded-xl border border-[#E2E8E4] bg-[#F5F7F5] px-4 py-3 pr-10 text-sm font-semibold text-[#1B241E] outline-none transition-all focus:border-[#345343] focus:bg-white focus:ring-2 focus:ring-[#345343]/20 disabled:opacity-60 shadow-sm"
+          className="w-full appearance-none rounded-xl border border-[#E2E8E4] bg-white px-3.5 py-2.5 pr-10 text-sm font-semibold text-[#1B241E] outline-none transition-all focus:border-[#345343] focus:ring-2 focus:ring-[#345343]/20 shadow-sm disabled:opacity-60 disabled:cursor-not-allowed"
         >
           {children}
         </select>
-        <ChevronDown size={15} className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-[#87968C]" />
+        <ChevronDown size={16} className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-[#87968C]" />
       </div>
     </div>
   );
@@ -99,7 +110,7 @@ function StatusBadge({ status }) {
   const isActive = status === "ACTIVE" || !status;
   return (
     <span className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider ${
-      isActive ? "border-emerald-200/60 bg-emerald-50 text-emerald-700" : "border-rose-200/60 bg-rose-50 text-rose-700"
+      isActive ? "border-emerald-200/50 bg-emerald-50 text-emerald-700" : "border-rose-200/50 bg-rose-50 text-rose-700"
     }`}>
       <span className={`h-1.5 w-1.5 rounded-full ${isActive ? "bg-emerald-500" : "bg-rose-500"}`} />
       {isActive ? "Active" : "Inactive"}
@@ -107,49 +118,226 @@ function StatusBadge({ status }) {
   );
 }
 
-function formatDate(dateString) {
-  if (!dateString) return "—";
-  if (typeof dateString === "object" && dateString.seconds) {
-    return new Date(dateString.seconds * 1000).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+// ============================================================
+// HELPERS
+// ============================================================
+function formatDate(dateValue) {
+  if (!dateValue) return "—";
+  if (typeof dateValue === "object" && dateValue?.seconds) {
+    return new Date(dateValue.seconds * 1000).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
   }
-  const date = new Date(dateString);
-  return isNaN(date.getTime()) ? "—" : date.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+  const date = new Date(dateValue);
+  return Number.isNaN(date.getTime()) ? "—" : date.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+}
+
+function formatCurrency(value) {
+  return `₹${Number(value || 0).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
+}
+
+function formatGold(value) {
+  return `${Number(value || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 3 })} g`;
+}
+
+function getAccountUnit(account) {
+  const unit = String(account?.contribution?.unit || account?.minimumRestriction?.unit || account?.schemeSnapshot?.installmentConfig?.unit || "").toUpperCase();
+  return unit === "GOLD_GRAMS" ? "GOLD_GRAMS" : "AMOUNT";
+}
+
+function isGoldAccount(account) {
+  return getAccountUnit(account) === "GOLD_GRAMS";
+}
+
+function calculateInvestorSummary(investorId, accounts) {
+  const investorAccounts = accounts.filter((account) => String(account.investorId) === String(investorId));
+  let totalAmount = 0, totalGold = 0;
+  let hasAmountAccount = false, hasSip = false;
+  let lastTransactionAt = null;
+
+  investorAccounts.forEach((account) => {
+    if (isGoldAccount(account)) {
+      hasSip = true;
+      totalGold += Number(account.totalGoldCredited || 0);
+    } else {
+      hasAmountAccount = true;
+      totalAmount += Number(account.totalPaid || 0);
+    }
+    if (account.updatedAt) lastTransactionAt = account.updatedAt;
+  });
+
+  return { accounts: investorAccounts, totalAmount, totalGold, hasSip, hasAmountAccount, lastTransactionAt };
 }
 
 // ============================================================
 // MAIN PAGE
 // ============================================================
 export default function InvestmentInvestorsPage() {
+  const navigate = useNavigate();
+
+  // Data Hooks
   const { investors, loading, error } = useInvestmentInvestors();
   const { schemes, loading: schemesLoading, error: schemesError } = useInvestmentSchemes();
 
-  // Wizard & Modal States
+  // Account Data
+  const [accounts, setAccounts] = useState([]);
+  const [accountsLoading, setAccountsLoading] = useState(true);
+  const [accountsError, setAccountsError] = useState("");
+
+  // Modals & Forms
   const [modalOpen, setModalOpen] = useState(false);
   const [modalStep, setModalStep] = useState(1);
   const [checkMobile, setCheckMobile] = useState("");
   const [matchedInvestors, setMatchedInvestors] = useState(null);
-
-  // Form States
   const [editingId, setEditingId] = useState(null);
   const [formData, setFormData] = useState(INITIAL_FORM);
   const [saving, setSaving] = useState(false);
-  
-  // Page Filters & Toasts
+
+  // Filters & State
+  const [toast, setToast] = useState(null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
-  const [toast, setToast] = useState(null);
+  const [activeTab, setActiveTab] = useState("ALL");
+  const [sortConfig, setSortConfig] = useState({ key: "createdAt", direction: "desc" });
+  const [currentPage, setCurrentPage] = useState(1);
 
+  // Derived Schemes
   const activeSchemes = useMemo(() => schemes.filter((scheme) => scheme.status === "ACTIVE"), [schemes]);
   const selectedScheme = useMemo(() => activeSchemes.find((scheme) => scheme.id === formData.schemeId) || null, [activeSchemes, formData.schemeId]);
 
+  const isGoldScheme = useMemo(() => {
+    if (!selectedScheme) return false;
+    const schemeType = String(selectedScheme.schemeType || "").toUpperCase();
+    const unit = String(selectedScheme?.installmentConfig?.unit || "").toUpperCase();
+    return schemeType.includes("GOLD") || unit === "GOLD_GRAMS";
+  }, [selectedScheme]);
+
+  const contributionUnit = useMemo(() => isGoldScheme ? "GOLD_GRAMS" : (selectedScheme?.installmentConfig?.unit || "AMOUNT"), [selectedScheme, isGoldScheme]);
+  const schemeMinimum = useMemo(() => Number(selectedScheme?.installmentConfig?.minimumAmount || 0), [selectedScheme]);
+  const hasSchemeMinimum = Number.isFinite(schemeMinimum) && schemeMinimum > 0;
+  const durationEnabled = selectedScheme?.durationConfig?.enabled === true;
+
+  // Load Accounts securely
+  useEffect(() => {
+    let unsubscribe = () => {};
+    try {
+      const db = getCrmFirestore();
+      const reference = query(collection(db, INVESTMENT_ACCOUNTS_COLLECTION), orderBy("createdAt", "desc"));
+      unsubscribe = onSnapshot(
+        reference,
+        (snapshot) => {
+          setAccounts(snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })));
+          setAccountsError("");
+          setAccountsLoading(false);
+        },
+        (err) => {
+          console.error(err);
+          setAccountsError(err.message || "Failed to load accounts.");
+          setAccountsLoading(false);
+        }
+      );
+    } catch (err) {
+      console.error(err);
+      setAccountsError(err.message || "Init failed.");
+      setAccountsLoading(false);
+    }
+    return () => unsubscribe();
+  }, []);
+
+  // Toast auto-hide
   useEffect(() => {
     if (!toast) return;
-    const timer = setTimeout(() => setToast(null), 4000);
+    const timer = setTimeout(() => setToast(null), 3000);
     return () => clearTimeout(timer);
   }, [toast]);
 
   // ==========================================================
-  // TWO-STEP WIZARD HANDLERS
+  // DATA PROCESSING (Bulletproof 10k Records)
+  // ==========================================================
+  const investorSummaries = useMemo(() => {
+    const map = new Map();
+    investors.forEach((inv) => map.set(inv.id, calculateInvestorSummary(inv.id, accounts)));
+    return map;
+  }, [investors, accounts]);
+
+  const processedInvestors = useMemo(() => {
+    const searchValue = search.trim().toLowerCase();
+
+    // 1. Filter safely
+    let filtered = investors.filter((investor) => {
+      const summary = investorSummaries.get(investor.id);
+      const accountSearch = summary?.accounts?.some((acc) => String(acc.accountNumber || "").toLowerCase().includes(searchValue));
+      
+      const matchesSearch = !searchValue || 
+        String(investor.fullName || "").toLowerCase().includes(searchValue) || 
+        String(investor.mobileNumber || "").toLowerCase().includes(searchValue) || 
+        String(investor.email || "").toLowerCase().includes(searchValue) || 
+        accountSearch;
+        
+      const matchesStatus = statusFilter === "ALL" || (investor.status || "ACTIVE") === statusFilter;
+      
+      let matchesTab = true;
+      if (activeTab !== "ALL") {
+        matchesTab = summary?.accounts.some((acc) => String(acc.schemeId) === String(activeTab)) || false;
+      }
+      return matchesSearch && matchesStatus && matchesTab;
+    });
+
+    // 2. Sort safely
+    filtered.sort((a, b) => {
+      const sumA = investorSummaries.get(a.id);
+      const sumB = investorSummaries.get(b.id);
+      let valA, valB;
+
+      switch (sortConfig.key) {
+        case "fullName":
+          valA = String(a.fullName || "").toLowerCase();
+          valB = String(b.fullName || "").toLowerCase();
+          break;
+        case "totalAmount":
+          valA = sumA?.totalAmount || 0;
+          valB = sumB?.totalAmount || 0;
+          break;
+        case "totalGold":
+          valA = sumA?.totalGold || 0;
+          valB = sumB?.totalGold || 0;
+          break;
+        case "createdAt":
+        default:
+          valA = a.createdAt?.seconds || 0;
+          valB = b.createdAt?.seconds || 0;
+          break;
+      }
+
+      if (valA < valB) return sortConfig.direction === "asc" ? -1 : 1;
+      if (valA > valB) return sortConfig.direction === "asc" ? 1 : -1;
+      return 0;
+    });
+
+    return filtered;
+  }, [investors, search, statusFilter, activeTab, sortConfig, investorSummaries]);
+
+  // Pagination bounds
+  const totalPages = Math.ceil(processedInvestors.length / ITEMS_PER_PAGE);
+  const paginatedInvestors = useMemo(() => {
+    const start = (currentPage - 1) * ITEMS_PER_PAGE;
+    return processedInvestors.slice(start, start + ITEMS_PER_PAGE);
+  }, [processedInvestors, currentPage]);
+
+  useEffect(() => setCurrentPage(1), [search, statusFilter, activeTab]);
+
+  const requestSort = (key) => {
+    let direction = "asc";
+    if (sortConfig.key === key && sortConfig.direction === "asc") direction = "desc";
+    setSortConfig({ key, direction });
+    setCurrentPage(1);
+  };
+
+  const SortIcon = ({ columnKey }) => {
+    if (sortConfig.key !== columnKey) return <ChevronsUpDown size={12} className="opacity-30" />;
+    return sortConfig.direction === "asc" ? <ChevronUp size={12} /> : <ChevronDown size={12} />;
+  };
+
+  // ==========================================================
+  // WIZARD / MODAL HANDLERS
   // ==========================================================
   function openCreate() {
     setEditingId(null);
@@ -162,19 +350,16 @@ export default function InvestmentInvestorsPage() {
 
   function handleCheckMobile(e) {
     e.preventDefault();
-    const trimmedMobile = checkMobile.trim();
-
-    if (!/^[0-9]{10}$/.test(trimmedMobile)) {
-      setToast({ type: "error", message: "Please enter a valid 10-digit mobile number." });
+    const mobile = checkMobile.trim();
+    if (!/^[0-9]{10}$/.test(mobile)) {
+      setToast({ type: "error", message: "Enter a valid 10-digit mobile number." });
       return;
     }
-
-    const matches = investors.filter(inv => inv.mobileNumber === trimmedMobile);
-    
+    const matches = investors.filter((inv) => String(inv.mobileNumber || "") === mobile);
     if (matches.length > 0) {
       setMatchedInvestors(matches);
     } else {
-      setFormData({ ...INITIAL_FORM, mobileNumber: trimmedMobile });
+      setFormData({ ...INITIAL_FORM, mobileNumber: mobile });
       setModalStep(2);
     }
   }
@@ -197,9 +382,7 @@ export default function InvestmentInvestorsPage() {
       city: investor.city || "",
       state: investor.state || "",
       pincode: investor.pincode || "",
-      schemeId: "",
-          monthlyAmount: "",
-      startDate: "",
+      schemeId: "", contributionValue: "", startDate: "", minimumRestrictionEnabled: true,
     });
     setModalStep(2);
     setModalOpen(true);
@@ -223,10 +406,10 @@ export default function InvestmentInvestorsPage() {
   }
 
   // ==========================================================
-  // CRUD OPERATIONS
+  // SUBMIT
   // ==========================================================
-  async function handleSubmit(event) {
-    event.preventDefault();
+  async function handleSubmit(e) {
+    e.preventDefault();
     if (saving) return;
 
     try {
@@ -234,95 +417,66 @@ export default function InvestmentInvestorsPage() {
       const mobileNumber = formData.mobileNumber.trim();
 
       if (!fullName) throw new Error("Investor name is required.");
-      if (!mobileNumber) throw new Error("Mobile number is required.");
-      if (!/^[0-9]{10}$/.test(mobileNumber)) throw new Error("Enter a valid 10-digit mobile number.");
+      if (!/^[0-9]{10}$/.test(mobileNumber)) throw new Error("Valid 10-digit mobile required.");
 
       setSaving(true);
 
-      // --- EXISTING INVESTOR (UPDATE ONLY) ---
+      // --- EDIT ---
       if (editingId) {
         await updateInvestmentInvestor(editingId, {
-          fullName,
-          mobileNumber,
+          fullName, mobileNumber,
           alternateMobileNumber: formData.alternateMobileNumber.trim(),
           email: formData.email.trim().toLowerCase(),
-          dateOfBirth: formData.dateOfBirth,
-          gender: formData.gender,
-          address: formData.address.trim(),
-          city: formData.city.trim(),
-          state: formData.state.trim(),
-          pincode: formData.pincode.trim(),
+          dateOfBirth: formData.dateOfBirth, gender: formData.gender,
+          address: formData.address.trim(), city: formData.city.trim(), state: formData.state.trim(), pincode: formData.pincode.trim(),
         });
-
-        setToast({ type: "success", message: "Investor profile updated." });
+        setToast({ type: "success", message: "Profile updated successfully." });
         closeModal();
         return;
       }
 
-      // --- NEW INVESTOR (CREATE PROFILE + ENROLLMENT) ---
+      // --- NEW ---
       if (!formData.schemeId) throw new Error("Select an investment scheme.");
-      if (!formData.startDate) throw new Error("Select the investment enrollment date.");
+      if (!formData.startDate) throw new Error("Select enrollment date.");
 
-      const monthlyAmount = Number(formData.monthlyAmount);
-      if (!Number.isFinite(monthlyAmount) || monthlyAmount <= 0) {
-        throw new Error("Enter a valid monthly amount.");
+      const contributionValue = Number(formData.contributionValue);
+      if (!Number.isFinite(contributionValue) || contributionValue <= 0) {
+        throw new Error(isGoldScheme ? "Enter a valid gold quantity." : "Enter a valid investment amount.");
       }
 
-      // Safe minimum amount check based on custom scheme structure
-      const schemeInstallmentType =
-        selectedScheme?.installmentConfig?.type || "FIXED";
-
-      const minimumAmount = Number(
-        selectedScheme?.installmentConfig?.amount ||
-        selectedScheme?.monthlyAmount ||
-        0
-      );
-
-      if (schemeInstallmentType === "FIXED") {
-        if (!Number.isFinite(minimumAmount) || minimumAmount <= 0) {
-          throw new Error(
-            "Selected scheme has an invalid monthly amount configuration."
-          );
-        }
-
-        if (monthlyAmount < minimumAmount) {
-          throw new Error(
-            `Monthly amount must be at least ₹${minimumAmount.toLocaleString("en-IN")}.`
-          );
-        }
+      const minimumRestrictionEnabled = Boolean(formData.minimumRestrictionEnabled);
+      if (minimumRestrictionEnabled && hasSchemeMinimum && contributionValue < schemeMinimum) {
+        throw new Error(isGoldScheme ? `Minimum investment is ${schemeMinimum} g.` : `Minimum investment is ₹${schemeMinimum.toLocaleString("en-IN")}.`);
       }
 
-      // 1. Create Profile
       const investor = await createInvestmentInvestor({
-        fullName,
-        mobileNumber,
+        fullName, mobileNumber,
         alternateMobileNumber: formData.alternateMobileNumber.trim(),
         email: formData.email.trim().toLowerCase(),
-        dateOfBirth: formData.dateOfBirth,
-        gender: formData.gender,
-        address: formData.address.trim(),
-        city: formData.city.trim(),
-        state: formData.state.trim(),
-        pincode: formData.pincode.trim(),
-        status: "ACTIVE"
+        dateOfBirth: formData.dateOfBirth, gender: formData.gender,
+        address: formData.address.trim(), city: formData.city.trim(), state: formData.state.trim(), pincode: formData.pincode.trim(),
+        status: "ACTIVE",
       });
 
-      // 2. Create First Account
-      const account = await createInvestmentAccount({
+      const prefix = selectedScheme?.accountNumberConfig?.prefix || "INV";
+      const padding = Number(selectedScheme?.accountNumberConfig?.padding || 6);
+      const nextSequence = Number(selectedScheme?.accountNumberConfig?.nextSequence || selectedScheme?.nextAccountNumber || 1);
+      const accountNumber = `${prefix}-${String(nextSequence).padStart(padding, "0")}`;
+
+      await createInvestmentAccount({
         investorId: investor.id,
         scheme: selectedScheme,
-        monthlyAmount,
+        accountNumber,
+        contributionValue,
         startDate: formData.startDate,
+        minimumRestrictionEnabled,
       });
 
-      setToast({
-        type: "success",
-        message: `Investor and investment account ${account.accountNumber} created successfully.`,
-      });
+      setToast({ type: "success", message: "Investor & Account created." });
       closeModal();
-    } catch (submitError) {
-      console.error("Failed to save investor:", submitError);
-      setToast({ type: "error", message: submitError.message || "Failed to save investor and account." });
+    } catch (err) {
+      console.error(err);
+      setToast({ type: "error", message: err.message || "Failed to save." });
     } finally {
       setSaving(false);
     }
@@ -332,359 +486,380 @@ export default function InvestmentInvestorsPage() {
     try {
       const nextStatus = investor.status === "ACTIVE" ? "INACTIVE" : "ACTIVE";
       await updateInvestmentInvestorStatus(investor.id, nextStatus);
-      setToast({ type: "success", message: nextStatus === "ACTIVE" ? "Investor activated." : "Investor deactivated." });
-    } catch (statusError) {
-      console.error("Failed to update investor status:", statusError);
-      setToast({ type: "error", message: statusError.message || "Failed to update investor status." });
+      setToast({ type: "success", message: `Investor marked as ${nextStatus.toLowerCase()}.` });
+    } catch (err) {
+      setToast({ type: "error", message: "Failed to update status." });
     }
   }
 
-  // ==========================================================
-  // DATA PREP & EXPORT
-  // ==========================================================
-  const filteredInvestors = useMemo(() => {
-    const searchValue = search.trim().toLowerCase();
-    return investors.filter((investor) => {
-      const matchesSearch = !searchValue || 
-        investor.fullName?.toLowerCase().includes(searchValue) || 
-        investor.mobileNumber?.toLowerCase().includes(searchValue) || 
-        investor.email?.toLowerCase().includes(searchValue);
-      const matchesStatus = statusFilter === "ALL" || (investor.status || "ACTIVE") === statusFilter;
-      return matchesSearch && matchesStatus;
+  function handleExportCSV() {
+    let csvContent = "data:text/csv;charset=utf-8,Full Name,Mobile,Email,Accounts,Total Amount,Total Gold,Status\n";
+    processedInvestors.forEach((investor) => {
+      const summary = investorSummaries.get(investor.id);
+      const accountsText = summary?.accounts?.map((a) => a.accountNumber).join(" | ") || "";
+      csvContent += `"${investor.fullName || ""}","${investor.mobileNumber || ""}","${investor.email || ""}","${accountsText}","${summary?.totalAmount || 0}","${summary?.totalGold || 0}","${investor.status || "ACTIVE"}"\n`;
     });
-  }, [investors, search, statusFilter]);
-
-  const handleExportCSV = () => {
-    let csvContent = "data:text/csv;charset=utf-8,";
-    csvContent += "Full Name,Mobile,Alternate Mobile,Email,DOB,Gender,City,State,Status\n";
-    filteredInvestors.forEach(inv => {
-      csvContent += `${inv.fullName},${inv.mobileNumber},${inv.alternateMobileNumber || ""},${inv.email || ""},${inv.dateOfBirth || ""},${inv.gender || ""},${inv.city || ""},${inv.state || ""},${inv.status || "ACTIVE"}\n`;
-    });
-    const encodedUri = encodeURI(csvContent);
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `Investors_Directory_${new Date().toLocaleDateString('en-IN')}.csv`);
+    link.href = url;
+    link.download = `Investors_Directory_${new Date().toISOString().slice(0, 10)}.csv`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-  };
+    URL.revokeObjectURL(url);
+  }
 
+  // ==========================================================
+  // RENDER
+  // ==========================================================
   return (
-    <div className="flex h-full flex-col bg-[#F5F7F5] lg:bg-white p-3 lg:p-4 lg:overflow-hidden min-h-0">
-      <div className="mx-auto flex h-full w-full max-w-[1400px] flex-col min-h-0 animate-in fade-in duration-300">
+    <div className="flex h-full flex-col bg-[#F9FAFB] p-2 sm:p-4 overflow-hidden">
+      
+      {/* TOAST */}
+      {toast && (
+        <div className={`fixed bottom-6 right-6 z-[70] flex max-w-sm items-center gap-3 rounded-2xl border px-5 py-4 shadow-2xl animate-in slide-in-from-bottom-6 duration-300 ${toast.type === "success" ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-rose-200 bg-rose-50 text-rose-800"}`}>
+          {toast.type === "success" ? <CheckCircle2 size={18} /> : <AlertCircle size={18} />}
+          <span className="text-sm font-bold">{toast.message}</span>
+        </div>
+      )}
 
-        {/* ======================================================
-            TOAST NOTIFICATION
-        ====================================================== */}
-        {toast && (
-          <div className={`fixed bottom-6 right-6 z-[60] flex max-w-sm items-center gap-3 rounded-2xl border px-5 py-4 shadow-xl animate-in slide-in-from-bottom-6 duration-300 ${
-            toast.type === "success" ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-rose-200 bg-rose-50 text-rose-800"
-          }`}>
-            {toast.type === "success" ? <CheckCircle2 size={18} className="text-emerald-600" /> : <AlertCircle size={18} className="text-rose-600" />}
-            <span className="text-sm font-bold tracking-wide">{toast.message}</span>
-          </div>
-        )}
-
-        {/* ======================================================
-            COMPACT HEADER & CONTROL STRIP
-        ====================================================== */}
-        <div className="shrink-0 flex flex-col gap-3 pb-3">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#E2E8E4]/60 pb-3">
+      {/* ULTRA-COMPACT TOOLBAR */}
+      <div className="shrink-0 mb-3 flex flex-col gap-2 rounded-2xl border border-[#E5E7EB] bg-white p-3 shadow-sm">
+        
+        {/* Top Row */}
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+          <div className="flex items-center gap-3">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#F0FDF4] border border-[#DCFCE7] text-[#166534]">
+              <UserRound size={18} strokeWidth={2.5} />
+            </div>
             <div>
-              <div className="mb-1 flex items-center gap-2 text-[#345343]">
-                <UserRound size={16} strokeWidth={2.5} />
-                <span className="text-[10px] font-bold uppercase tracking-wider">Customer Directory</span>
-              </div>
-              <h1 className="text-xl font-bold tracking-tight text-[#1B241E] sm:text-2xl">Investors</h1>
-              <p className="mt-1 text-xs font-medium text-[#68786D]">Manage investors enrolled in jewellery investment schemes.</p>
-            </div>
-            <div className="flex items-center gap-3">
-              <button onClick={handleExportCSV} className="flex h-9 items-center justify-center gap-1.5 rounded-lg border border-[#E2E8E4] bg-white px-4 text-xs font-bold text-[#345343] shadow-sm transition-colors hover:bg-[#F5F7F5] w-full sm:w-auto">
-                <Download size={14} /> Export CSV
-              </button>
-              <button onClick={openCreate} className="flex h-9 items-center justify-center gap-2 rounded-lg bg-[#345343] px-5 text-xs font-bold text-white shadow-sm transition-colors hover:bg-[#1B241E] w-full sm:w-auto">
-                <Plus size={14} strokeWidth={2.5} /> Add Investor
-              </button>
+              <h1 className="text-base font-extrabold tracking-tight text-[#111827]">Investors Directory</h1>
+              <p className="text-[10px] font-medium text-[#6B7280]">Showing {processedInvestors.length} records</p>
             </div>
           </div>
-
-          {/* SEARCH & FILTERS */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div className="flex flex-1 sm:max-w-md items-center gap-2">
-              <div className="relative w-full">
-                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#87968C]" />
-                <input
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Search name, mobile or email..."
-                  className="w-full rounded-lg border border-[#E2E8E4] bg-white py-2 pl-9 pr-3 text-xs font-semibold text-[#1B241E] outline-none shadow-sm focus:border-[#345343] focus:ring-1 focus:ring-[#345343] placeholder:text-[#A3B0AA]"
-                />
-              </div>
-              <div className="relative shrink-0">
-                <select
-                  value={statusFilter}
-                  onChange={(e) => setStatusFilter(e.target.value)}
-                  className="appearance-none rounded-lg border border-[#E2E8E4] bg-white py-2 pl-3 pr-8 text-xs font-bold text-[#1B241E] outline-none shadow-sm focus:border-[#345343] focus:ring-1 focus:ring-[#345343]"
-                >
-                  <option value="ALL">All Status</option>
-                  <option value="ACTIVE">Active Only</option>
-                  <option value="INACTIVE">Inactive Only</option>
-                </select>
-                <ChevronDown size={12} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[#87968C]" />
-              </div>
-            </div>
+          
+          <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+            <Link to="/crm/investment/schemes" className="flex flex-1 sm:flex-none h-[34px] items-center justify-center gap-1.5 rounded-lg border border-[#E5E7EB] bg-white px-4 text-xs font-bold text-[#374151] hover:bg-[#F9FAFB] transition-colors shadow-sm">
+              <Settings2 size={14} /> <span className="hidden sm:inline">Schemes</span>
+            </Link>
+            <button onClick={handleExportCSV} className="flex flex-1 sm:flex-none h-[34px] items-center justify-center gap-1.5 rounded-lg border border-[#E5E7EB] bg-white px-4 text-xs font-bold text-[#374151] hover:bg-[#F9FAFB] transition-colors shadow-sm">
+              <Download size={14} /> <span className="hidden sm:inline">Export</span>
+            </button>
+            <button onClick={openCreate} className="flex flex-1 sm:flex-none h-[34px] items-center justify-center gap-1.5 rounded-lg bg-[#166534] px-5 text-xs font-bold text-white hover:bg-[#14532D] transition-colors shadow-sm">
+              <Plus size={14} strokeWidth={2.5} /> <span className="hidden sm:inline">New Profile</span>
+            </button>
           </div>
         </div>
 
-        {error && (
-          <div className="mb-4 flex shrink-0 items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs font-bold text-rose-700">
-            <AlertCircle size={15} />
-            <span>{error}</span>
+        {/* Bottom Row */}
+        <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-3 pt-2 border-t border-[#F3F4F6]">
+          
+          <div className="flex items-center gap-2 w-full lg:w-auto">
+            <div className="relative w-full sm:w-64">
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#9CA3AF]" />
+              <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search records..." className="w-full rounded-md bg-[#F9FAFB] py-1.5 pl-9 pr-3 text-xs font-medium border border-[#E5E7EB] outline-none focus:border-[#166534] focus:ring-1 focus:ring-[#166534] transition-all" />
+            </div>
+            <div className="relative shrink-0 w-32">
+              <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="w-full appearance-none rounded-md bg-[#F9FAFB] border border-[#E5E7EB] py-1.5 pl-3 pr-8 text-[10px] font-bold uppercase tracking-wider text-[#4B5563] outline-none focus:border-[#166534] transition-all">
+                <option value="ALL">All Status</option>
+                <option value="ACTIVE">Active</option>
+                <option value="INACTIVE">Inactive</option>
+              </select>
+              <ChevronDown size={12} className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[#9CA3AF]" />
+            </div>
+          </div>
+
+          {/* Scheme Tabs */}
+          <div className="flex w-full overflow-x-auto gap-1.5 [&::-webkit-scrollbar]:hidden">
+            <button onClick={() => setActiveTab("ALL")} className={`whitespace-nowrap px-3 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wider transition-all border ${activeTab === "ALL" ? "bg-[#166534] text-white border-[#166534]" : "bg-white text-[#6B7280] border-[#E5E7EB] hover:bg-[#F9FAFB]"}`}>
+              All Schemes
+            </button>
+            {activeSchemes.map(scheme => (
+              <button key={scheme.id} onClick={() => setActiveTab(scheme.id)} className={`whitespace-nowrap px-3 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wider transition-all border ${activeTab === scheme.id ? "bg-[#166534] text-white border-[#166534]" : "bg-white text-[#6B7280] border-[#E5E7EB] hover:bg-[#F9FAFB]"}`}>
+                {scheme.schemeName}
+              </button>
+            ))}
+          </div>
+
+        </div>
+
+        {(error || accountsError || schemesError) && (
+          <div className="mt-2 flex items-center gap-1.5 rounded border border-rose-200 bg-rose-50 px-3 py-1.5 text-[10px] font-bold text-rose-700">
+            <AlertCircle size={12} /> {error || accountsError || schemesError}
           </div>
         )}
+      </div>
 
-        {/* ======================================================
-            MAIN DATA RENDER (Table ~70vh Desktop, Cards Mobile)
-        ====================================================== */}
-        <div className="flex-1 min-h-[60vh] flex flex-col overflow-hidden rounded-[1.5rem] bg-transparent lg:bg-white lg:border lg:border-[#E2E8E4] lg:shadow-sm">
-          {loading ? (
-            <div className="flex h-full items-center justify-center bg-white/50">
-              <Loader2 size={32} className="animate-spin text-[#345343]" />
-            </div>
-          ) : filteredInvestors.length === 0 ? (
-            <div className="flex h-full flex-col items-center justify-center p-12 text-center bg-white border border-dashed border-[#E2E8E4] rounded-[1.5rem]">
-              <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-[#F5F7F5] text-[#87968C]">
-                <UserRound size={24} />
-              </div>
-              <h2 className="text-base font-bold text-[#1B241E]">No Investors Found</h2>
-              <p className="mt-1.5 max-w-sm text-xs font-medium text-[#68786D]">No investors match your current search or there are no profiles in the directory.</p>
-              {!search && statusFilter === "ALL" && (
-                <button onClick={openCreate} className="mt-5 rounded-lg bg-[#345343] px-5 py-2.5 text-xs font-bold text-white hover:bg-[#1B241E] shadow-sm">
-                  Add First Investor
-                </button>
-              )}
-            </div>
-          ) : (
-            <>
-              {/* --- DESKTOP TABLE --- */}
-              <div className="hidden lg:flex flex-col h-full overflow-hidden">
-                <table className="w-full text-left border-collapse">
-                  <thead className="sticky top-0 z-10 bg-[#F5F7F5] border-b border-[#E2E8E4] shadow-sm">
+      {/* ==================================================
+          DATA LIST (TABLE & CARDS)
+      ================================================== */}
+      <div className="flex-1 overflow-hidden flex flex-col bg-white rounded-2xl border border-[#E5E7EB] shadow-sm">
+        {loading || accountsLoading ? (
+          <div className="flex h-full items-center justify-center">
+            <Loader2 size={24} className="animate-spin text-[#166534]" />
+          </div>
+        ) : processedInvestors.length === 0 ? (
+          <div className="flex h-full flex-col items-center justify-center text-center p-6 bg-[#F9FAFB]">
+            <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-white border border-[#E5E7EB] text-[#9CA3AF]"><UserRound size={20} /></div>
+            <h2 className="text-sm font-bold text-[#111827]">No Records Found</h2>
+            <p className="mt-1 text-[11px] text-[#6B7280]">Adjust your filters or register a new investor.</p>
+          </div>
+        ) : (
+          <>
+            {/* DESKTOP TABLE */}
+            <div className="hidden lg:flex flex-1 flex-col overflow-hidden">
+              <div className="flex-1 overflow-auto [&::-webkit-scrollbar]:hidden">
+                <table className="w-full border-collapse text-left">
+                  <thead className="sticky top-0 z-10 bg-[#F9FAFB] border-b border-[#E5E7EB]">
                     <tr>
-                      <th className="px-6 py-3.5 text-[10px] font-bold uppercase tracking-wider text-[#87968C]">Investor Identity</th>
-                      <th className="px-6 py-3.5 text-[10px] font-bold uppercase tracking-wider text-[#87968C]">Contact & Demographics</th>
-                      <th className="px-6 py-3.5 text-[10px] font-bold uppercase tracking-wider text-[#87968C]">Location</th>
-                      <th className="px-6 py-3.5 text-center text-[10px] font-bold uppercase tracking-wider text-[#87968C]">Status</th>
-                      <th className="px-6 py-3.5 text-right text-[10px] font-bold uppercase tracking-wider text-[#87968C]">Actions</th>
+                      <th className="px-5 py-3 text-[10px] font-bold uppercase tracking-wider text-[#6B7280]">
+                        <button onClick={() => requestSort("fullName")} className="flex items-center gap-1.5 hover:text-[#111827]">
+                          Name <SortIcon columnKey="fullName" />
+                        </button>
+                      </th>
+                      <th className="px-5 py-3 text-[10px] font-bold uppercase tracking-wider text-[#6B7280]">Contact & Accounts</th>
+                      <th className="px-5 py-3 text-right text-[10px] font-bold uppercase tracking-wider text-[#6B7280]">
+                        <button onClick={() => requestSort("totalAmount")} className="flex w-full justify-end items-center gap-1.5 hover:text-[#111827]">
+                          Total Funds <SortIcon columnKey="totalAmount" />
+                        </button>
+                      </th>
+                      <th className="px-5 py-3 text-right text-[10px] font-bold uppercase tracking-wider text-[#6B7280]">
+                        <button onClick={() => requestSort("totalGold")} className="flex w-full justify-end items-center gap-1.5 hover:text-[#111827]">
+                          Total Gold <SortIcon columnKey="totalGold" />
+                        </button>
+                      </th>
+                      <th className="px-5 py-3 text-center text-[10px] font-bold uppercase tracking-wider text-[#6B7280]">Status</th>
+                      <th className="px-5 py-3 text-right text-[10px] font-bold uppercase tracking-wider text-[#6B7280]">Action</th>
                     </tr>
                   </thead>
-                  <tbody className="overflow-y-auto divide-y divide-[#E2E8E4]/60 [&::-webkit-scrollbar]:hidden">
-                    {filteredInvestors.map((investor) => (
-                      <tr key={investor.id} className="hover:bg-[#F5F7F5]/40 transition-colors">
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="flex items-center gap-3">
-                            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white border border-[#E2E8E4] text-[#345343] shadow-sm">
-                              {investor.fullName.charAt(0).toUpperCase()}
+                  <tbody className="divide-y divide-[#F3F4F6]">
+                    {paginatedInvestors.map((investor) => {
+                      const summary = investorSummaries.get(investor.id) || { accounts: [], totalAmount: 0, totalGold: 0, hasSip: false, hasAmountAccount: false };
+                      return (
+                        <tr key={investor.id} className="group hover:bg-[#F9FAFB] transition-colors">
+                          <td className="px-5 py-3 whitespace-nowrap">
+                            <div className="flex items-center gap-3">
+                              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#F0FDF4] border border-[#DCFCE7] text-xs font-bold text-[#166534]">
+                                {(investor.fullName || "?").charAt(0).toUpperCase()}
+                              </div>
+                              <div className="min-w-0">
+                                <p className="truncate text-xs font-bold text-[#111827]">{investor.fullName}</p>
+                                <p className="text-[10px] font-medium text-[#6B7280] flex items-center gap-1"><MapPin size={10}/> {investor.city || "No Location"}</p>
+                              </div>
                             </div>
-                            <div>
-                              <p className="text-sm font-bold text-[#1B241E]">{investor.fullName}</p>
-                              {investor.email && <p className="mt-0.5 flex items-center gap-1 text-[10px] font-medium text-[#87968C]"><Mail size={10} /> {investor.email}</p>}
+                          </td>
+                          <td className="px-5 py-3 whitespace-nowrap">
+                            <p className="text-[11px] font-bold text-[#374151] flex items-center gap-1.5"><Phone size={10} className="text-[#9CA3AF]"/> {investor.mobileNumber}</p>
+                            <div className="mt-1 flex flex-wrap gap-1 items-center max-w-[200px]">
+                              {summary.accounts.length === 0 ? <span className="text-[9px] text-[#9CA3AF] italic">No accounts</span> : summary.accounts.slice(0, 2).map(acc => (
+                                <button key={acc.id} onClick={() => navigate(`/crm/investment/accounts/${acc.id}`)} className="px-1.5 py-0.5 rounded border border-[#E5E7EB] bg-white text-[9px] font-bold text-[#4B5563] shadow-sm hover:border-[#166534] transition-colors">
+                                  {acc.accountNumber || "—"}
+                                </button>
+                              ))}
+                              {summary.accounts.length > 2 && <span className="text-[9px] font-bold text-[#166534]">+{summary.accounts.length - 2}</span>}
                             </div>
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <p className="flex items-center gap-1.5 text-xs font-bold text-[#1B241E]"><Phone size={12} className="text-[#87968C]"/> {investor.mobileNumber}</p>
-                          <div className="mt-1 flex items-center gap-2 text-[10px] font-semibold text-[#87968C]">
-                            {investor.dateOfBirth && <span><CalendarDays size={10} className="inline mr-1"/>{formatDate(investor.dateOfBirth)}</span>}
-                            {investor.gender && <span className="uppercase px-1.5 py-0.5 rounded bg-[#F5F7F5] border border-[#E2E8E4]">{investor.gender}</span>}
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <p className="flex items-center gap-1.5 text-xs font-bold text-[#1B241E]"><MapPin size={12} className="text-[#87968C]"/> {investor.city || "—"}</p>
-                          <p className="mt-0.5 text-[10px] font-medium text-[#87968C] ml-4">{investor.state || "—"} {investor.pincode ? `- ${investor.pincode}` : ""}</p>
-                        </td>
-                        <td className="px-6 py-4 text-center whitespace-nowrap">
-                          <StatusBadge status={investor.status} />
-                        </td>
-                        <td className="px-6 py-4 text-right whitespace-nowrap">
-                          <div className="flex items-center justify-end gap-2">
-                            <button onClick={() => openEdit(investor)} className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#E2E8E4] bg-white text-[#345343] transition-colors hover:bg-[#F5F7F5] shadow-sm" title="Edit Profile">
-                              <Edit3 size={14} />
-                            </button>
-                            <button onClick={() => handleToggleStatus(investor)} className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#E2E8E4] bg-white text-[#87968C] transition-colors hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200 shadow-sm" title={investor.status === "ACTIVE" ? "Deactivate" : "Activate"}>
-                              <Power size={14} />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
+                          </td>
+                          <td className="px-5 py-3 whitespace-nowrap text-right">
+                            <span className={`text-xs font-black font-mono tracking-tight ${summary.hasAmountAccount ? "text-[#111827]" : "text-[#9CA3AF]"}`}>
+                              {summary.hasAmountAccount ? formatCurrency(summary.totalAmount) : "—"}
+                            </span>
+                          </td>
+                          <td className="px-5 py-3 whitespace-nowrap text-right">
+                            <span className={`text-xs font-bold font-mono tracking-tight ${summary.hasSip ? "text-[#166534]" : "text-[#9CA3AF]"}`}>
+                              {summary.hasSip ? formatGold(summary.totalGold) : "—"}
+                            </span>
+                          </td>
+                          <td className="px-5 py-3 whitespace-nowrap text-center">
+                            <StatusBadge status={investor.status} />
+                          </td>
+                          <td className="px-5 py-3 whitespace-nowrap text-right opacity-0 group-hover:opacity-100 transition-opacity">
+                            <div className="flex items-center justify-end gap-1">
+                              <button onClick={() => navigate(`/crm/investment/investors/${investor.id}`)} className="p-1.5 rounded-md text-[#4B5563] hover:text-[#111827] hover:bg-white border border-transparent hover:border-[#E5E7EB] shadow-sm transition-all" title="View Profile">
+                                <Eye size={14} />
+                              </button>
+                              <button onClick={() => openEdit(investor)} className="p-1.5 rounded-md text-[#4B5563] hover:text-[#166534] hover:bg-white border border-transparent hover:border-[#E5E7EB] shadow-sm transition-all" title="Edit">
+                                <Edit3 size={14} />
+                              </button>
+                              <button onClick={() => handleToggleStatus(investor)} className="p-1.5 rounded-md text-[#9CA3AF] hover:text-rose-600 hover:bg-white border border-transparent hover:border-[#E5E7EB] shadow-sm transition-all" title="Toggle Status">
+                                <Power size={14} />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
+            </div>
 
-              {/* --- MOBILE CARDS --- */}
-              <div className="flex lg:hidden flex-col gap-4 overflow-y-auto pb-6 [&::-webkit-scrollbar]:hidden">
-                {filteredInvestors.map((investor) => (
-                  <div key={investor.id} className="rounded-2xl border border-[#E2E8E4] bg-white p-5 shadow-sm">
-                    <div className="flex items-start justify-between border-b border-[#E2E8E4]/60 pb-3 mb-3">
+            {/* MOBILE CARDS */}
+            <div className="flex lg:hidden flex-col gap-3 overflow-y-auto p-3 bg-[#F9FAFB] [&::-webkit-scrollbar]:hidden">
+              {paginatedInvestors.map((investor) => {
+                const summary = investorSummaries.get(investor.id) || { accounts: [], totalAmount: 0, totalGold: 0, hasSip: false, hasAmountAccount: false };
+                return (
+                  <div key={investor.id} className="rounded-xl border border-[#E5E7EB] bg-white p-4 shadow-sm">
+                    <div className="flex items-start justify-between border-b border-[#F3F4F6] pb-3 mb-3">
                       <div className="flex items-center gap-3">
-                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#F5F7F5] text-[#345343] font-bold text-lg border border-[#E2E8E4]">
-                          {investor.fullName.charAt(0).toUpperCase()}
+                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#F0FDF4] border border-[#DCFCE7] text-[#166534] font-bold text-lg">
+                          {(investor.fullName || "?").charAt(0).toUpperCase()}
                         </div>
                         <div>
-                          <p className="text-sm font-bold text-[#1B241E]">{investor.fullName}</p>
-                          <p className="text-[10px] font-medium text-[#87968C]">{investor.mobileNumber}</p>
+                          <p className="text-sm font-bold text-[#111827]">{investor.fullName}</p>
+                          <p className="text-[10px] font-medium text-[#6B7280] flex items-center gap-1 mt-0.5"><Phone size={10}/> {investor.mobileNumber}</p>
                         </div>
                       </div>
                       <StatusBadge status={investor.status} />
                     </div>
-
-                    <div className="grid grid-cols-2 gap-3 mb-4">
-                      <div className="rounded-xl bg-[#F5F7F5] p-2.5 border border-[#E2E8E4]/40">
-                        <p className="text-[8px] font-bold uppercase tracking-wider text-[#87968C]">Location</p>
-                        <p className="mt-0.5 text-xs font-bold text-[#1B241E] truncate">{investor.city || "—"}</p>
-                      </div>
-                      <div className="rounded-xl bg-[#F5F7F5] p-2.5 border border-[#E2E8E4]/40 text-right">
-                        <p className="text-[8px] font-bold uppercase tracking-wider text-[#87968C]">Date of Birth</p>
-                        <p className="mt-0.5 text-xs font-bold text-[#1B241E]">{formatDate(investor.dateOfBirth)}</p>
-                      </div>
+                    
+                    <div className="flex justify-between items-center mb-4 bg-[#F9FAFB] p-2.5 rounded-lg border border-[#E5E7EB]">
+                       <div className="flex flex-col">
+                         <span className="text-[9px] font-bold uppercase tracking-wider text-[#9CA3AF]">Funds</span>
+                         <span className="text-xs font-black font-mono text-[#111827]">{summary.hasAmountAccount ? formatCurrency(summary.totalAmount) : "—"}</span>
+                       </div>
+                       <div className="flex flex-col text-right">
+                         <span className="text-[9px] font-bold uppercase tracking-wider text-[#9CA3AF]">Gold</span>
+                         <span className="text-xs font-bold font-mono text-[#166534]">{summary.hasSip ? formatGold(summary.totalGold) : "—"}</span>
+                       </div>
                     </div>
-
-                    <div className="flex items-center gap-2">
-                      <button onClick={() => openEdit(investor)} className="flex flex-1 items-center justify-center gap-2 rounded-lg border border-[#E2E8E4] bg-white px-3 py-2 text-xs font-bold text-[#345343] shadow-sm active:bg-[#F5F7F5]">
-                        <Edit3 size={14} /> Edit
+                    
+                    <div className="grid grid-cols-3 gap-2">
+                      <button onClick={() => navigate(`/crm/investment/investors/${investor.id}`)} className="flex items-center justify-center gap-1.5 rounded-lg border border-[#E5E7EB] bg-white py-2 text-[10px] font-bold text-[#374151] hover:bg-[#F9FAFB] shadow-sm">
+                        <Eye size={12} /> View
                       </button>
-                      <button onClick={() => handleToggleStatus(investor)} className="flex flex-1 items-center justify-center gap-2 rounded-lg border border-[#E2E8E4] bg-white px-3 py-2 text-xs font-bold text-[#68786D] shadow-sm active:bg-rose-50 active:text-rose-600">
-                        <Power size={14} /> {investor.status === "ACTIVE" ? "Disable" : "Enable"}
+                      <button onClick={() => openEdit(investor)} className="flex items-center justify-center gap-1.5 rounded-lg border border-[#E5E7EB] bg-white py-2 text-[10px] font-bold text-[#374151] hover:bg-[#F9FAFB] shadow-sm">
+                        <Edit3 size={12} /> Edit
+                      </button>
+                      <button onClick={() => handleToggleStatus(investor)} className="flex items-center justify-center gap-1.5 rounded-lg border border-[#E5E7EB] bg-white py-2 text-[10px] font-bold text-[#9CA3AF] hover:text-rose-600 hover:bg-rose-50 shadow-sm">
+                        <Power size={12} /> Status
                       </button>
                     </div>
                   </div>
-                ))}
+                );
+              })}
+            </div>
+            
+            {/* PAGINATION FOOTER */}
+            {totalPages > 1 && (
+              <div className="flex shrink-0 items-center justify-between border-t border-[#E5E7EB] px-5 py-2.5 bg-[#F9FAFB]">
+                <p className="text-[10px] font-bold text-[#6B7280]">
+                  Showing {(currentPage - 1) * ITEMS_PER_PAGE + 1} - {Math.min(currentPage * ITEMS_PER_PAGE, processedInvestors.length)} of {processedInvestors.length}
+                </p>
+                <div className="flex gap-1.5">
+                  <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1} className="px-3 py-1.5 text-[10px] font-bold rounded-md border border-[#E5E7EB] bg-white text-[#374151] disabled:opacity-50 hover:bg-[#F3F4F6] shadow-sm transition-colors">
+                    Prev
+                  </button>
+                  <button onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages} className="px-3 py-1.5 text-[10px] font-bold rounded-md border border-[#E5E7EB] bg-white text-[#374151] disabled:opacity-50 hover:bg-[#F3F4F6] shadow-sm transition-colors">
+                    Next
+                  </button>
+                </div>
               </div>
-            </>
-          )}
-        </div>
+            )}
+          </>
+        )}
       </div>
 
       {/* ======================================================
-          CREATE / EDIT WIZARD MODAL (Premium Glass UI)
+          CREATE / EDIT WIZARD MODAL 
       ====================================================== */}
       {modalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#1B241E]/40 p-4 backdrop-blur-sm animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#111827]/40 p-4 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="flex max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-[2rem] bg-white shadow-2xl animate-in zoom-in-95 duration-300">
             
-            {/* Modal Header */}
-            <div className="flex shrink-0 items-center justify-between border-b border-[#E2E8E4] bg-[#F5F7F5]/50 px-6 py-5 sm:px-8">
+            <div className="flex shrink-0 items-center justify-between border-b border-[#E5E7EB] bg-[#F9FAFB] px-6 py-4 sm:px-8">
               <div>
-                <h2 className="text-lg font-bold text-[#1B241E]">
-                  {modalStep === 1 ? "Verify Investor" : editingId ? "Edit Investor Profile" : "Register New Investor"}
+                <h2 className="text-lg font-bold tracking-tight text-[#111827]">
+                  {modalStep === 1 ? "Verify Mobile Number" : editingId ? "Edit Profile" : "Register Investor"}
                 </h2>
-                <p className="mt-1 text-xs font-medium text-[#68786D]">
-                  {modalStep === 1 ? "Check for existing profiles before creating a new one." : "Maintain the investor's core identity and communication details."}
+                <p className="text-[11px] font-medium text-[#6B7280]">
+                  {modalStep === 1 ? "Ensure the profile doesn't already exist." : "Enter personal identity and initial investment details."}
                 </p>
               </div>
-              <button onClick={closeModal} disabled={saving} className="flex h-8 w-8 items-center justify-center rounded-full border border-transparent text-[#87968C] transition hover:border-[#E2E8E4] hover:bg-white hover:text-[#1B241E]">
-                <X size={18} strokeWidth={2.5} />
+              <button onClick={closeModal} disabled={saving} className="rounded-full p-2 text-[#9CA3AF] hover:bg-[#E5E7EB] hover:text-[#111827] transition-colors border border-transparent hover:border-[#D1D5DB]">
+                <X size={16} strokeWidth={2.5} />
               </button>
             </div>
 
-            {/* STEP 1: MOBILE NUMBER CHECK */}
+            {/* STEP 1: MOBILE CHECK */}
             {modalStep === 1 && !matchedInvestors && (
-              <form onSubmit={handleCheckMobile} className="p-8 sm:p-12 flex-1 flex flex-col items-center justify-center bg-white">
-                <div className="flex flex-col items-center text-center max-w-md w-full">
-                  <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-[1.5rem] bg-[#F5F7F5] border border-[#E2E8E4]/60 text-[#345343] shadow-sm">
-                    <Phone size={28} strokeWidth={2} />
+              <form onSubmit={handleCheckMobile} className="p-8 sm:p-16 flex-1 flex flex-col items-center justify-center bg-white">
+                <div className="flex flex-col items-center text-center max-w-sm w-full">
+                  <div className="mb-6 flex h-20 w-20 items-center justify-center rounded-full bg-[#F0FDF4] border border-[#DCFCE7] text-[#166534] shadow-sm">
+                    <Phone size={32} strokeWidth={2} />
                   </div>
-                  <h3 className="text-xl font-bold text-[#1B241E]">Enter Mobile Number</h3>
-                  <p className="mt-2 text-sm font-medium leading-relaxed text-[#68786D]">
+                  <h3 className="text-xl font-bold text-[#111827]">Enter Mobile Number</h3>
+                  <p className="mt-2 text-sm font-medium leading-relaxed text-[#6B7280]">
                     We will quickly check if an investor profile already exists with this phone number to avoid duplicates.
                   </p>
                   
-                  <div className="mt-8 w-full">
-                    <InputField 
-                      label="10-Digit Mobile Number" 
-                      name="checkMobile" 
-                      value={checkMobile} 
-                      onChange={(e) => setCheckMobile(e.target.value)} 
-                      type="tel" 
-                      placeholder="e.g. 9876543210" 
-                      required 
-                    />
+                  <div className="mt-8 w-full text-left">
+                    <InputField label="10-Digit Mobile" name="checkMobile" value={checkMobile} onChange={(e) => setCheckMobile(e.target.value)} type="tel" prefix="+91" required />
                   </div>
-                  
-                  <div className="mt-8 flex w-full justify-center">
-                    <button type="submit" className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#345343] px-8 py-3.5 text-sm font-bold text-white shadow-sm transition hover:bg-[#1B241E] hover:-translate-y-0.5">
-                      Check & Continue <ArrowRight size={16} />
-                    </button>
-                  </div>
+                  <button type="submit" className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl bg-[#166534] px-8 py-3.5 text-sm font-bold text-white shadow-md transition-all hover:bg-[#14532D] hover:-translate-y-0.5">
+                    Verify & Continue <ArrowRight size={16} />
+                  </button>
                 </div>
               </form>
             )}
 
-            {/* STEP 1.5: EXISTING MATCHES FOUND */}
+            {/* STEP 1.5: MATCHES FOUND */}
             {modalStep === 1 && matchedInvestors && (
-              <div className="p-6 sm:p-8 flex-1 overflow-y-auto bg-[#F5F7F5]/30">
+              <div className="p-6 sm:p-10 flex-1 overflow-y-auto bg-[#F9FAFB]">
                 <div className="mx-auto max-w-2xl flex flex-col gap-6 animate-in slide-in-from-bottom-4 duration-300">
-                  
-                  <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5 shadow-sm">
-                    <p className="text-sm font-bold text-amber-900 flex items-center gap-2"><AlertCircle size={16}/> Existing Profiles Found</p>
-                    <p className="text-xs text-amber-800 mt-2 leading-relaxed">
-                      We found <span className="font-bold">{matchedInvestors.length}</span> profile(s) linked to the number <span className="font-bold">{checkMobile}</span>. You can edit an existing profile or purposefully create a new one.
+                  <div className="rounded-xl border border-amber-200 bg-amber-50 p-5 shadow-sm">
+                    <div className="flex items-center gap-2 text-amber-900 mb-1">
+                      <AlertCircle size={18} strokeWidth={2.5}/> 
+                      <h3 className="text-sm font-bold">Existing Profiles Found</h3>
+                    </div>
+                    <p className="text-xs font-medium text-amber-800 leading-relaxed">
+                      Found <span className="font-bold">{matchedInvestors.length}</span> profile(s) for <span className="font-bold tracking-wider">{checkMobile}</span>. Select an existing profile to edit, or create a new profile for a family member.
                     </p>
                   </div>
-
-                  <div className="grid grid-cols-1 gap-4">
+                  <div className="flex flex-col gap-3">
                     {matchedInvestors.map(inv => (
-                      <div key={inv.id} className="group flex flex-col sm:flex-row sm:items-center justify-between p-5 border border-[#E2E8E4] rounded-2xl bg-white shadow-sm hover:border-[#345343]/30 transition-all">
+                      <div key={inv.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-5 border border-[#E5E7EB] rounded-xl bg-white shadow-sm hover:border-[#166534]/40 transition-all">
                         <div className="flex items-center gap-4 mb-4 sm:mb-0">
-                          <div className="h-12 w-12 flex items-center justify-center bg-[#F5F7F5] rounded-xl text-[#345343] font-bold text-lg border border-[#E2E8E4]/60">
-                              {inv.fullName.charAt(0).toUpperCase()}
+                          <div className="h-12 w-12 flex items-center justify-center bg-[#F0FDF4] rounded-full text-[#166534] font-bold text-lg border border-[#DCFCE7]">
+                              {(inv.fullName || "?").charAt(0).toUpperCase()}
                           </div>
                           <div>
-                            <p className="text-base font-bold text-[#1B241E] flex items-center gap-2">
-                              {inv.fullName} <StatusBadge status={inv.status} />
-                            </p>
-                            <p className="text-xs font-medium text-[#87968C] mt-1">{inv.email || "No Email"} • {inv.city || "No City"}</p>
+                            <p className="text-base font-bold text-[#111827] flex items-center gap-2">{inv.fullName} <StatusBadge status={inv.status} /></p>
+                            <p className="text-[11px] font-medium text-[#6B7280] mt-0.5">{inv.email || "No Email"} • {inv.city || "No City"}</p>
                           </div>
                         </div>
-                        <button type="button" onClick={() => openEdit(inv)} className="w-full sm:w-auto px-5 py-2.5 bg-[#F5F7F5] text-[#345343] border border-[#E2E8E4] text-xs font-bold rounded-xl hover:bg-white hover:border-[#345343] transition-colors shadow-sm">
-                          View & Edit Profile
+                        <button type="button" onClick={() => openEdit(inv)} className="w-full sm:w-auto px-5 py-2.5 bg-white text-[#166534] border border-[#E5E7EB] text-xs font-bold rounded-lg hover:bg-[#F0FDF4] shadow-sm transition-colors">
+                          Edit Profile
                         </button>
                       </div>
                     ))}
                   </div>
-
-                  <div className="mt-4 flex flex-col items-center border-t border-[#E2E8E4]/60 pt-6">
-                    <p className="text-xs font-bold text-[#87968C] mb-4 uppercase tracking-wider">Creating an account for a relative/family member?</p>
-                    <button type="button" onClick={proceedToNewProfile} className="px-8 py-3 bg-white border border-[#E2E8E4] text-[#1B241E] text-xs font-bold rounded-xl shadow-sm hover:bg-[#F5F7F5] transition-all">
-                      Proceed to Register New Profile
+                  <div className="mt-4 flex flex-col items-center border-t border-[#E5E7EB] pt-6">
+                    <p className="text-[10px] font-bold text-[#9CA3AF] mb-3 uppercase tracking-wider">Creating account for a relative?</p>
+                    <button type="button" onClick={proceedToNewProfile} className="px-6 py-2.5 bg-white border border-[#E5E7EB] text-[#374151] text-xs font-bold rounded-lg shadow-sm hover:bg-[#F9FAFB] transition-all">
+                      Proceed with New Registration
                     </button>
                   </div>
-
                 </div>
               </div>
             )}
 
-            {/* STEP 2: FULL REGISTRATION / EDIT FORM */}
+            {/* STEP 2: FORM */}
             {modalStep === 2 && (
               <form onSubmit={handleSubmit} className="flex flex-col min-h-0 flex-1 animate-in fade-in duration-300">
-                <div className="flex-1 overflow-y-auto p-6 sm:p-8 [&::-webkit-scrollbar]:hidden">
-                  
-                  {/* GRID FOR PERSONAL + ADDRESS */}
+                <div className="flex-1 overflow-y-auto p-5 sm:p-8 [&::-webkit-scrollbar]:hidden bg-white">
                   <div className="grid gap-6 lg:grid-cols-2">
                     
-                    {/* Identity & Contact */}
-                    <div className="space-y-5 rounded-2xl border border-[#E2E8E4] p-5 sm:p-6 shadow-[0_4px_20px_-10px_rgba(0,0,0,0.03)] bg-white h-fit">
-                      <div className="border-b border-[#E2E8E4]/70 pb-3 mb-2">
-                        <h3 className="text-sm font-bold text-[#1B241E]">Identity & Contact</h3>
+                    {/* Identity */}
+                    <div className="space-y-4 rounded-[1.5rem] border border-[#E5E7EB] p-5 sm:p-6 bg-[#F9FAFB] shadow-sm h-fit">
+                      <h3 className="text-xs font-bold uppercase tracking-wider text-[#111827] border-b border-[#E5E7EB] pb-3 flex items-center gap-2"><UserRound size={16} className="text-[#166534]" /> Identity Details</h3>
+                      <InputField label="Full Legal Name" name="fullName" value={formData.fullName} onChange={handleChange} required disabled={saving} />
+                      <div className="grid gap-4 sm:grid-cols-2">
+                        <InputField label="Primary Mobile" name="mobileNumber" value={formData.mobileNumber} onChange={handleChange} type="tel" prefix="+91" required disabled={saving} />
+                        <InputField label="Alternate" name="alternateMobileNumber" value={formData.alternateMobileNumber} onChange={handleChange} type="tel" disabled={saving} />
                       </div>
-                      <InputField label="Full Name" name="fullName" value={formData.fullName} onChange={handleChange} placeholder="e.g. Rahul Sharma" required disabled={saving} />
-                      <div className="grid gap-5 sm:grid-cols-2">
-                        <InputField label="Mobile Number" name="mobileNumber" value={formData.mobileNumber} onChange={handleChange} type="tel" placeholder="10-digit number" required disabled={saving} />
-                        <InputField label="Alternate Mobile" name="alternateMobileNumber" value={formData.alternateMobileNumber} onChange={handleChange} type="tel" placeholder="Optional" disabled={saving} />
-                      </div>
-                      <InputField label="Email Address" name="email" value={formData.email} onChange={handleChange} type="email" placeholder="Optional" disabled={saving} />
-                      <div className="grid gap-5 sm:grid-cols-2">
+                      <InputField label="Email Address" name="email" value={formData.email} onChange={handleChange} type="email" disabled={saving} />
+                      <div className="grid gap-4 sm:grid-cols-2">
                         <InputField label="Date of Birth" name="dateOfBirth" value={formData.dateOfBirth} onChange={handleChange} type="date" disabled={saving} />
                         <SelectField label="Gender" name="gender" value={formData.gender} onChange={handleChange} disabled={saving}>
                           <option value="">Select</option>
@@ -696,105 +871,79 @@ export default function InvestmentInvestorsPage() {
                     </div>
 
                     {/* Address */}
-                    <div className="space-y-5 rounded-2xl border border-[#E2E8E4] p-5 sm:p-6 shadow-[0_4px_20px_-10px_rgba(0,0,0,0.03)] bg-white h-fit">
-                      <div className="border-b border-[#E2E8E4]/70 pb-3 mb-2">
-                        <h3 className="text-sm font-bold text-[#1B241E]">Location Details</h3>
-                      </div>
-                      <div className="space-y-1.5">
+                    <div className="space-y-4 rounded-[1.5rem] border border-[#E5E7EB] p-5 sm:p-6 bg-[#F9FAFB] shadow-sm h-fit">
+                      <h3 className="text-xs font-bold uppercase tracking-wider text-[#111827] border-b border-[#E5E7EB] pb-3 flex items-center gap-2"><MapPin size={16} className="text-[#166534]" /> Location Details</h3>
+                      <div className="space-y-1 w-full">
                         <label className="text-[10px] font-bold uppercase tracking-wider text-[#87968C]">Full Address</label>
-                        <textarea
-                          name="address"
-                          value={formData.address}
-                          onChange={handleChange}
-                          placeholder="House / street / locality"
-                          disabled={saving}
-                          rows={3}
-                          className="w-full resize-none rounded-xl border border-[#E2E8E4] bg-[#F5F7F5] px-4 py-3 text-sm font-semibold text-[#1B241E] outline-none transition-all placeholder:text-[#A3B0AA] focus:border-[#345343] focus:bg-white focus:ring-2 focus:ring-[#345343]/20 disabled:opacity-60 shadow-sm"
-                        />
+                        <textarea name="address" value={formData.address} onChange={handleChange} disabled={saving} rows={3} className="w-full resize-none rounded-xl border border-[#E2E8E4] bg-white px-3.5 py-2.5 text-sm font-semibold outline-none focus:border-[#345343] focus:ring-2 focus:ring-[#345343]/20 shadow-sm" />
                       </div>
-                      <div className="grid gap-5 sm:grid-cols-2">
-                        <InputField label="City" name="city" value={formData.city} onChange={handleChange} placeholder="City" disabled={saving} />
-                        <InputField label="State" name="state" value={formData.state} onChange={handleChange} placeholder="State" disabled={saving} />
-                        <div className="sm:col-span-2">
-                          <InputField label="Pincode" name="pincode" value={formData.pincode} onChange={handleChange} type="text" placeholder="e.g. 560001" disabled={saving} />
-                        </div>
+                      <div className="grid gap-4 sm:grid-cols-2">
+                        <InputField label="City" name="city" value={formData.city} onChange={handleChange} disabled={saving} />
+                        <InputField label="State" name="state" value={formData.state} onChange={handleChange} disabled={saving} />
+                        <div className="sm:col-span-2"><InputField label="Postal Code" name="pincode" value={formData.pincode} onChange={handleChange} disabled={saving} /></div>
                       </div>
                     </div>
                   </div>
 
-                  {/* FIRST INVESTMENT ENROLLMENT (ONLY IF CREATING NEW INVESTOR) */}
+                  {/* INITIAL ENROLLMENT */}
                   {!editingId && (
-                    <div className="mt-6 space-y-5 rounded-2xl border border-[#E2E8E4] p-5 sm:p-6 shadow-[0_4px_20px_-10px_rgba(0,0,0,0.03)] bg-[#F5F7F5]/50">
-                      <div className="border-b border-[#E2E8E4]/70 pb-3 mb-2 flex items-center gap-2">
-                        <Wallet size={16} className="text-[#345343]" />
-                        <h3 className="text-sm font-bold text-[#1B241E]">First Investment Enrollment</h3>
+                    <div className="mt-6 space-y-4 rounded-[1.5rem] border border-[#E5E7EB] p-5 sm:p-6 bg-white shadow-sm">
+                      <div className="border-b border-[#E5E7EB] pb-3 flex justify-between items-center">
+                        <h3 className="text-xs font-bold uppercase tracking-wider text-[#111827] flex items-center gap-2"><Wallet size={16} className="text-[#166534]"/> Initial Investment</h3>
                       </div>
-                      <p className="text-xs font-medium text-[#68786D] -mt-3 mb-5">Select a scheme to generate the primary investment account.</p>
-                      
                       <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
                         <div className="sm:col-span-2 lg:col-span-3">
-                          <SelectField label="Investment Scheme" name="schemeId" value={formData.schemeId} onChange={handleChange} required disabled={saving || schemesLoading}>
-                            <option value="">
-                              {schemesLoading ? "Loading schemes..." : activeSchemes.length === 0 ? "No active schemes" : "Select investment scheme"}
-                            </option>
-                            {activeSchemes.map((scheme) => (
-                              <option key={scheme.id} value={scheme.id}>
-                                {scheme.schemeName} — {scheme.installmentConfig?.type === "FIXED" ? `₹${Number(scheme.installmentConfig?.amount || scheme.monthlyAmount || 0).toLocaleString("en-IN")}` : "Variable"} / month
-                              </option>
-                            ))}
+                          <SelectField label="Select Scheme" name="schemeId" value={formData.schemeId} onChange={handleChange} required disabled={saving || schemesLoading}>
+                            <option value="">{schemesLoading ? "Loading..." : "Select an investment scheme"}</option>
+                            {activeSchemes.map(s => <option key={s.id} value={s.id}>{s.schemeName} — {s.installmentConfig?.type === "FIXED" ? `₹${s.installmentConfig.amount} Fixed` : "Variable"}</option>)}
                           </SelectField>
-                          {schemesError && <p className="mt-1.5 text-[10px] font-semibold text-rose-600">{schemesError}</p>}
                         </div>
 
-                        <div className="rounded-xl border border-[#D8E5DD] bg-[#F5F9F6] px-4 py-3">
-                          <p className="text-[9px] font-bold uppercase tracking-wider text-[#87968C]">
-                            Account Number
-                          </p>
-                          <p className="mt-1 text-base font-black tracking-widest text-[#345343]">
-                            {selectedScheme?.accountNumberConfig?.prefix
-                              ? `${selectedScheme.accountNumberConfig.prefix}-${String(1).padStart(
-                                  Number(selectedScheme.accountNumberConfig.padding || 3),
-                                  "0"
-                                )}`
-                              : "Will be generated automatically"}
-                          </p>
-                          <p className="mt-1 text-[9px] font-medium text-[#68786D]">
-                            The system assigns the next available account number automatically.
-                          </p>
-                        </div>
+                        {/* Minimum Restriction Toggle */}
+                        {hasSchemeMinimum && (
+                          <div className="sm:col-span-2 lg:col-span-3 rounded-xl border border-[#E5E7EB] bg-[#F9FAFB] p-4 flex items-center justify-between">
+                            <div>
+                              <p className="text-[11px] font-bold uppercase tracking-wider text-[#111827]">Enforce Scheme Minimum</p>
+                              <p className="mt-1 text-[10px] font-medium text-[#6B7280]">
+                                Standard minimum is <span className="font-bold text-[#166534]">{contributionUnit === "GOLD_GRAMS" ? `${schemeMinimum} g` : `₹${schemeMinimum.toLocaleString("en-IN")}`}</span>
+                              </p>
+                              {!formData.minimumRestrictionEnabled && (
+                                <p className="mt-1 text-[9px] font-bold text-amber-600">Restriction disabled. Any amount accepted.</p>
+                              )}
+                            </div>
+                            <button
+                              type="button"
+                              disabled={saving}
+                              onClick={() => setFormData(c => ({ ...c, minimumRestrictionEnabled: !c.minimumRestrictionEnabled }))}
+                              className={`relative h-6 w-11 rounded-full transition-colors ${formData.minimumRestrictionEnabled ? "bg-[#166534]" : "bg-[#D1D5DB]"}`}
+                            >
+                              <span className={`absolute top-1 h-4 w-4 rounded-full bg-white shadow transition-transform ${formData.minimumRestrictionEnabled ? "translate-x-6" : "translate-x-1"}`} />
+                            </button>
+                          </div>
+                        )}
 
-                        <div className="space-y-1.5">
-                          <InputField label="Monthly Amount" name="monthlyAmount" value={formData.monthlyAmount} onChange={handleChange} type="number" prefix="₹" placeholder={selectedScheme ? String(selectedScheme.installmentConfig?.amount || selectedScheme.monthlyAmount || "Amount") : "Amount"} required disabled={saving} />
-                          {selectedScheme && (
-                            <p className="text-[9px] font-bold text-[#68786D] px-1">
-                              Minimum: <span className="text-[#345343]">₹{Number(selectedScheme.installmentConfig?.amount || selectedScheme.monthlyAmount || 0).toLocaleString("en-IN")}</span>
-                            </p>
-                          )}
-                        </div>
-
+                        <InputField label={isGoldScheme ? "Monthly Gold" : "Monthly Amount"} name="contributionValue" value={formData.contributionValue} onChange={handleChange} type="number" prefix={isGoldScheme ? "g" : "₹"} required disabled={saving || !selectedScheme} />
                         <InputField label="Enrollment Date" name="startDate" value={formData.startDate} onChange={handleChange} type="date" required disabled={saving} />
                       </div>
                     </div>
                   )}
-
                 </div>
 
-                {/* MODAL FOOTER ACTIONS */}
-                <div className="flex shrink-0 items-center justify-between border-t border-[#E2E8E4] bg-[#F5F7F5]/50 px-6 py-4 sm:px-8">
-                  <button type="button" onClick={() => !editingId ? setModalStep(1) : closeModal()} disabled={saving} className="rounded-xl px-4 py-2.5 text-xs font-bold text-[#87968C] transition hover:text-[#1B241E] disabled:opacity-50">
-                    {!editingId ? "← Back to Verification" : "Cancel"}
+                {/* MODAL FOOTER */}
+                <div className="flex shrink-0 items-center justify-between border-t border-[#E5E7EB] bg-[#F9FAFB] px-6 py-4 sm:px-8">
+                  <button type="button" onClick={() => !editingId ? setModalStep(1) : closeModal()} disabled={saving} className="rounded-xl px-5 py-2.5 text-xs font-bold text-[#6B7280] hover:bg-[#E5E7EB] hover:text-[#111827] transition-colors border border-transparent hover:border-[#D1D5DB]">
+                    {!editingId ? "← Back" : "Cancel"}
                   </button>
-                  <button type="submit" disabled={saving} className="flex items-center gap-2 rounded-xl bg-[#345343] px-8 py-3 text-xs font-bold text-white shadow-sm transition hover:bg-[#1B241E] hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:translate-y-0">
-                    {saving ? <><Loader2 size={16} className="animate-spin" /> Saving...</> : <><CheckCircle2 size={16} /> {editingId ? "Save Changes" : "Complete Registration"}</>}
+                  <button type="submit" disabled={saving} className="flex items-center gap-2 rounded-xl bg-[#166534] px-8 py-3 text-xs font-bold text-white shadow-md hover:bg-[#14532D] transition-all hover:-translate-y-0.5 disabled:opacity-50 disabled:hover:translate-y-0">
+                    {saving ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />} 
+                    {editingId ? "Save Changes" : "Complete Registration"}
                   </button>
                 </div>
               </form>
             )}
-
           </div>
         </div>
       )}
-
     </div>
   );
 }
