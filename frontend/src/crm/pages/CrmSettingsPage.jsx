@@ -111,6 +111,7 @@ export default function CrmSettingsPage() {
             ================================================== */}
             <button
               type="button"
+              onClick={() => navigate("/crm/settings/general")}
               className="group flex min-h-[150px] flex-col rounded-2xl border border-[#E2E8E4] bg-white p-5 text-left shadow-sm transition-all duration-300 hover:-translate-y-1 hover:border-[#345343]/30 hover:shadow-md"
             >
               <div className="flex items-start justify-between">

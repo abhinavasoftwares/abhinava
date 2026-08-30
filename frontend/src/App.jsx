@@ -49,6 +49,7 @@ import CrmKareegarDirectoryPage from "./crm/pages/CrmKareegarDirectoryPage";
 
 import CrmSettingsPage from "./crm/pages/CrmSettingsPage";
 import CrmKareegarSettingsPage from "./crm/pages/CrmKareegarSettingsPage";
+import CrmGeneralSettingsPage from "./crm/pages/CrmGeneralSettingsPage"; 
 
 /* ============================================================
    INVESTMENT
@@ -56,6 +57,7 @@ import CrmKareegarSettingsPage from "./crm/pages/CrmKareegarSettingsPage";
 
 import InvestmentSchemesPage from "./crm/modules/investment/pages/InvestmentSchemesPage";
 import InvestmentInvestorsPage from "./crm/modules/investment/pages/InvestmentInvestorsPage";
+import InvestmentInvestorProfilePage from "./crm/modules/investment/pages/InvestmentInvestorProfilePage";
 
 /* ============================================================
    ICONS
@@ -579,6 +581,17 @@ function App() {
           }
         />
 
+        <Route
+          path="/crm/settings/general"
+          element={
+            <CrmProtectedRoute>
+              <CrmLayout>
+                <CrmGeneralSettingsPage />
+              </CrmLayout>
+            </CrmProtectedRoute>
+          }
+        />
+
 
         {/* ======================================================
             INVESTMENT
@@ -605,6 +618,17 @@ function App() {
               <CrmProtectedRoute>
                 <CrmLayout>
                   <InvestmentInvestorsPage />
+                </CrmLayout>
+              </CrmProtectedRoute>
+            }
+        />
+
+        <Route
+            path="/crm/investment/investors/:investorId"
+            element={
+              <CrmProtectedRoute>
+                <CrmLayout>
+                  <InvestmentInvestorProfilePage />
                 </CrmLayout>
               </CrmProtectedRoute>
             }

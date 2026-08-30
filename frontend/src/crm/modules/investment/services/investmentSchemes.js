@@ -39,10 +39,27 @@ function cleanString(value) {
 }
 
 
+// ============================================================
+// VALIDATION
+// ============================================================
+
 function validateSchemeInput(
   scheme
 ) {
   const errors = [];
+
+  const schemeType =
+    cleanString(
+      scheme.schemeType
+    );
+
+  const isGoldSip =
+    schemeType === "GOLD_SIP";
+
+
+  // ----------------------------------------------------------
+  // BASIC
+  // ----------------------------------------------------------
 
   if (
     !cleanString(
@@ -64,45 +81,180 @@ function validateSchemeInput(
     );
   }
 
-  if (
-    !cleanString(
-      scheme.schemeType
-    )
-  ) {
+  if (!schemeType) {
     errors.push(
       "Scheme type is required."
     );
   }
 
-  const duration =
-    Number(
-      scheme.durationMonths
-    );
+
+  // ----------------------------------------------------------
+  // PAYMENT FREQUENCY
+  // ----------------------------------------------------------
 
   if (
-    !Number.isFinite(duration) ||
-    duration <= 0
+    !cleanString(
+      scheme.paymentFrequency
+    )
   ) {
     errors.push(
-      "Duration must be greater than zero."
+      "Payment frequency is required."
     );
   }
 
 
-  const interestRate =
+  // ----------------------------------------------------------
+  // GOLD SIP
+  // ----------------------------------------------------------
+
+  if (isGoldSip) {
+
+    const minimumGrams =
+      Number(
+        scheme.installmentConfig
+          ?.minimumGrams
+      );
+
+    if (
+      !Number.isFinite(
+        minimumGrams
+      ) ||
+      minimumGrams <= 0
+    ) {
+      errors.push(
+        "Minimum gold contribution must be greater than 0 grams."
+      );
+    }
+
+  }
+
+
+  // ----------------------------------------------------------
+  // NON GOLD
+  // ----------------------------------------------------------
+
+  else {
+
+    const duration =
+      Number(
+        scheme.durationMonths
+      );
+
+    if (
+      !Number.isFinite(
+        duration
+      ) ||
+      duration <= 0
+    ) {
+      errors.push(
+        "Duration must be greater than zero."
+      );
+    }
+
+
+    const minimumAmount =
+      Number(
+        scheme.installmentConfig
+          ?.minimumAmount ??
+        scheme.installmentConfig
+          ?.amount
+      );
+
+    if (
+      !Number.isFinite(
+        minimumAmount
+      ) ||
+      minimumAmount <= 0
+    ) {
+      errors.push(
+        "Minimum contribution amount must be greater than zero."
+      );
+    }
+
+  }
+
+
+  // ----------------------------------------------------------
+  // INTEREST
+  // ----------------------------------------------------------
+
+  const interestEnabled =
+    scheme.interestConfig
+      ?.enabled === true;
+
+  if (interestEnabled) {
+
+    const rate =
+      Number(
+        scheme.interestConfig
+          ?.annualRate
+      );
+
+    if (
+      !Number.isFinite(rate) ||
+      rate < 0
+    ) {
+      errors.push(
+        "Interest rate cannot be negative."
+      );
+    }
+
+  }
+
+
+  // ----------------------------------------------------------
+  // ACCOUNT NUMBER
+  // ----------------------------------------------------------
+
+  const prefix =
+    cleanString(
+      scheme.accountNumberConfig
+        ?.prefix
+    ).toUpperCase();
+
+  if (!prefix) {
+    errors.push(
+      "Account number theme is required."
+    );
+  }
+
+  if (
+    prefix &&
+    !/^[A-Z0-9_-]{1,20}$/.test(
+      prefix
+    )
+  ) {
+    errors.push(
+      "Account number theme may contain only letters, numbers, hyphens and underscores."
+    );
+  }
+
+
+  const padding =
     Number(
-      scheme.interestConfig
-        ?.annualRate ?? 0
+      scheme.accountNumberConfig
+        ?.padding
     );
 
   if (
-    !Number.isFinite(
-      interestRate
+    !Number.isInteger(
+      padding
     ) ||
-    interestRate < 0
+    padding < 3 ||
+    padding > 10
   ) {
     errors.push(
-      "Interest rate cannot be negative."
+      "Account number padding must be between 3 and 10 digits."
+    );
+  }
+
+
+  if (
+    scheme.accountNumberConfig
+      ?.locked !== true
+  ) {
+    errors.push(
+      "Account number theme must be locked."
     );
   }
 
@@ -115,6 +267,216 @@ function validateSchemeInput(
 }
 
 
+// ============================================================
+// NORMALIZE PAYLOAD
+// ============================================================
+
+function normalizeSchemePayload(
+  schemeInput
+) {
+  const schemeType =
+    cleanString(
+      schemeInput.schemeType
+    );
+
+  const isGoldSip =
+    schemeType === "GOLD_SIP";
+
+
+  const minimumAmount =
+    Number(
+      schemeInput
+        .installmentConfig
+        ?.minimumAmount ??
+      schemeInput
+        .installmentConfig
+        ?.amount ??
+      0
+    );
+
+
+  const minimumGrams =
+    Number(
+      schemeInput
+        .installmentConfig
+        ?.minimumGrams ??
+      0
+    );
+
+
+  const interestEnabled =
+    schemeInput
+      .interestConfig
+      ?.enabled === true;
+
+
+  return {
+
+    schemeCode:
+      cleanString(
+        schemeInput.schemeCode
+      ).toUpperCase(),
+
+    schemeName:
+      cleanString(
+        schemeInput.schemeName
+      ),
+
+    schemeType,
+
+    status:
+      schemeInput.status ||
+      "ACTIVE",
+
+
+    // Gold SIP has no duration.
+    durationMonths:
+      isGoldSip
+        ? null
+        : Number(
+            schemeInput
+              .durationMonths
+          ),
+
+
+    paymentFrequency:
+      schemeInput.paymentFrequency ||
+      "MONTHLY",
+
+
+    installmentConfig:
+      isGoldSip
+        ? {
+            type: "FIXED",
+            unit: "GOLD_GRAMS",
+            minimumGrams,
+          }
+        : {
+            type:
+              schemeInput
+                .installmentConfig
+                ?.type ||
+              "FIXED",
+
+            unit: "AMOUNT",
+
+            minimumAmount,
+
+            // Keep amount for compatibility
+            // with the current account service.
+            amount: minimumAmount,
+          },
+
+
+    benefitConfig:
+      schemeInput.benefitConfig ||
+      {
+        type: "NONE",
+        value: 0,
+      },
+
+
+    interestConfig:
+      interestEnabled
+        ? {
+            enabled: true,
+
+            strategyId:
+              schemeInput
+                .interestConfig
+                ?.strategyId ||
+              "STANDARD_INTEREST_V1",
+
+            annualRate:
+              Number(
+                schemeInput
+                  .interestConfig
+                  ?.annualRate ||
+                0
+              ),
+
+            calculationMethod:
+              schemeInput
+                .interestConfig
+                ?.calculationMethod ||
+              "SIMPLE",
+
+            compoundingFrequency:
+              schemeInput
+                .interestConfig
+                ?.compoundingFrequency ||
+              "NONE",
+
+            dayCountConvention:
+              schemeInput
+                .interestConfig
+                ?.dayCountConvention ||
+              "ACTUAL_365",
+
+            roundingScale:
+              Number(
+                schemeInput
+                  .interestConfig
+                  ?.roundingScale ||
+                2
+              ),
+          }
+        : {
+            enabled: false,
+            strategyId: null,
+            annualRate: 0,
+            calculationMethod: null,
+            compoundingFrequency: null,
+            dayCountConvention: null,
+            roundingScale: 2,
+          },
+
+
+    calculationStrategyId:
+      schemeInput
+        .calculationStrategyId ||
+      (
+        isGoldSip
+          ? "GOLD_SIP_V1"
+          : "FIXED_INSTALLMENT_V1"
+      ),
+
+
+    calculationVersion:
+      Number(
+        schemeInput
+          .calculationVersion ||
+        1
+      ),
+
+
+    accountNumberConfig: {
+      prefix:
+        cleanString(
+          schemeInput
+            .accountNumberConfig
+            ?.prefix
+        ).toUpperCase(),
+
+      padding:
+        Number(
+          schemeInput
+            .accountNumberConfig
+            ?.padding ||
+          6
+        ),
+
+      // Mandatory.
+      locked: true,
+    },
+  };
+}
+
+
+// ============================================================
+// GET ALL
+// ============================================================
+
 export async function getInvestmentSchemes() {
   const reference =
     query(
@@ -126,7 +488,9 @@ export async function getInvestmentSchemes() {
     );
 
   const snapshot =
-    await getDocs(reference);
+    await getDocs(
+      reference
+    );
 
   return snapshot.docs.map(
     (item) => ({
@@ -136,6 +500,10 @@ export async function getInvestmentSchemes() {
   );
 }
 
+
+// ============================================================
+// GET ACTIVE
+// ============================================================
 
 export async function getActiveInvestmentSchemes() {
   const reference =
@@ -153,7 +521,9 @@ export async function getActiveInvestmentSchemes() {
     );
 
   const snapshot =
-    await getDocs(reference);
+    await getDocs(
+      reference
+    );
 
   return snapshot.docs.map(
     (item) => ({
@@ -163,6 +533,10 @@ export async function getActiveInvestmentSchemes() {
   );
 }
 
+
+// ============================================================
+// GET ONE
+// ============================================================
 
 export async function getInvestmentScheme(
   schemeId
@@ -181,7 +555,9 @@ export async function getInvestmentScheme(
     );
 
   const snapshot =
-    await getDoc(reference);
+    await getDoc(
+      reference
+    );
 
   if (!snapshot.exists()) {
     return null;
@@ -194,12 +570,21 @@ export async function getInvestmentScheme(
 }
 
 
+// ============================================================
+// CREATE
+// ============================================================
+
 export async function createInvestmentScheme(
   schemeInput,
   userId
 ) {
+  const payload =
+    normalizeSchemePayload(
+      schemeInput
+    );
+
   validateSchemeInput(
-    schemeInput
+    payload
   );
 
   const firestore =
@@ -213,65 +598,23 @@ export async function createInvestmentScheme(
       )
     );
 
+
   const scheme = {
-    schemeCode:
-      cleanString(
-        schemeInput.schemeCode
-      ).toUpperCase(),
 
-    schemeName:
-      cleanString(
-        schemeInput.schemeName
-      ),
+    ...payload,
 
-    schemeType:
-      cleanString(
-        schemeInput.schemeType
-      ),
-
-    status:
-      schemeInput.status ||
-      "ACTIVE",
-
-    durationMonths:
-      Number(
-        schemeInput.durationMonths
-      ),
-
-    paymentFrequency:
-      schemeInput.paymentFrequency ||
-      "MONTHLY",
-
-    installmentConfig:
-      schemeInput.installmentConfig ||
-      null,
-
-    benefitConfig:
-      schemeInput.benefitConfig ||
-      null,
-
-    interestConfig: {
-      ...DEFAULT_INVESTMENT_SCHEME_CONFIG.interestConfig,
-      ...(schemeInput.interestConfig ||
-        {}),
-    },
-
-    calculationStrategyId:
-      schemeInput.calculationStrategyId ||
-      DEFAULT_INVESTMENT_SCHEME_CONFIG.calculationStrategyId,
-
-    calculationVersion:
-      Number(
-        schemeInput.calculationVersion ||
-          1
-      ),
 
     accountNumberConfig: {
-      ...DEFAULT_INVESTMENT_SCHEME_CONFIG.accountNumberConfig,
-      ...(schemeInput.accountNumberConfig ||
-        {}),
+      ...payload.accountNumberConfig,
+
       nextSequence: 1,
     },
+
+
+    // Kept at top level for compatibility
+    // with the existing account service.
+    nextAccountNumber: 1,
+
 
     createdAt:
       serverTimestamp(),
@@ -300,6 +643,10 @@ export async function createInvestmentScheme(
 }
 
 
+// ============================================================
+// UPDATE
+// ============================================================
+
 export async function updateInvestmentScheme(
   schemeId,
   updates,
@@ -311,6 +658,7 @@ export async function updateInvestmentScheme(
     );
   }
 
+
   const reference =
     doc(
       getCrmFirestore(),
@@ -320,7 +668,10 @@ export async function updateInvestmentScheme(
 
 
   const existing =
-    await getDoc(reference);
+    await getDoc(
+      reference
+    );
+
 
   if (!existing.exists()) {
     throw new Error(
@@ -329,15 +680,82 @@ export async function updateInvestmentScheme(
   }
 
 
-  /*
-   * We intentionally do not allow
-   * changing calculationVersion
-   * casually through this method.
-   *
-   * A future versioning service should
-   * create a new scheme version when
-   * financial rules change.
-   */
+  const current =
+    existing.data();
+
+
+  // ==========================================================
+  // ACCOUNT NUMBER THEME PROTECTION
+  // ==========================================================
+
+  const currentConfig =
+    current.accountNumberConfig ||
+    {};
+
+  const currentLocked =
+    currentConfig.locked === true;
+
+
+  if (currentLocked) {
+
+    const incomingConfig =
+      updates.accountNumberConfig;
+
+
+    if (incomingConfig) {
+
+      const currentPrefix =
+        String(
+          currentConfig.prefix || ""
+        )
+          .trim()
+          .toUpperCase();
+
+      const currentPadding =
+        Number(
+          currentConfig.padding || 0
+        );
+
+
+      const incomingPrefix =
+        String(
+          incomingConfig.prefix ??
+          currentPrefix
+        )
+          .trim()
+          .toUpperCase();
+
+      const incomingPadding =
+        Number(
+          incomingConfig.padding ??
+          currentPadding
+        );
+
+
+      if (
+        incomingPrefix !==
+          currentPrefix ||
+        incomingPadding !==
+          currentPadding
+      ) {
+        throw new Error(
+          "Account number theme is locked. Request an approved theme change instead."
+        );
+      }
+    }
+  }
+
+
+  // Never allow the client UI to unlock it.
+  if (
+    updates.accountNumberConfig
+      ?.locked === false
+  ) {
+    throw new Error(
+      "Account number theme cannot be unlocked."
+    );
+  }
+
 
   const safeUpdates = {
     ...updates,
@@ -352,6 +770,10 @@ export async function updateInvestmentScheme(
 
   delete safeUpdates.createdAt;
   delete safeUpdates.createdBy;
+
+
+  // Calculation version is controlled
+  // by the calculation/versioning system.
   delete safeUpdates.calculationVersion;
 
 
@@ -366,6 +788,10 @@ export async function updateInvestmentScheme(
   );
 }
 
+
+// ============================================================
+// DEACTIVATE
+// ============================================================
 
 export async function deactivateInvestmentScheme(
   schemeId,
