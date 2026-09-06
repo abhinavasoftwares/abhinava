@@ -28,7 +28,7 @@ import {
 } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
 
-const API_URL = "https://sturdy-train-77rj957xr4pp2x675-8000.app.github.dev";
+const API_URL = import.meta.env.VITE_API_BASE_URL;
 const GOLD = "#c59b27";
 
 const MODULE_DEFINITIONS = [

@@ -15,6 +15,8 @@ import {
 import ClientsPage from "./pages/admin/ClientsPage";
 import AddClientPage from "./pages/admin/AddClientPage";
 import ClientDetailsPage from "./pages/admin/ClientDetailsPage";
+import SubscriptionsPage from "./pages/admin/SubscriptionsPage";
+import ReferralCodesPage from "./pages/admin/ReferralCodesPage";
 
 import GoogleLoginTest from "./pages/GoogleLoginTest";
 import LoginPage from "./pages/LoginPage";
@@ -58,6 +60,8 @@ import CrmGeneralSettingsPage from "./crm/pages/CrmGeneralSettingsPage";
 import InvestmentSchemesPage from "./crm/modules/investment/pages/InvestmentSchemesPage";
 import InvestmentInvestorsPage from "./crm/modules/investment/pages/InvestmentInvestorsPage";
 import InvestmentInvestorProfilePage from "./crm/modules/investment/pages/InvestmentInvestorProfilePage";
+import InvestmentSecurityTestPage from "./crm/modules/investment/pages/InvestmentSecurityTestPage";
+import InvestmentLoadTestPage from "./crm/modules/investment/pages/InvestmentLoadTestPage";
 
 /* ============================================================
    ICONS
@@ -405,6 +409,14 @@ function App() {
           element={<ClientDetailsPage />}
         />
 
+        <Route
+          path="/admin/subscriptions"
+          element={<SubscriptionsPage />}
+        />
+        <Route
+          path="/admin/referrals"
+          element={<ReferralCodesPage />}
+        />
       </Route>
 
 
@@ -634,6 +646,27 @@ function App() {
             }
         />
 
+        <Route
+          path="/crm/investment/security-test"
+          element={
+            <CrmProtectedRoute>
+              <CrmLayout>
+                <InvestmentSecurityTestPage />
+              </CrmLayout>
+            </CrmProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/crm/investment/load-test"
+          element={
+            <CrmProtectedRoute>
+              <CrmLayout>
+                <InvestmentLoadTestPage />
+              </CrmLayout>
+            </CrmProtectedRoute>
+          }
+        />
       </Route>
 
 

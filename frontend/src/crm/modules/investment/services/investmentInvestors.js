@@ -37,16 +37,34 @@ function mobile(value) {
 }
 
 function normalize(input = {}) {
+  const fullName = clean(input?.fullName);
+  const mobileNumber = mobile(input?.mobileNumber);
+  const alternateMobileNumber = mobile(
+    input?.alternateMobileNumber
+  );
+  const email = clean(input?.email).toLowerCase();
+  const city = clean(input?.city);
+
   return {
-    fullName: clean(input.fullName),
-    mobileNumber: mobile(input.mobileNumber),
-    alternateMobileNumber: mobile(input.alternateMobileNumber),
-    email: clean(input.email).toLowerCase(),
-    dateOfBirth: clean(input.dateOfBirth),
-    gender: clean(input.gender),
-    address: clean(input.address),
-    city: clean(input.city),
-    pincode: clean(input.pincode),
+    fullName,
+    fullNameLower: fullName.toLowerCase(),
+
+    mobileNumber,
+    mobileNumberSearch: mobileNumber,
+
+    alternateMobileNumber,
+    alternateMobileNumberSearch:
+      alternateMobileNumber,
+
+    email,
+    emailSearch: email,
+
+    dateOfBirth: clean(input?.dateOfBirth),
+    gender: clean(input?.gender),
+    address: clean(input?.address),
+    city,
+    cityLower: city.toLowerCase(),
+    pincode: clean(input?.pincode),
   };
 }
 

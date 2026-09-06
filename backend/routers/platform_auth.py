@@ -461,7 +461,7 @@ async def google_callback(
         value=raw_session_token,
         max_age=8 * 60 * 60,
         httponly=True,
-        secure=True,
+        secure=os.getenv("ENVIRONMENT", "development") == "production",
         samesite="lax",
         path="/",
     )

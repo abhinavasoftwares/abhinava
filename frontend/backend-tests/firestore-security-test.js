@@ -1,95 +1,99 @@
-import {
-  initializeApp,
-} from "firebase/app";
-
+import { initializeApp } from "firebase/app";
 import {
   getAuth,
   signInWithEmailAndPassword,
   signOut,
 } from "firebase/auth";
-
 import {
   getFirestore,
   doc,
   getDoc,
   updateDoc,
   deleteDoc,
-  setDoc,
-  addDoc,
-  collection,
 } from "firebase/firestore";
+import prompts from "prompts";
 
 // ============================================================
-// CONFIGURATION
+// ABHINAVA / FIRESTORE SECURITY & TAMPERING TEST
 // ============================================================
 //
-// IMPORTANT:
-// This test uses the Shridhara Firebase project.
+// IMPORTANT
+// ---------
+// This script tests the DEPLOYED Firestore Security Rules.
 //
-// Firebase web API keys are client-side identifiers.
-// DO NOT put a Firebase Admin SDK private key here.
+// It uses the Firebase Web SDK, exactly like the CRM frontend.
+//
+// Credentials are requested interactively and are NOT stored.
 //
 // ============================================================
 
-const FIREBASE_CONFIG = {
+
+// ============================================================
+// SHRidhara FIREBASE PROJECT
+// ============================================================
+
+const firebaseConfig = {
   projectId: "shridhara-jewellers",
-  appId: "1:993394495469:web:c563b2149da13aa1b3a1e4",
-  storageBucket: "shridhara-jewellers.firebasestorage.app",
-  apiKey: "AIzaSyBojvahfmWCttmv4HNIFZGyRVPlzMMqZ7Q",
-  authDomain: "shridhara-jewellers.firebaseapp.com",
-  messagingSenderId: "993394495469",
+
+  appId:
+    "1:993394495469:web:c563b2149da13aa1b3a1e4",
+
+  storageBucket:
+    "shridhara-jewellers.firebasestorage.app",
+
+  apiKey:
+    "AIzaSyBojvahfmWCttmv4HNIFZGyRVPlzMMqZ7Q",
+
+  authDomain:
+    "shridhara-jewellers.firebaseapp.com",
+
+  messagingSenderId:
+    "993394495469",
 };
 
-// ============================================================
-// TEST USER
-// ============================================================
-//
-// DO NOT hard-code the password.
-//
-// PowerShell:
-//   $env:TEST_EMAIL="your-test-user@example.com"
-//   $env:TEST_PASSWORD="your-password"
-//
-// ============================================================
-
-const TEST_EMAIL =
-  process.env.TEST_EMAIL;
-
-const TEST_PASSWORD =
-  process.env.TEST_PASSWORD;
 
 // ============================================================
-// TEST DOCUMENT IDS
+// OPTIONAL TEST DOCUMENT IDS
 // ============================================================
 //
-// Put IDs of REAL documents you are comfortable testing.
+// We will NOT guess these.
 //
-// IMPORTANT:
-// The tests below attempt to MODIFY/DELETE these documents.
-// Use dedicated test records.
+// Set them only when you are ready.
+//
+// PowerShell examples:
+//
+// $env:TEST_INVESTOR_ID="..."
+// $env:TEST_ACCOUNT_ID="..."
+// $env:TEST_TRANSACTION_ID="..."
+// $env:TEST_AUDIT_ID="..."
+// $env:TEST_COMMUNICATION_ID="..."
 //
 // ============================================================
 
 const TEST_INVESTOR_ID =
-  process.env.TEST_INVESTOR_ID;
+  process.env.TEST_INVESTOR_ID || null;
 
 const TEST_ACCOUNT_ID =
-  process.env.TEST_ACCOUNT_ID;
+  process.env.TEST_ACCOUNT_ID || null;
 
 const TEST_TRANSACTION_ID =
-  process.env.TEST_TRANSACTION_ID;
+  process.env.TEST_TRANSACTION_ID || null;
 
 const TEST_AUDIT_ID =
-  process.env.TEST_AUDIT_ID;
+  process.env.TEST_AUDIT_ID || null;
+
+const TEST_COMMUNICATION_ID =
+  process.env.TEST_COMMUNICATION_ID || null;
+
 
 // ============================================================
-// FIREBASE
+// FIREBASE INITIALIZATION
 // ============================================================
 
 const app =
   initializeApp(
-    FIREBASE_CONFIG,
-    "security-test"
+    firebaseConfig,
+    "abhinava-security-test"
   );
 
 const auth =
@@ -98,59 +102,60 @@ const auth =
 const db =
   getFirestore(app);
 
+
 // ============================================================
-// RESULT TRACKING
+// TEST RESULTS
 // ============================================================
 
 const results = [];
 
-function pass(name, detail = "") {
+function record(
+  status,
+  name,
+  detail = "",
+  latency = null
+) {
   results.push({
-    status: "PASS",
+    status,
     name,
     detail,
+    latency,
   });
 
+  let prefix;
+
+  if (status === "PASS") {
+    prefix = "\x1b[32mPASS\x1b[0m";
+  } else if (status === "FAIL") {
+    prefix = "\x1b[31mFAIL\x1b[0m";
+  } else {
+    prefix = "\x1b[33mSKIP\x1b[0m";
+  }
+
   console.log(
-    `\x1b[32mPASS\x1b[0m  ${name}`
+    `${prefix} ${name}`
   );
 
+  if (latency !== null) {
+    console.log(
+      `      latency: ${latency} ms`
+    );
+  }
+
   if (detail) {
-    console.log(`      ${detail}`);
+    console.log(
+      `      ${detail}`
+    );
   }
 }
 
-function fail(name, detail = "") {
-  results.push({
-    status: "FAIL",
-    name,
-    detail,
-  });
 
-  console.log(
-    `\x1b[31mFAIL\x1b[0m  ${name}`
+function elapsed(start) {
+  return Math.round(
+    performance.now() - start
   );
-
-  if (detail) {
-    console.log(`      ${detail}`);
-  }
 }
 
-function skip(name, detail = "") {
-  results.push({
-    status: "SKIP",
-    name,
-    detail,
-  });
-
-  console.log(
-    `\x1b[33mSKIP\x1b[0m  ${name}`
-  );
-
-  if (detail) {
-    console.log(`      ${detail}`);
-  }
-}
 
 // ============================================================
 // EXPECT PERMISSION DENIED
@@ -160,153 +165,259 @@ async function expectDenied(
   name,
   operation
 ) {
+  const start =
+    performance.now();
+
   try {
     await operation();
 
-    fail(
+    record(
+      "FAIL",
       name,
-      "Operation succeeded but should have been denied."
+      "Operation SUCCEEDED. This operation was expected to be denied by Firestore Security Rules.",
+      elapsed(start)
     );
 
     return false;
+
   } catch (error) {
+
+    const latency =
+      elapsed(start);
+
     const code =
       error?.code || "";
 
     if (
-      code.includes(
-        "permission-denied"
-      )
+      code === "permission-denied" ||
+      code.includes("permission-denied")
     ) {
-      pass(
+      record(
+        "PASS",
         name,
-        "Firestore correctly returned permission-denied."
+        "Firestore correctly rejected the operation.",
+        latency
       );
 
       return true;
     }
 
-    fail(
+    record(
+      "FAIL",
       name,
-      `Unexpected error: ${code} ${error?.message || error}`
+      `Unexpected error: ${code} ${error?.message || error}`,
+      latency
     );
 
     return false;
   }
 }
 
+
+// ============================================================
+// EXPECT SUCCESS
+// ============================================================
+
+async function expectSuccess(
+  name,
+  operation
+) {
+  const start =
+    performance.now();
+
+  try {
+
+    await operation();
+
+    record(
+      "PASS",
+      name,
+      "Operation succeeded.",
+      elapsed(start)
+    );
+
+    return true;
+
+  } catch (error) {
+
+    record(
+      "FAIL",
+      name,
+      `${error?.code || "unknown"}: ${error?.message || error}`,
+      elapsed(start)
+    );
+
+    return false;
+  }
+}
+
+
+// ============================================================
+// LOGIN PROMPT
+// ============================================================
+
+async function loginPrompt() {
+
+  console.log("");
+  console.log(
+    "------------------------------------------------------------"
+  );
+  console.log(
+    "FIREBASE AUTHENTICATION"
+  );
+  console.log(
+    "------------------------------------------------------------"
+  );
+
+  const response =
+    await prompts([
+      {
+        type: "text",
+        name: "email",
+        message: "Firebase email:",
+        validate: value =>
+          value.includes("@")
+            ? true
+            : "Enter a valid email address.",
+      },
+      {
+        type: "password",
+        name: "password",
+        message: "Firebase password:",
+        validate: value =>
+          value.length > 0
+            ? true
+            : "Password cannot be empty.",
+      },
+    ]);
+
+  if (
+    !response.email ||
+    !response.password
+  ) {
+    throw new Error(
+      "Authentication credentials were not provided."
+    );
+  }
+
+  return response;
+}
+
+
 // ============================================================
 // MAIN
 // ============================================================
 
 async function main() {
+
+  console.clear();
+
   console.log("");
   console.log(
     "============================================================"
   );
   console.log(
-    " SHRidhara / FIRESTORE SECURITY TEST"
+    " ABHINAVA FIRESTORE SECURITY TEST"
   );
   console.log(
     "============================================================"
   );
   console.log("");
 
-  if (
-    !TEST_EMAIL ||
-    !TEST_PASSWORD
-  ) {
-    throw new Error(
-      "Set TEST_EMAIL and TEST_PASSWORD environment variables first."
-    );
-  }
-
-  if (!TEST_INVESTOR_ID) {
-    console.log(
-      "WARNING: TEST_INVESTOR_ID not supplied."
-    );
-  }
-
-  if (!TEST_ACCOUNT_ID) {
-    console.log(
-      "WARNING: TEST_ACCOUNT_ID not supplied."
-    );
-  }
-
-  if (!TEST_TRANSACTION_ID) {
-    console.log(
-      "WARNING: TEST_TRANSACTION_ID not supplied."
-    );
-  }
-
   console.log(
-    `Project: ${FIREBASE_CONFIG.projectId}`
+    `Firebase project: ${firebaseConfig.projectId}`
   );
 
   console.log(
-    `Test user: ${TEST_EMAIL}`
+    "Mode: LIVE FIRESTORE SECURITY TEST"
+  );
+
+  console.log("");
+
+  console.log(
+    "\x1b[33mIMPORTANT:\x1b[0m"
+  );
+
+  console.log(
+    "This script will ATTEMPT writes/deletes that should be"
+  );
+
+  console.log(
+    "rejected by your Firestore Security Rules."
   );
 
   console.log("");
 
   // ==========================================================
-  // 1. AUTHENTICATE
+  // LOGIN
   // ==========================================================
 
-  console.log(
-    "------------------------------------------------------------"
-  );
-  console.log(
-    "AUTHENTICATION"
-  );
-  console.log(
-    "------------------------------------------------------------"
-  );
+  const credentials =
+    await loginPrompt();
+
+  let user;
 
   try {
+
     const credential =
       await signInWithEmailAndPassword(
         auth,
-        TEST_EMAIL,
-        TEST_PASSWORD
+        credentials.email,
+        credentials.password
       );
 
-    if (
-      credential?.user?.uid
-    ) {
-      pass(
-        "Firebase authentication",
-        `UID: ${credential.user.uid}`
-      );
-    } else {
-      fail(
-        "Firebase authentication",
-        "No authenticated user returned."
-      );
+    user =
+      credential.user;
 
-      return;
-    }
-  } catch (error) {
-    fail(
+    record(
+      "PASS",
       "Firebase authentication",
-      `${error?.code || ""} ${error?.message || error}`
+      `Authenticated UID: ${user.uid}`
+    );
+
+  } catch (error) {
+
+    record(
+      "FAIL",
+      "Firebase authentication",
+      `${error?.code || ""}: ${error?.message || error}`
     );
 
     return;
   }
 
+
   // ==========================================================
-  // 2. INVESTOR READ
+  // USER INFORMATION
+  // ==========================================================
+
+  console.log("");
+
+  console.log(
+    `Authenticated email: ${user.email || "(no email)"}`
+  );
+
+  console.log(
+    `Authenticated UID: ${user.uid}`
+  );
+
+  console.log("");
+
+
+  // ==========================================================
+  // INVESTOR SECURITY
   // ==========================================================
 
   if (TEST_INVESTOR_ID) {
-    console.log("");
+
     console.log(
       "------------------------------------------------------------"
     );
+
     console.log(
-      "INVESTOR SECURITY"
+      "INVESTOR TAMPERING"
     );
+
     console.log(
       "------------------------------------------------------------"
     );
@@ -318,76 +429,76 @@ async function main() {
         TEST_INVESTOR_ID
       );
 
-    try {
-      const snapshot =
-        await getDoc(
+
+    await expectSuccess(
+      "Read investment investor",
+      () =>
+        getDoc(
           investorRef
-        );
+        )
+    );
 
-      if (snapshot.exists()) {
-        pass(
-          "Authenticated investor read",
-          `Investor ${TEST_INVESTOR_ID} is readable.`
-        );
-      } else {
-        fail(
-          "Authenticated investor read",
-          "Test investor document does not exist."
-        );
-      }
-    } catch (error) {
-      fail(
-        "Authenticated investor read",
-        `${error?.code || ""} ${error?.message || error}`
-      );
-    }
-
-    // --------------------------------------------------------
-    // ATTEMPT INVESTOR TAMPERING
-    // --------------------------------------------------------
 
     await expectDenied(
-      "Investor tampering: change fullName",
+      "Tamper investor fullName",
       () =>
         updateDoc(
           investorRef,
           {
             fullName:
-              "__SECURITY_TEST_TAMPER__",
+              "__ABHINAVA_SECURITY_TEST__",
           }
         )
     );
 
-    // --------------------------------------------------------
-    // ATTEMPT INVESTOR DELETE
-    // --------------------------------------------------------
 
     await expectDenied(
-      "Investor deletion protection",
+      "Tamper investor mobileNumber",
+      () =>
+        updateDoc(
+          investorRef,
+          {
+            mobileNumber:
+              "9999999999",
+          }
+        )
+    );
+
+
+    await expectDenied(
+      "Delete investment investor",
       () =>
         deleteDoc(
           investorRef
         )
     );
+
   } else {
-    skip(
-      "Investor tampering tests",
+
+    record(
+      "SKIP",
+      "Investor tampering",
       "TEST_INVESTOR_ID was not supplied."
     );
   }
 
+
   // ==========================================================
-  // 3. ACCOUNT SECURITY
+  // INVESTMENT ACCOUNT SECURITY
   // ==========================================================
 
   if (TEST_ACCOUNT_ID) {
+
     console.log("");
+
     console.log(
       "------------------------------------------------------------"
     );
+
     console.log(
-      "INVESTMENT ACCOUNT SECURITY"
+      "INVESTMENT ACCOUNT TAMPERING"
     );
+
     console.log(
       "------------------------------------------------------------"
     );
@@ -399,36 +510,22 @@ async function main() {
         TEST_ACCOUNT_ID
       );
 
-    try {
-      const snapshot =
-        await getDoc(
+
+    await expectSuccess(
+      "Read investment account",
+      () =>
+        getDoc(
           accountRef
-        );
+        )
+    );
 
-      if (snapshot.exists()) {
-        pass(
-          "Authenticated account read",
-          `Account ${TEST_ACCOUNT_ID} is readable.`
-        );
-      } else {
-        fail(
-          "Authenticated account read",
-          "Test account does not exist."
-        );
-      }
-    } catch (error) {
-      fail(
-        "Authenticated account read",
-        `${error?.code || ""} ${error?.message || error}`
-      );
-    }
 
-    // --------------------------------------------------------
-    // BALANCE TAMPERING
-    // --------------------------------------------------------
+    // ----------------------------------------------------------
+    // FINANCIAL TAMPERING
+    // ----------------------------------------------------------
 
     await expectDenied(
-      "Account tampering: totalPaid",
+      "Tamper totalPaid",
       () =>
         updateDoc(
           accountRef,
@@ -439,12 +536,9 @@ async function main() {
         )
     );
 
-    // --------------------------------------------------------
-    // GOLD TAMPERING
-    // --------------------------------------------------------
 
     await expectDenied(
-      "Account tampering: totalGoldCredited",
+      "Tamper totalGoldCredited",
       () =>
         updateDoc(
           accountRef,
@@ -455,60 +549,82 @@ async function main() {
         )
     );
 
-    // --------------------------------------------------------
-    // ACCOUNT NUMBER TAMPERING
-    // --------------------------------------------------------
 
     await expectDenied(
-      "Account tampering: accountNumber",
+      "Tamper openingBalanceAmount",
+      () =>
+        updateDoc(
+          accountRef,
+          {
+            openingBalanceAmount:
+              999999999,
+          }
+        )
+    );
+
+
+    await expectDenied(
+      "Tamper openingBalanceGoldGrams",
+      () =>
+        updateDoc(
+          accountRef,
+          {
+            openingBalanceGoldGrams:
+              999999,
+          }
+        )
+    );
+
+
+    // ----------------------------------------------------------
+    // IDENTITY TAMPERING
+    // ----------------------------------------------------------
+
+    await expectDenied(
+      "Tamper accountNumber",
       () =>
         updateDoc(
           accountRef,
           {
             accountNumber:
-              "SECURITY-TEST-999",
+              "HACKED-999",
           }
         )
     );
 
-    // --------------------------------------------------------
-    // INVESTOR ID TAMPERING
-    // --------------------------------------------------------
 
     await expectDenied(
-      "Account tampering: investorId",
+      "Tamper investorId",
       () =>
         updateDoc(
           accountRef,
           {
             investorId:
-              "SECURITY-TEST-INVESTOR",
+              "HACKED-INVESTOR",
           }
         )
     );
 
-    // --------------------------------------------------------
-    // SCHEME TAMPERING
-    // --------------------------------------------------------
 
     await expectDenied(
-      "Account tampering: schemeId",
+      "Tamper schemeId",
       () =>
         updateDoc(
           accountRef,
           {
             schemeId:
-              "SECURITY-TEST-SCHEME",
+              "HACKED-SCHEME",
           }
         )
     );
 
-    // --------------------------------------------------------
-    // REOPEN CLOSED ACCOUNT
-    // --------------------------------------------------------
+
+    // ----------------------------------------------------------
+    // STATUS TAMPERING
+    // ----------------------------------------------------------
 
     await expectDenied(
-      "Account tampering: reopen account",
+      "Reopen investment account",
       () =>
         updateDoc(
           accountRef,
@@ -519,42 +635,52 @@ async function main() {
         )
     );
 
-    // --------------------------------------------------------
-    // DELETE ACCOUNT
-    // --------------------------------------------------------
+
+    // ----------------------------------------------------------
+    // DELETE
+    // ----------------------------------------------------------
 
     await expectDenied(
-      "Account deletion protection",
+      "Delete investment account",
       () =>
         deleteDoc(
           accountRef
         )
     );
+
   } else {
-    skip(
-      "Investment account tampering tests",
+
+    record(
+      "SKIP",
+      "Investment account tampering",
       "TEST_ACCOUNT_ID was not supplied."
     );
   }
 
+
   // ==========================================================
-  // 4. TRANSACTION SECURITY
+  // TRANSACTION IMMUTABILITY
   // ==========================================================
 
   if (
     TEST_ACCOUNT_ID &&
     TEST_TRANSACTION_ID
   ) {
+
     console.log("");
+
     console.log(
       "------------------------------------------------------------"
     );
+
     console.log(
       "TRANSACTION IMMUTABILITY"
     );
+
     console.log(
       "------------------------------------------------------------"
     );
+
 
     const transactionRef =
       doc(
@@ -565,32 +691,18 @@ async function main() {
         TEST_TRANSACTION_ID
       );
 
-    try {
-      const snapshot =
-        await getDoc(
-          transactionRef
-        );
 
-      if (snapshot.exists()) {
-        pass(
-          "Transaction read",
-          `Transaction ${TEST_TRANSACTION_ID} is readable.`
-        );
-      } else {
-        fail(
-          "Transaction read",
-          "Test transaction does not exist."
-        );
-      }
-    } catch (error) {
-      fail(
-        "Transaction read",
-        `${error?.code || ""} ${error?.message || error}`
-      );
-    }
+    await expectSuccess(
+      "Read investment transaction",
+      () =>
+        getDoc(
+          transactionRef
+        )
+    );
+
 
     await expectDenied(
-      "Transaction tampering: amount",
+      "Tamper transaction amount",
       () =>
         updateDoc(
           transactionRef,
@@ -601,20 +713,22 @@ async function main() {
         )
     );
 
+
     await expectDenied(
-      "Transaction tampering: receipt",
+      "Tamper transaction receiptNumber",
       () =>
         updateDoc(
           transactionRef,
           {
             receiptNumber:
-              "RCP-SECURITY-TEST",
+              "HACKED-RECEIPT",
           }
         )
     );
 
+
     await expectDenied(
-      "Transaction tampering: passcodeVerified",
+      "Tamper transaction passcodeVerified",
       () =>
         updateDoc(
           transactionRef,
@@ -625,35 +739,45 @@ async function main() {
         )
     );
 
+
     await expectDenied(
-      "Transaction deletion protection",
+      "Delete investment transaction",
       () =>
         deleteDoc(
           transactionRef
         )
     );
+
   } else {
-    skip(
-      "Transaction immutability tests",
+
+    record(
+      "SKIP",
+      "Transaction immutability",
       "TEST_ACCOUNT_ID and TEST_TRANSACTION_ID are required."
     );
   }
 
+
   // ==========================================================
-  // 5. AUDIT LOG IMMUTABILITY
+  // AUDIT LOG
   // ==========================================================
 
   if (TEST_AUDIT_ID) {
+
     console.log("");
+
     console.log(
       "------------------------------------------------------------"
     );
+
     console.log(
-      "AUDIT LOG SECURITY"
+      "AUDIT LOG IMMUTABILITY"
     );
+
     console.log(
       "------------------------------------------------------------"
     );
+
 
     const auditRef =
       doc(
@@ -662,165 +786,205 @@ async function main() {
         TEST_AUDIT_ID
       );
 
+
+    await expectSuccess(
+      "Read investment audit log",
+      () =>
+        getDoc(
+          auditRef
+        )
+    );
+
+
     await expectDenied(
-      "Audit log tampering",
+      "Tamper audit description",
       () =>
         updateDoc(
           auditRef,
           {
             description:
-              "__SECURITY_TEST_TAMPER__",
+              "__HACKED_AUDIT__",
           }
         )
     );
 
+
     await expectDenied(
-      "Audit log deletion",
+      "Delete investment audit log",
       () =>
         deleteDoc(
           auditRef
         )
     );
+
   } else {
-    skip(
-      "Audit log tampering tests",
+
+    record(
+      "SKIP",
+      "Audit log immutability",
       "TEST_AUDIT_ID was not supplied."
     );
   }
 
+
   // ==========================================================
-  // 6. COMMUNICATION IMMUTABILITY
+  // COMMUNICATIONS
   // ==========================================================
 
-  console.log("");
-  console.log(
-    "------------------------------------------------------------"
-  );
-  console.log(
-    "COMMUNICATION SECURITY"
-  );
-  console.log(
-    "------------------------------------------------------------"
-  );
+  if (TEST_COMMUNICATION_ID) {
 
-  // Create a deliberately invalid-looking random document ID
-  // only for the purpose of checking that arbitrary updates
-  // cannot be used to modify an existing communication.
-  //
-  // We don't know a valid communication ID here, so this test
-  // is skipped unless one is supplied.
+    console.log("");
 
-  if (
-    process.env.TEST_COMMUNICATION_ID
-  ) {
+    console.log(
+      "------------------------------------------------------------"
+    );
+
+    console.log(
+      "COMMUNICATION IMMUTABILITY"
+    );
+
+    console.log(
+      "------------------------------------------------------------"
+    );
+
+
     const communicationRef =
       doc(
         db,
         "investmentCommunications",
-        process.env.TEST_COMMUNICATION_ID
+        TEST_COMMUNICATION_ID
       );
 
+
     await expectDenied(
-      "Communication tampering",
+      "Tamper investment communication",
       () =>
         updateDoc(
           communicationRef,
           {
             status:
-              "SECURITY_TEST_TAMPER",
+              "__HACKED__",
           }
         )
     );
 
+
     await expectDenied(
-      "Communication deletion",
+      "Delete investment communication",
       () =>
         deleteDoc(
           communicationRef
         )
     );
+
   } else {
-    skip(
-      "Communication tampering tests",
-      "TEST_COMMUNICATION_ID not supplied."
+
+    record(
+      "SKIP",
+      "Communication immutability",
+      "TEST_COMMUNICATION_ID was not supplied."
     );
   }
 
+
   // ==========================================================
-  // 7. SUMMARY
+  // FINAL SUMMARY
   // ==========================================================
 
   console.log("");
+
   console.log(
     "============================================================"
   );
+
   console.log(
-    " TEST SUMMARY"
+    " FINAL SECURITY TEST RESULT"
   );
+
   console.log(
     "============================================================"
   );
 
   const passed =
     results.filter(
-      (item) =>
-        item.status === "PASS"
+      x => x.status === "PASS"
     ).length;
 
   const failed =
     results.filter(
-      (item) =>
-        item.status === "FAIL"
+      x => x.status === "FAIL"
     ).length;
 
   const skipped =
     results.filter(
-      (item) =>
-        item.status === "SKIP"
+      x => x.status === "SKIP"
     ).length;
 
+
   console.log(
-    `PASS : ${passed}`
+    `PASS  : ${passed}`
   );
 
   console.log(
-    `FAIL : ${failed}`
+    `FAIL  : ${failed}`
   );
 
   console.log(
-    `SKIP : ${skipped}`
+    `SKIP  : ${skipped}`
   );
 
   console.log("");
 
+
   if (failed > 0) {
+
     console.log(
-      "\x1b[31mSECURITY TEST RESULT: FAIL\x1b[0m"
+      "\x1b[31mRESULT: SECURITY TEST FAILED\x1b[0m"
+    );
+
+    console.log(
+      "At least one operation was allowed unexpectedly."
     );
 
     process.exitCode = 1;
+
   } else {
+
     console.log(
-      "\x1b[32mSECURITY TEST RESULT: NO TESTED VIOLATIONS\x1b[0m"
+      "\x1b[32mRESULT: NO TESTED SECURITY VIOLATIONS\x1b[0m"
     );
   }
 
+
   console.log("");
 
-  await signOut(auth);
+  try {
+    await signOut(auth);
+  } catch {
+    // Nothing else to do.
+  }
 }
 
+
 main().catch(
-  (error) => {
+  error => {
+
     console.error("");
+
     console.error(
-      "TEST RUNNER ERROR:"
+      "============================================================"
     );
+
     console.error(
-      error?.code || ""
+      "TEST RUNNER ERROR"
     );
+
     console.error(
-      error?.message || error
+      "============================================================"
+    );
+
+    console.error(
+      `${error?.code || ""}: ${error?.message || error}`
     );
 
     process.exitCode = 1;

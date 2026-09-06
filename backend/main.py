@@ -10,8 +10,12 @@ from fastapi import (
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 from sqlalchemy.orm import Session
+from sqlalchemy import text
+from services.platform_dependencies import get_current_platform_user
 
 from routers.platform_auth import router as platform_auth_router
+from routers.subscriptions import router as subscriptions_router
+from routers.referrals import router as referrals_router
 
 from database import SessionLocal
 from models import Client, PlatformUser
@@ -46,6 +50,8 @@ app.add_middleware(
 
 
 app.include_router(platform_auth_router)
+app.include_router(subscriptions_router)
+app.include_router(referrals_router)
 
 
 app.add_middleware(
@@ -124,6 +130,192 @@ def get_crm_tenant(
 @app.get("/health")
 def health_check():
     return {"status": "ok"}
+
+# ============================================================
+# ADMIN DASHBOARD
+# ============================================================
+
+@app.get("/admin/dashboard")
+def get_admin_dashboard(
+    db: Session = Depends(get_db),
+    platform_user: PlatformUser = Depends(
+        get_current_platform_user
+    ),
+):
+    if platform_user.role not in {
+        "OWNER",
+        "ADMIN",
+    }:
+        raise HTTPException(
+            status_code=403,
+            detail="You do not have permission to view the admin dashboard.",
+        )
+
+    # --------------------------------------------------------
+    # DATABASE HEALTH
+    # --------------------------------------------------------
+
+    database_status = "OPERATIONAL"
+
+    try:
+        db.execute(text("SELECT 1"))
+    except Exception:
+        database_status = "ERROR"
+
+    # --------------------------------------------------------
+    # CLIENTS
+    # --------------------------------------------------------
+
+    clients = (
+        db.query(Client)
+        .order_by(Client.id.desc())
+        .all()
+    )
+
+    total_clients = len(clients)
+
+    # --------------------------------------------------------
+    # SUBSCRIPTIONS
+    # --------------------------------------------------------
+
+    active_subscriptions = sum(
+        1
+        for client in clients
+        if str(client.subscription_status or "").upper()
+        in {
+            "ACTIVE",
+            "TRIAL",
+        }
+    )
+
+    # --------------------------------------------------------
+    # FIREBASE / TENANT PROVISIONING
+    # --------------------------------------------------------
+
+    ready_count = sum(
+        1
+        for client in clients
+        if str(client.firebase_provisioning_status or "").upper()
+        == "READY"
+    )
+
+    failed_count = sum(
+        1
+        for client in clients
+        if str(client.firebase_provisioning_status or "").upper()
+        in {
+            "FAILED",
+            "ERROR",
+        }
+    )
+
+    pending_count = total_clients - ready_count - failed_count
+
+    # --------------------------------------------------------
+    # ACTIVE TENANTS
+    #
+    # For now, an active tenant means:
+    # subscription is ACTIVE/TRIAL
+    # AND Firebase provisioning is READY.
+    # --------------------------------------------------------
+
+    active_tenants = sum(
+        1
+        for client in clients
+        if (
+            str(client.subscription_status or "").upper()
+            in {
+                "ACTIVE",
+                "TRIAL",
+            }
+            and
+            str(client.firebase_provisioning_status or "").upper()
+            == "READY"
+        )
+    )
+
+    # --------------------------------------------------------
+    # CLIENT RESPONSE
+    # --------------------------------------------------------
+
+    client_rows = []
+
+    for client in clients:
+        provisioning_status = (
+            str(
+                client.firebase_provisioning_status
+                or "PENDING"
+            )
+            .upper()
+        )
+
+        if provisioning_status == "READY":
+            display_status = "Ready"
+        elif provisioning_status in {"FAILED", "ERROR"}:
+            display_status = "Failed"
+        else:
+            display_status = "Provisioning"
+
+        client_rows.append(
+            {
+                "id": client.id,
+                "business_name": client.business_name,
+                "tenant_id": client.tenant_id,
+                "modules": client.modules or [],
+                "plan": client.plan,
+                "subscription_status": (
+                    client.subscription_status
+                ),
+                "provisioning_status": provisioning_status,
+                "display_status": display_status,
+                "firebase_project_id": (
+                    client.firebase_project_id
+                ),
+                "firebase_web_app_id": (
+                    client.firebase_web_app_id
+                ),
+                "provisioning_error": (
+                    client.firebase_provisioning_error
+                ),
+                "created_at": (
+                    client.created_at.isoformat()
+                    if client.created_at
+                    else None
+                ),
+                "updated_at": (
+                    client.updated_at.isoformat()
+                    if client.updated_at
+                    else None
+                ),
+            }
+        )
+
+    # --------------------------------------------------------
+    # RETURN DASHBOARD SNAPSHOT
+    # --------------------------------------------------------
+
+    return {
+        "status": "ok",
+
+        "stats": {
+            "total_clients": total_clients,
+            "active_tenants": active_tenants,
+            "provisioning_ready": ready_count,
+            "provisioning_pending": pending_count,
+            "provisioning_failed": failed_count,
+            "active_subscriptions": active_subscriptions,
+        },
+
+        "health": {
+            "api": "OPERATIONAL",
+            "database": database_status,
+            "authentication": "OPERATIONAL",
+        },
+
+        "clients": client_rows,
+    }
+
+
 
 # ============================================================
 # PLATFORM CLIENT MANAGEMENT

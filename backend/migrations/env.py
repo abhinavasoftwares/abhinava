@@ -28,7 +28,7 @@ if not DATABASE_URL:
 # Tell Alembic to use our environment variable
 config.set_main_option(
     "sqlalchemy.url",
-    DATABASE_URL,
+    DATABASE_URL.replace("%", "%%"),
 )
 
 

@@ -27,10 +27,24 @@ import {
   ShieldCheck,
   Lock
 } from "lucide-react";
-import { collection, doc, onSnapshot, orderBy, query, serverTimestamp, updateDoc } from "firebase/firestore";
+import {
+  collection,
+  doc,
+  getDocs,
+  limit,
+  onSnapshot,
+  orderBy,
+  query,
+  serverTimestamp,
+  startAfter,
+  updateDoc,
+  where,
+} from "firebase/firestore";
 import { Link, useNavigate } from "react-router-dom";
 
 import { useInvestmentInvestors } from "../hooks/useInvestmentInvestors";
+import { useInvestmentAccountsForInvestors } from "../hooks/useInvestmentAccountsForInvestors";
+import { useInvestmentSearch } from "../hooks/useInvestmentSearch";
 import { useInvestmentSchemes } from "../hooks/useInvestmentSchemes";
 import {
   createInvestmentInvestor,
@@ -289,23 +303,24 @@ function StatusBadge({ status }) {
 export default function InvestmentInvestorsPage() {
   const navigate = useNavigate();
 
-  const { investors, loading, error } = useInvestmentInvestors();
-  const { schemes, loading: schemesLoading, error: schemesError } = useInvestmentSchemes();
-  const [accounts, setAccounts] = useState([]);
-  const [accountsLoading, setAccountsLoading] = useState(true);
-  const [accountsError, setAccountsError] = useState("");
+  // ============================================================
+  // UI STATE
+  // ============================================================
 
   const [modalOpen, setModalOpen] = useState(false);
   const [modalStep, setModalStep] = useState(1);
   const [checkMobile, setCheckMobile] = useState("");
   const [existingInvestor, setExistingInvestor] = useState(null);
   const [existingAccounts, setExistingAccounts] = useState([]);
-  const [selectedPreviousAccountId, setSelectedPreviousAccountId] = useState("");
+  const [selectedPreviousAccountId, setSelectedPreviousAccountId] =
+    useState("");
   const [transferGoldPrice, setTransferGoldPrice] = useState("");
   const [accountMode, setAccountMode] = useState(null);
   const [transferConfirmed, setTransferConfirmed] = useState(false);
   const [formData, setFormData] = useState({ ...INITIAL_FORM });
-  const [accountForm, setAccountForm] = useState({ ...INITIAL_ACCOUNT });
+  const [accountForm, setAccountForm] = useState({
+    ...INITIAL_ACCOUNT,
+  });
   const [editingId, setEditingId] = useState(null);
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState(null);
@@ -313,14 +328,66 @@ export default function InvestmentInvestorsPage() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [activeTab, setActiveTab] = useState("ALL");
-  const [sortConfig, setSortConfig] = useState({ key: "createdAt", direction: "desc" });
-  const [currentPage, setCurrentPage] = useState(1);
+  const [sortConfig, setSortConfig] = useState({
+    key: "createdAt",
+    direction: "desc",
+  });
 
   const [sidebarInvestor, setSidebarInvestor] = useState(null);
 
   const [summaryUnlocked, setSummaryUnlocked] = useState(false);
-const [summaryPasscode, setSummaryPasscode] = useState("");
-const [summaryUnlocking, setSummaryUnlocking] = useState(false);
+  const [summaryPasscode, setSummaryPasscode] = useState("");
+  const [summaryUnlocking, setSummaryUnlocking] = useState(false);
+
+  // ============================================================
+  // DATA HOOKS
+  // ============================================================
+
+  const {
+    investors,
+    loading,
+    error,
+    currentPage,
+    pageSize,
+    hasNextPage,
+    hasPreviousPage,
+    nextPage,
+    previousPage,
+  } = useInvestmentInvestors();
+
+  const {
+    results: searchResults,
+    loading: searchLoading,
+    error: searchError,
+  } = useInvestmentSearch(search);
+
+  const {
+    schemes,
+    loading: schemesLoading,
+    error: schemesError,
+  } = useInvestmentSchemes();
+
+  const displayedInvestors = search.trim()
+    ? searchResults
+    : investors;
+
+  const investorIds = useMemo(
+    () =>
+      displayedInvestors.map(
+        (investor) => investor.id
+      ),
+    [displayedInvestors]
+  );
+
+  const {
+    accounts,
+    loading: accountsLoading,
+    error: accountsError,
+  } = useInvestmentAccountsForInvestors(
+    investorIds
+  );
+
+ 
 
   const activeSchemes = useMemo(() => schemes.filter((s) => String(s.status || "").toUpperCase() === "ACTIVE"), [schemes]);
   const selectedScheme = useMemo(() => activeSchemes.find((s) => s.id === accountForm.schemeId) || null, [activeSchemes, accountForm.schemeId]);
@@ -330,18 +397,7 @@ const [summaryUnlocking, setSummaryUnlocking] = useState(false);
   const selectedPreviousAccount = useMemo(() => existingAccounts.find((a) => a.id === selectedPreviousAccountId) || null, [existingAccounts, selectedPreviousAccountId]);
   const previousAccountIsGold = selectedPreviousAccount ? isGoldAccount(selectedPreviousAccount) : false;
 
-  useEffect(() => {
-    let unsubscribe = () => {};
-    try {
-      const db = getCrmFirestore();
-      const reference = query(collection(db, INVESTMENT_ACCOUNTS_COLLECTION), orderBy("createdAt", "desc"));
-      unsubscribe = onSnapshot(reference, 
-        (snapshot) => { setAccounts(snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }))); setAccountsError(""); setAccountsLoading(false); },
-        (err) => { console.error(err); setAccountsError(err.message || "Failed to load accounts."); setAccountsLoading(false); }
-      );
-    } catch (err) { setAccountsError(err.message); setAccountsLoading(false); }
-    return () => unsubscribe();
-  }, []);
+
 
   useEffect(() => {
     if (!toast) return;
@@ -349,11 +405,23 @@ const [summaryUnlocking, setSummaryUnlocking] = useState(false);
     return () => clearTimeout(timer);
   }, [toast]);
 
+ 
+
   const investorSummaries = useMemo(() => {
-    const map = new Map();
-    investors.forEach((inv) => map.set(inv.id, calculateInvestorSummary(inv.id, accounts)));
-    return map;
-  }, [investors, accounts]);
+  const map = new Map();
+
+  displayedInvestors.forEach((inv) => {
+    map.set(
+      inv.id,
+      calculateInvestorSummary(
+        inv.id,
+        accounts
+      )
+    );
+  });
+
+  return map;
+}, [displayedInvestors, accounts]);
 
   const aggregatedSummaryData = useMemo(() => {
     const stats = {};
@@ -376,38 +444,112 @@ const [summaryUnlocking, setSummaryUnlocking] = useState(false);
   }, [schemes, accounts]);
 
   const processedInvestors = useMemo(() => {
-    if (activeTab === "SUMMARY") return [];
-    const searchValue = search.trim().toLowerCase();
-    let filtered = investors.filter((investor) => {
-      const summary = investorSummaries.get(investor.id);
-      const accountSearch = summary?.accounts?.some((a) => String(a.accountNumber || "").toLowerCase().includes(searchValue));
-      const matchesSearch = !searchValue || String(investor.fullName || "").toLowerCase().includes(searchValue) || String(investor.mobileNumber || "").toLowerCase().includes(searchValue) || String(investor.email || "").toLowerCase().includes(searchValue) || accountSearch;
-      const matchesStatus = statusFilter === "ALL" || String(investor.status || "ACTIVE").toUpperCase() === statusFilter;
-      const matchesTab = activeTab === "ALL" || (summary?.accounts?.some((a) => a.schemeId === activeTab) || false);
-      return matchesSearch && matchesStatus && matchesTab;
-    });
+  if (activeTab === "SUMMARY") return [];
 
-    filtered.sort((a, b) => {
-      const sumA = investorSummaries.get(a.id);
-      const sumB = investorSummaries.get(b.id);
-      let valA, valB;
-      switch (sortConfig.key) {
-        case "fullName": valA = String(a.fullName || "").toLowerCase(); valB = String(b.fullName || "").toLowerCase(); break;
-        case "totalAmount": valA = sumA?.totalAmount || 0; valB = sumB?.totalAmount || 0; break;
-        case "totalGold": valA = sumA?.totalGold || 0; valB = sumB?.totalGold || 0; break;
-        default: valA = a.createdAt?.seconds || 0; valB = b.createdAt?.seconds || 0;
-      }
-      if (valA < valB) return sortConfig.direction === "asc" ? -1 : 1;
-      if (valA > valB) return sortConfig.direction === "asc" ? 1 : -1;
-      return 0;
-    });
-    return filtered;
-  }, [investors, search, statusFilter, activeTab, sortConfig, investorSummaries]);
+  const sourceInvestors = search.trim()
+    ? searchResults
+    : investors;
 
-  const totalPages = Math.ceil(processedInvestors.length / ITEMS_PER_PAGE);
-  const paginatedInvestors = useMemo(() => processedInvestors.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE), [processedInvestors, currentPage]);
+  let filtered = sourceInvestors.filter(
+    (investor) => {
+      const summary =
+        investorSummaries.get(investor.id);
 
-  useEffect(() => setCurrentPage(1), [search, statusFilter, activeTab]);
+      const matchesStatus =
+        statusFilter === "ALL" ||
+        String(
+          investor.status || "ACTIVE"
+        ).toUpperCase() === statusFilter;
+
+      const matchesTab =
+        activeTab === "ALL" ||
+        (
+          summary?.accounts?.some(
+            (a) => a.schemeId === activeTab
+          ) || false
+        );
+
+      return (
+        matchesStatus &&
+        matchesTab
+      );
+    }
+  );
+
+  filtered.sort((a, b) => {
+    const sumA =
+      investorSummaries.get(a.id);
+
+    const sumB =
+      investorSummaries.get(b.id);
+
+    let valA;
+    let valB;
+
+    switch (sortConfig.key) {
+      case "fullName":
+        valA = String(
+          a.fullName || ""
+        ).toLowerCase();
+
+        valB = String(
+          b.fullName || ""
+        ).toLowerCase();
+        break;
+
+      case "totalAmount":
+        valA =
+          sumA?.totalAmount || 0;
+
+        valB =
+          sumB?.totalAmount || 0;
+        break;
+
+      case "totalGold":
+        valA =
+          sumA?.totalGold || 0;
+
+        valB =
+          sumB?.totalGold || 0;
+        break;
+
+      default:
+        valA =
+          a.createdAt?.seconds || 0;
+
+        valB =
+          b.createdAt?.seconds || 0;
+    }
+
+    if (valA < valB) {
+      return sortConfig.direction === "asc"
+        ? -1
+        : 1;
+    }
+
+    if (valA > valB) {
+      return sortConfig.direction === "asc"
+        ? 1
+        : -1;
+    }
+
+    return 0;
+  });
+
+  return filtered;
+}, [
+  investors,
+  searchResults,
+  search,
+  statusFilter,
+  activeTab,
+  sortConfig,
+  investorSummaries,
+]);
+
+  const paginatedInvestors = processedInvestors;
+
+ 
 
   function requestSort(key) {
     setSortConfig({ key, direction: sortConfig.key === key && sortConfig.direction === "asc" ? "desc" : "asc" });
@@ -1113,9 +1255,9 @@ function validateFirstTransaction() {
               </div>
             )}
           </div>
-          {(error || accountsError || schemesError) && (
+          {(error ||  searchError || accountsError || schemesError) && (
             <div className="mt-3 flex items-center gap-1.5 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-700">
-              <AlertCircle size={14} /> {error || accountsError || schemesError}
+              <AlertCircle size={14} /> {error || searchError || accountsError || schemesError}
             </div>
           )}
         </div>
@@ -1188,7 +1330,7 @@ function validateFirstTransaction() {
           ) : (
             /* ----- REGULAR LIST TAB ----- */
             <>
-              {loading || accountsLoading ? (
+              {loading || searchLoading || accountsLoading ? (
                 <div className="flex h-full items-center justify-center">
                   <Loader2 size={24} className="animate-spin text-indigo-600" />
                 </div>
@@ -1338,17 +1480,39 @@ function validateFirstTransaction() {
                   </div>
 
                   {/* PAGINATION FOOTER */}
-                  {totalPages > 1 && (
-                    <div className="flex shrink-0 items-center justify-between border-t border-gray-100 px-5 py-3 bg-white">
-                      <p className="text-[11px] font-medium text-gray-500">
-                        Showing <span className="font-semibold text-gray-900">{(currentPage - 1) * ITEMS_PER_PAGE + 1}</span> - <span className="font-semibold text-gray-900">{Math.min(currentPage * ITEMS_PER_PAGE, processedInvestors.length)}</span> of <span className="font-semibold text-gray-900">{processedInvestors.length}</span>
-                      </p>
-                      <div className="flex gap-2">
-                        <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1} className="px-3 py-1.5 text-[11px] font-semibold rounded-md border border-gray-200 bg-white text-gray-700 disabled:opacity-50 hover:bg-gray-50 shadow-sm transition-colors">Prev</button>
-                        <button onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages} className="px-3 py-1.5 text-[11px] font-semibold rounded-md border border-gray-200 bg-white text-gray-700 disabled:opacity-50 hover:bg-gray-50 shadow-sm transition-colors">Next</button>
+                  {(hasPreviousPage || hasNextPage) && (
+                      <div className="flex shrink-0 items-center justify-between border-t border-gray-100 px-5 py-3 bg-white">
+                        <p className="text-[11px] font-medium text-gray-500">
+                          Page{" "}
+                          <span className="font-semibold text-gray-900">
+                            {currentPage}
+                          </span>
+                          {" "}•{" "}
+                          <span className="font-semibold text-gray-900">
+                            {pageSize}
+                          </span>{" "}
+                          records per page
+                        </p>
+
+                        <div className="flex gap-2">
+                          <button
+                            onClick={previousPage}
+                            disabled={!hasPreviousPage || loading || accountsLoading}
+                            className="px-3 py-1.5 text-[11px] font-semibold rounded-md border border-gray-200 bg-white text-gray-700 disabled:opacity-50 hover:bg-gray-50 shadow-sm transition-colors"
+                          >
+                            Prev
+                          </button>
+
+                          <button
+                            onClick={nextPage}
+                            disabled={!hasNextPage || loading || accountsLoading}
+                            className="px-3 py-1.5 text-[11px] font-semibold rounded-md border border-gray-200 bg-white text-gray-700 disabled:opacity-50 hover:bg-gray-50 shadow-sm transition-colors"
+                          >
+                            Next
+                          </button>
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    )}
                 </>
               )}
             </>
