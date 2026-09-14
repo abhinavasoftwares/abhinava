@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, useCallback } from "react";
 import {
   ArrowLeft,
   Building2,
@@ -28,28 +28,98 @@ import {
   ShieldCheck,
   AlertCircle,
   RefreshCw,
-  Percent,
-  IndianRupee,
+  X,
 } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 
 const API_URL = import.meta.env.VITE_API_BASE_URL;
-const GOLD = "#c59b27";
 
-const noScroll =
-  "[&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]";
+/* ============================================================================
+   ABHINAVA ENTERPRISE THEME
+   ========================================================================== */
 
+const THEMES = {
+  light: {
+    mode: "light",
+    background: "#F8F9FA",
+    surface: "#FFFFFF",
+    surfaceAlt: "#F3F4F6",
+    surfaceHover: "#EBECEF",
 
-// ============================================================
-// STEPS
-// ============================================================
+    border: "#E4E7EB",
+    borderStrong: "#CBD0D7",
+
+    text: "#0F1117",
+    textSoft: "#363B45",
+    textMuted: "#6B7280",
+    textLight: "#9CA3AF",
+
+    primary: "#0F1117",
+    primaryText: "#FFFFFF",
+    primaryHover: "#1F2430",
+    primarySoft: "#F0F2F5",
+
+    success: "#047857",
+    successSoft: "#ECFDF5",
+    warning: "#B45309",
+    warningSoft: "#FFFBEB",
+    danger: "#B91C1C",
+    dangerSoft: "#FEF2F2",
+  },
+
+  dark: {
+    mode: "dark",
+    background: "#090A0D",
+    surface: "#111318",
+    surfaceAlt: "#181B22",
+    surfaceHover: "#20242D",
+
+    border: "#20242D",
+    borderStrong: "#2E3442",
+
+    text: "#F9FAFB",
+    textSoft: "#D1D5DB",
+    textMuted: "#88909F",
+    textLight: "#545B6B",
+
+    primary: "#FFFFFF",
+    primaryText: "#090A0D",
+    primaryHover: "#E5E7EB",
+    primarySoft: "#1C2029",
+
+    success: "#34D399",
+    successSoft: "rgba(52, 211, 153, 0.12)",
+    warning: "#FBBF24",
+    warningSoft: "rgba(251, 191, 36, 0.12)",
+    danger: "#F87171",
+    dangerSoft: "rgba(248, 113, 113, 0.12)",
+  },
+};
+
+function getInitialTheme() {
+  try {
+    const stored = localStorage.getItem("abhinava-admin-theme");
+
+    if (stored === "dark" || stored === "light") {
+      return stored;
+    }
+  } catch {
+    // Ignore storage errors
+  }
+
+  return "light";
+}
+
+/* ============================================================================
+   STEPS CONFIGURATION
+   ========================================================================== */
 
 const STEPS = [
   {
     id: 0,
     title: "Business",
-    subtitle: "Legal details",
+    subtitle: "Identity & Legal",
     icon: Building2,
     fields: [
       "businessName",
@@ -60,10 +130,11 @@ const STEPS = [
       "businessPhone",
     ],
   },
+
   {
     id: 1,
-    title: "Owner",
-    subtitle: "Contact info",
+    title: "Primary Contact",
+    subtitle: "Authorized User",
     icon: UserRound,
     fields: [
       "ownerName",
@@ -72,10 +143,11 @@ const STEPS = [
       "ownerRole",
     ],
   },
+
   {
     id: 2,
-    title: "Documents",
-    subtitle: "Verification",
+    title: "Verification",
+    subtitle: "Statutory Docs",
     icon: FileText,
     fields: [
       "pan",
@@ -83,42 +155,45 @@ const STEPS = [
       "aadhaar",
     ],
   },
+
   {
     id: 3,
     title: "Subscription",
-    subtitle: "Plan & billing",
+    subtitle: "Plan & Modules",
     icon: CreditCard,
     fields: [
       "subscriptionPlanId",
       "cityTierId",
+      "turnoverBandId",
       "billingCycle",
       "subscriptionStatus",
       "startDate",
     ],
   },
+
   {
     id: 4,
     title: "Workspace",
-    subtitle: "Firebase setup",
+    subtitle: "Database Isolation",
     icon: Database,
     fields: [
       "firebaseProjectId",
       "domain",
     ],
   },
+
   {
     id: 5,
     title: "Review",
-    subtitle: "Confirm & create",
+    subtitle: "Audit & Provision",
     icon: ShieldCheck,
     fields: [],
   },
 ];
 
-
-// ============================================================
-// HELPERS
-// ============================================================
+/* ============================================================================
+   HELPERS
+   ========================================================================== */
 
 function money(value) {
   const amount = Number(value || 0);
@@ -152,11 +227,7 @@ function getModuleKey(module) {
     return module;
   }
 
-  return (
-    module?.module_key ||
-    module?.key ||
-    ""
-  );
+  return module?.module_key || module?.key || "";
 }
 
 function formatBusinessType(value) {
@@ -171,42 +242,29 @@ function formatBusinessType(value) {
 }
 
 function formatBillingCycle(value) {
-  if (value === "annual") return "Annual";
-  if (value === "monthly") return "Monthly";
+  if (value === "annual") {
+    return "Annual";
+  }
+
+  if (value === "monthly") {
+    return "Monthly";
+  }
 
   return value || "—";
 }
 
-function formatDiscountType(value) {
-  if (value === "PERCENTAGE") return "Percentage";
-  if (value === "FIXED") return "Fixed";
-
-  return value || "";
-}
-
-
-// ============================================================
-// MODULE ICON
-// ============================================================
-
-function ModuleIcon({ moduleKey, size = 15 }) {
+function ModuleIcon({ moduleKey, size = 14 }) {
   const key = String(moduleKey || "").toLowerCase();
 
   if (key.includes("customer")) {
     return <Users size={size} />;
   }
 
-  if (
-    key.includes("stock") ||
-    key.includes("inventory")
-  ) {
+  if (key.includes("stock") || key.includes("inventory")) {
     return <Package size={size} />;
   }
 
-  if (
-    key.includes("invoice") ||
-    key.includes("sales")
-  ) {
+  if (key.includes("invoice") || key.includes("sales")) {
     return <Receipt size={size} />;
   }
 
@@ -218,48 +276,207 @@ function ModuleIcon({ moduleKey, size = 15 }) {
     return <Hammer size={size} />;
   }
 
-  if (
-    key.includes("whatsapp") ||
-    key.includes("message")
-  ) {
+  if (key.includes("whatsapp") || key.includes("message")) {
     return <MessageCircle size={size} />;
   }
 
-  if (
-    key.includes("report") ||
-    key.includes("analytic")
-  ) {
+  if (key.includes("report") || key.includes("analytic")) {
     return <BarChart3 size={size} />;
   }
 
   return <Sparkles size={size} />;
 }
 
+/* ============================================================================
+   TOAST NOTIFICATION CONTAINER
+   ========================================================================== */
 
-// ============================================================
-// MAIN PAGE
-// ============================================================
+function ToastContainer({ toasts, removeToast, theme }) {
+  return (
+    <div className="fixed top-5 right-5 z-50 flex w-full max-w-sm flex-col gap-2.5 pointer-events-none">
+      {toasts.map((toast) => (
+        <div
+          key={toast.id}
+          className="pointer-events-auto flex items-start justify-between gap-3 rounded-xl border p-3.5 shadow-lg backdrop-blur-md transition-all duration-200"
+          style={{
+            backgroundColor: theme.surface,
+            borderColor:
+              toast.type === "error"
+                ? theme.danger
+                : toast.type === "success"
+                ? theme.success
+                : theme.border,
+          }}
+        >
+          <div className="flex items-start gap-2.5">
+            {toast.type === "error" && (
+              <AlertCircle
+                size={16}
+                className="mt-0.5 shrink-0"
+                style={{ color: theme.danger }}
+              />
+            )}
+
+            {toast.type === "success" && (
+              <Check
+                size={16}
+                className="mt-0.5 shrink-0"
+                style={{ color: theme.success }}
+              />
+            )}
+
+            {toast.type === "warning" && (
+              <AlertCircle
+                size={16}
+                className="mt-0.5 shrink-0"
+                style={{ color: theme.warning }}
+              />
+            )}
+
+            {toast.type === "info" && (
+              <Sparkles
+                size={16}
+                className="mt-0.5 shrink-0"
+                style={{ color: theme.textSoft }}
+              />
+            )}
+
+            <div>
+              <p
+                className="text-[12px] font-bold"
+                style={{ color: theme.text }}
+              >
+                {toast.title}
+              </p>
+
+              <p
+                className="mt-0.5 text-[11px] leading-relaxed"
+                style={{ color: theme.textMuted }}
+              >
+                {toast.message}
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => removeToast(toast.id)}
+            className="rounded p-1 transition opacity-60 hover:opacity-100"
+            style={{ color: theme.textMuted }}
+          >
+            <X size={14} />
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* ============================================================================
+   MAIN COMPONENT
+   ========================================================================== */
 
 function AddClientPage() {
   const navigate = useNavigate();
 
+  const [themeMode, setThemeMode] = useState(getInitialTheme);
+  const theme = THEMES[themeMode] || THEMES.light;
+
+  /* --------------------------------------------------------------------------
+     THEME SYNC
+     -------------------------------------------------------------------------- */
+
+  useEffect(() => {
+    const handleCustomChange = (e) => {
+      if (
+        e.detail &&
+        (e.detail === "dark" || e.detail === "light")
+      ) {
+        setThemeMode(e.detail);
+      }
+    };
+
+    const handleStorageChange = (e) => {
+      if (
+        e.key === "abhinava-admin-theme" &&
+        (e.newValue === "dark" || e.newValue === "light")
+      ) {
+        setThemeMode(e.newValue);
+      }
+    };
+
+    window.addEventListener(
+      "abhinava-theme-change",
+      handleCustomChange
+    );
+
+    window.addEventListener(
+      "storage",
+      handleStorageChange
+    );
+
+    return () => {
+      window.removeEventListener(
+        "abhinava-theme-change",
+        handleCustomChange
+      );
+
+      window.removeEventListener(
+        "storage",
+        handleStorageChange
+      );
+    };
+  }, []);
+
+  /* --------------------------------------------------------------------------
+     TOASTS
+     -------------------------------------------------------------------------- */
+
+  const [toasts, setToasts] = useState([]);
+
+  const addToast = useCallback(
+    (title, message, type = "info") => {
+      const id = Date.now() + Math.random();
+
+      setToasts((prev) => [
+        ...prev,
+        {
+          id,
+          title,
+          message,
+          type,
+        },
+      ]);
+
+      setTimeout(() => {
+        setToasts((prev) =>
+          prev.filter((toast) => toast.id !== id)
+        );
+      }, 4500);
+    },
+    []
+  );
+
+  const removeToast = useCallback((id) => {
+    setToasts((prev) =>
+      prev.filter((toast) => toast.id !== id)
+    );
+  }, []);
+
+  /* --------------------------------------------------------------------------
+     GENERAL STATE
+     -------------------------------------------------------------------------- */
+
   const [currentStep, setCurrentStep] = useState(0);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const [isSubmitting, setIsSubmitting] =
-    useState(false);
-
-  const [submitStatus, setSubmitStatus] =
-    useState("idle");
-
-  const [submitMessage, setSubmitMessage] =
-    useState("");
-
-  // ----------------------------------------------------------
-  // SUBSCRIPTION DATA
-  // ----------------------------------------------------------
+  /* --------------------------------------------------------------------------
+     SUBSCRIPTION STATE
+     -------------------------------------------------------------------------- */
 
   const [plans, setPlans] = useState([]);
   const [cityTiers, setCityTiers] = useState([]);
+  const [turnoverBands, setTurnoverBands] = useState([]);
 
   const [subscriptionLoading, setSubscriptionLoading] =
     useState(true);
@@ -267,44 +484,33 @@ function AddClientPage() {
   const [subscriptionError, setSubscriptionError] =
     useState("");
 
-  // ----------------------------------------------------------
-  // RESOLVED SUBSCRIPTION
-  // ----------------------------------------------------------
-
   const [resolvedSubscription, setResolvedSubscription] =
     useState(null);
 
   const [resolvingSubscription, setResolvingSubscription] =
     useState(false);
 
-  // ----------------------------------------------------------
-  // REFERRAL
-  // ----------------------------------------------------------
+  /* --------------------------------------------------------------------------
+     REFERRAL STATE
+     -------------------------------------------------------------------------- */
 
-  const [referralCode, setReferralCode] =
-    useState("");
+  const [referralCode, setReferralCode] = useState("");
+  const [referralLoading, setReferralLoading] = useState(false);
+  const [referralResult, setReferralResult] = useState(null);
+  const [referralError, setReferralError] = useState("");
 
-  const [referralLoading, setReferralLoading] =
-    useState(false);
+  /* --------------------------------------------------------------------------
+     DOCUMENT STATE
+     -------------------------------------------------------------------------- */
 
-  const [referralResult, setReferralResult] =
-    useState(null);
+  const [agreementFile, setAgreementFile] = useState(null);
 
-  const [referralError, setReferralError] =
-    useState("");
-
-  // ----------------------------------------------------------
-  // DOCUMENT FILE
-  // ----------------------------------------------------------
-
-  const [agreementFile, setAgreementFile] =
-    useState(null);
-
-  // ----------------------------------------------------------
-  // FORM
-  // ----------------------------------------------------------
+  /* --------------------------------------------------------------------------
+     REACT HOOK FORM
+     -------------------------------------------------------------------------- */
 
   const {
+    control,
     register,
     handleSubmit,
     trigger,
@@ -314,32 +520,63 @@ function AddClientPage() {
     formState: { errors },
   } = useForm({
     mode: "onChange",
+
     defaultValues: {
       domain: "jewelry",
+
+      /*
+       * IMPORTANT:
+       * Nothing is automatically selected for:
+       * - Plan
+       * - City Tier
+       * - Turnover Band
+       */
       subscriptionPlanId: "",
       cityTierId: "",
+      turnoverBandId: "",
+
       billingCycle: "monthly",
       subscriptionStatus: "active",
-      startDate:
-        new Date().toISOString().slice(0, 10),
+
+      startDate: new Date()
+        .toISOString()
+        .slice(0, 10),
     },
   });
 
-  const selectedPlanId =
-    watch("subscriptionPlanId");
+  /* --------------------------------------------------------------------------
+     SUBSCRIPTION WATCHERS
+     -------------------------------------------------------------------------- */
 
-  const selectedCityTierId =
-    watch("cityTierId");
+  const selectedPlanId = useWatch({
+    control,
+    name: "subscriptionPlanId",
+  });
 
-  const selectedBillingCycle =
-    watch("billingCycle");
+  const selectedCityTierId = useWatch({
+    control,
+    name: "cityTierId",
+  });
+
+  const selectedBillingCycle = useWatch({
+    control,
+    name: "billingCycle",
+  });
+
+  const selectedTurnoverBandId = useWatch({
+    control,
+    name: "turnoverBandId",
+  });
+
+  /* --------------------------------------------------------------------------
+     SELECTED OBJECTS
+     -------------------------------------------------------------------------- */
 
   const selectedPlan = useMemo(
     () =>
       plans.find(
         (plan) =>
-          Number(plan.id) ===
-          Number(selectedPlanId)
+          Number(plan.id) === Number(selectedPlanId)
       ),
     [plans, selectedPlanId]
   );
@@ -348,136 +585,172 @@ function AddClientPage() {
     () =>
       cityTiers.find(
         (tier) =>
-          Number(tier.id) ===
-          Number(selectedCityTierId)
+          Number(tier.id) === Number(selectedCityTierId)
       ),
     [cityTiers, selectedCityTierId]
   );
 
+  const selectedTurnoverBand = useMemo(
+    () =>
+      turnoverBands.find(
+        (band) =>
+          Number(band.id) === Number(selectedTurnoverBandId)
+      ),
+    [turnoverBands, selectedTurnoverBandId]
+  );
 
-  // ==========================================================
-  // LOAD SUBSCRIPTIONS
-  // ==========================================================
+  /* --------------------------------------------------------------------------
+     LOAD SUBSCRIPTION CONFIGURATION
+     -------------------------------------------------------------------------- */
 
-  const loadSubscriptionConfiguration =
-    async () => {
-      try {
-        setSubscriptionLoading(true);
-        setSubscriptionError("");
+  const loadSubscriptionConfiguration = async () => {
+    try {
+      setSubscriptionLoading(true);
+      setSubscriptionError("");
 
-        const [
-          plansResponse,
-          tiersResponse,
-        ] = await Promise.all([
-          fetch(
-            `${API_URL}/subscriptions/plans`,
-            {
-              credentials: "include",
-            }
-          ),
-          fetch(
-            `${API_URL}/subscriptions/city-tiers`,
-            {
-              credentials: "include",
-            }
-          ),
-        ]);
+      const [
+        plansResponse,
+        tiersResponse,
+        turnoverResponse,
+      ] = await Promise.all([
+        fetch(
+          `${API_URL}/subscriptions/plans`,
+          {
+            credentials: "include",
+          }
+        ),
 
-        if (!plansResponse.ok) {
-          throw new Error(
-            "Unable to load subscription plans."
-          );
-        }
+        fetch(
+          `${API_URL}/subscriptions/city-tiers`,
+          {
+            credentials: "include",
+          }
+        ),
 
-        if (!tiersResponse.ok) {
-          throw new Error(
-            "Unable to load city tiers."
-          );
-        }
+        fetch(
+          `${API_URL}/subscriptions/turnover-bands`,
+          {
+            credentials: "include",
+          }
+        ),
+      ]);
 
-        const plansData =
-          await plansResponse.json();
-
-        const tiersData =
-          await tiersResponse.json();
-
-        const activePlans = (
-          plansData.plans || []
-        ).filter(
-          (plan) =>
-            plan.is_active !== false
+      if (!plansResponse.ok) {
+        throw new Error(
+          "Unable to load subscription plans."
         );
-
-        const activeTiers = (
-          tiersData.city_tiers || []
-        ).filter(
-          (tier) =>
-            tier.is_active !== false
-        );
-
-        setPlans(activePlans);
-        setCityTiers(activeTiers);
-
-        if (
-          activePlans.length > 0 &&
-          !getValues("subscriptionPlanId")
-        ) {
-          setValue(
-            "subscriptionPlanId",
-            String(activePlans[0].id),
-            {
-              shouldValidate: true,
-            }
-          );
-        }
-
-        if (
-          activeTiers.length > 0 &&
-          !getValues("cityTierId")
-        ) {
-          setValue(
-            "cityTierId",
-            String(activeTiers[0].id),
-            {
-              shouldValidate: true,
-            }
-          );
-        }
-      } catch (error) {
-        console.error(
-          "Subscription configuration error:",
-          error
-        );
-
-        setSubscriptionError(
-          error instanceof Error
-            ? error.message
-            : "Unable to load subscription configuration."
-        );
-      } finally {
-        setSubscriptionLoading(false);
       }
-    };
+
+      if (!tiersResponse.ok) {
+        throw new Error(
+          "Unable to load city tiers."
+        );
+      }
+
+      if (!turnoverResponse.ok) {
+        throw new Error(
+          "Unable to load turnover bands."
+        );
+      }
+
+      const plansData =
+        await plansResponse.json();
+
+      const tiersData =
+        await tiersResponse.json();
+
+      const turnoverData =
+        await turnoverResponse.json();
+
+      const activePlans = (
+        Array.isArray(plansData)
+          ? plansData
+          : plansData.plans || []
+      ).filter(
+        (plan) => plan.is_active !== false
+      );
+
+      const activeTiers = (
+        Array.isArray(tiersData)
+          ? tiersData
+          : tiersData.city_tiers || []
+      ).filter(
+        (tier) => tier.is_active !== false
+      );
+
+      const activeTurnoverBands = (
+        Array.isArray(turnoverData)
+          ? turnoverData
+          : turnoverData.turnover_bands || []
+      ).filter(
+        (band) => band.is_active !== false
+      );
+
+      setPlans(activePlans);
+      setCityTiers(activeTiers);
+      setTurnoverBands(activeTurnoverBands);
+
+      /*
+       * IMPORTANT:
+       *
+       * Do NOT automatically select:
+       *
+       * activePlans[0]
+       * activeTiers[0]
+       * activeTurnoverBands[0]
+       *
+       * The administrator must explicitly select
+       * all subscription parameters.
+       */
+    } catch (error) {
+      console.error(
+        "Subscription configuration error:",
+        error
+      );
+
+      setSubscriptionError(
+        error instanceof Error
+          ? error.message
+          : "Unable to load configuration."
+      );
+
+      addToast(
+        "Configuration Error",
+        "Could not load subscription tiers from server.",
+        "error"
+      );
+    } finally {
+      setSubscriptionLoading(false);
+    }
+  };
 
   useEffect(() => {
     loadSubscriptionConfiguration();
   }, []);
 
-
-  // ==========================================================
-  // RESOLVE PLAN PRICE + MODULES
-  // ==========================================================
+  /* --------------------------------------------------------------------------
+     RESOLVE SUBSCRIPTION PRICE
+     -------------------------------------------------------------------------- */
 
   useEffect(() => {
     const planId = Number(selectedPlanId);
     const tierId = Number(selectedCityTierId);
+    const turnoverBandId = Number(
+      selectedTurnoverBandId
+    );
 
+    /*
+     * Nothing should resolve until the administrator
+     * explicitly selects all required parameters.
+     */
     if (
       !planId ||
       !tierId ||
+      !turnoverBandId ||
       !selectedBillingCycle
     ) {
       setResolvedSubscription(null);
+      setResolvingSubscription(false);
       return;
     }
 
@@ -487,15 +760,19 @@ function AddClientPage() {
       try {
         setResolvingSubscription(true);
 
-        const params =
-          new URLSearchParams({
-            subscription_plan_id:
-              String(planId),
-            city_tier_id:
-              String(tierId),
-            billing_cycle:
-              selectedBillingCycle,
-          });
+        const params = new URLSearchParams({
+          subscription_plan_id:
+            String(selectedPlanId),
+
+          city_tier_id:
+            String(selectedCityTierId),
+
+          turnover_band_id:
+            String(selectedTurnoverBandId),
+
+          billing_cycle:
+            selectedBillingCycle,
+        });
 
         const response = await fetch(
           `${API_URL}/subscriptions/resolve?${params.toString()}`,
@@ -505,9 +782,9 @@ function AddClientPage() {
         );
 
         const data =
-          await response.json().catch(
-            () => ({})
-          );
+          await response
+            .json()
+            .catch(() => ({}));
 
         if (!response.ok) {
           throw new Error(
@@ -520,10 +797,6 @@ function AddClientPage() {
         if (!cancelled) {
           setResolvedSubscription(data);
 
-          /*
-           * A subscription change invalidates
-           * an earlier referral calculation.
-           */
           setReferralResult(null);
           setReferralError("");
         }
@@ -551,21 +824,19 @@ function AddClientPage() {
   }, [
     selectedPlanId,
     selectedCityTierId,
+    selectedTurnoverBandId,
     selectedBillingCycle,
   ]);
 
-
-  // ==========================================================
-  // REFERRAL VALIDATION
-  // ==========================================================
+  /* --------------------------------------------------------------------------
+     REFERRAL CODE
+     -------------------------------------------------------------------------- */
 
   const applyReferralCode = async () => {
     const code = clean(referralCode);
 
     if (!code) {
-      setReferralError(
-        "Enter a referral code."
-      );
+      setReferralError("Enter a promo code.");
       setReferralResult(null);
       return;
     }
@@ -573,11 +844,15 @@ function AddClientPage() {
     if (
       !selectedPlanId ||
       !selectedCityTierId ||
+      !selectedTurnoverBandId ||
       !selectedBillingCycle
     ) {
-      setReferralError(
-        "Select a plan, city tier and billing cycle first."
+      addToast(
+        "Parameters Incomplete",
+        "Select a plan, city tier, and turnover scale first.",
+        "warning"
       );
+
       return;
     }
 
@@ -586,16 +861,18 @@ function AddClientPage() {
       setReferralError("");
       setReferralResult(null);
 
-      const params =
-        new URLSearchParams({
-          code,
-          subscription_plan_id:
-            String(selectedPlanId),
-          city_tier_id:
-            String(selectedCityTierId),
-          billing_cycle:
-            selectedBillingCycle,
-        });
+      const params = new URLSearchParams({
+        code,
+
+        subscription_plan_id:
+          String(selectedPlanId),
+
+        city_tier_id:
+          String(selectedCityTierId),
+
+        billing_cycle:
+          selectedBillingCycle,
+      });
 
       const response = await fetch(
         `${API_URL}/referrals/validate?${params.toString()}`,
@@ -605,9 +882,9 @@ function AddClientPage() {
       );
 
       const data =
-        await response.json().catch(
-          () => ({})
-        );
+        await response
+          .json()
+          .catch(() => ({}));
 
       if (!response.ok) {
         throw new Error(
@@ -618,31 +895,42 @@ function AddClientPage() {
       }
 
       setReferralResult(data);
+
+      addToast(
+        "Discount Applied",
+        `Applied ${data.code} successfully!`,
+        "success"
+      );
     } catch (error) {
       console.error(
         "Referral validation error:",
         error
       );
 
-      setReferralError(
+      const msg =
         error instanceof Error
           ? error.message
-          : "Unable to validate referral code."
+          : "Invalid promo code.";
+
+      setReferralError(msg);
+
+      addToast(
+        "Validation Failed",
+        msg,
+        "error"
       );
     } finally {
       setReferralLoading(false);
     }
   };
 
-
-  // ==========================================================
-  // PRICING
-  // ==========================================================
+  /* --------------------------------------------------------------------------
+     PRICING
+     -------------------------------------------------------------------------- */
 
   const pricing = useMemo(() => {
     const basePrice = Number(
-      resolvedSubscription?.price_before_tax ||
-        0
+      resolvedSubscription?.price_before_tax || 0
     );
 
     const taxRate = Number(
@@ -677,148 +965,71 @@ function AddClientPage() {
     referralResult,
   ]);
 
-
-  // ==========================================================
-  // MODULES
-  // ==========================================================
+  /* --------------------------------------------------------------------------
+     MODULES
+     -------------------------------------------------------------------------- */
 
   const resolvedModules =
     resolvedSubscription?.modules ||
     selectedPlan?.modules ||
     [];
 
+  /* --------------------------------------------------------------------------
+     AGREEMENT FILE
+     -------------------------------------------------------------------------- */
 
-  // ==========================================================
-  // PLAN CHANGE
-  // ==========================================================
-
-  const handlePlanChange = (
-    event
-  ) => {
-    const value = event.target.value;
-
-    setValue(
-      "subscriptionPlanId",
-      value,
-      {
-        shouldDirty: true,
-        shouldValidate: true,
-      }
-    );
-
-    setReferralCode("");
-    setReferralResult(null);
-    setReferralError("");
-  };
-
-
-  // ==========================================================
-  // CITY TIER CHANGE
-  // ==========================================================
-
-  const handleTierChange = (
-    event
-  ) => {
-    const value = event.target.value;
-
-    setValue(
-      "cityTierId",
-      value,
-      {
-        shouldDirty: true,
-        shouldValidate: true,
-      }
-    );
-
-    setReferralResult(null);
-    setReferralError("");
-  };
-
-
-  // ==========================================================
-  // BILLING CHANGE
-  // ==========================================================
-
-  const handleBillingChange = (
-    event
-  ) => {
-    const value = event.target.value;
-
-    setValue(
-      "billingCycle",
-      value,
-      {
-        shouldDirty: true,
-        shouldValidate: true,
-      }
-    );
-
-    setReferralResult(null);
-    setReferralError("");
-  };
-
-
-  // ==========================================================
-  // AGREEMENT
-  // ==========================================================
-
-  const handleAgreementChange = (
-    event
-  ) => {
+  const handleAgreementChange = (event) => {
     const file =
-      event.target.files?.[0] ||
-      null;
+      event.target.files?.[0] || null;
 
     setAgreementFile(file);
+
+    if (file) {
+      addToast(
+        "Document Staged",
+        `Selected: ${file.name}`,
+        "info"
+      );
+    }
   };
 
-
-  // ==========================================================
-  // SUBMIT
-  // ==========================================================
+  /* --------------------------------------------------------------------------
+     SUBMIT
+     -------------------------------------------------------------------------- */
 
   const onSubmit = async (data) => {
-    if (
-      !resolvedSubscription
-    ) {
-      alert(
-        "Please wait for the subscription pricing to finish loading."
+    if (!resolvedSubscription) {
+      addToast(
+        "Pricing Missing",
+        "Please wait for subscription pricing to finish loading.",
+        "error"
       );
+
       return;
     }
 
-    if (
-      data.referral_code &&
-      !referralResult
-    ) {
-      alert(
-        "Apply the referral code before creating the client."
+    if (referralCode && !referralResult) {
+      addToast(
+        "Unverified Referral",
+        "Apply the referral code before proceeding.",
+        "warning"
       );
+
       return;
     }
 
     setIsSubmitting(true);
-    setSubmitStatus("idle");
-    setSubmitMessage("");
 
     try {
-      /*
-       * Modules are authoritative from the
-       * selected subscription plan.
-       */
-
       const modules = {};
 
-      resolvedModules.forEach(
-        (module) => {
-          const key =
-            getModuleKey(module);
+      resolvedModules.forEach((module) => {
+        const key = getModuleKey(module);
 
-          if (key) {
-            modules[key] = true;
-          }
+        if (key) {
+          modules[key] = true;
         }
-      );
+      });
 
       const clientData = {
         business_name:
@@ -877,9 +1088,11 @@ function AddClientPage() {
         city_tier_id:
           Number(data.cityTierId),
 
+        turnover_band_id:
+          Number(data.turnoverBandId),
+
         referral_code:
-          referralResult?.code ||
-          null,
+          referralResult?.code || null,
 
         domain:
           data.domain || null,
@@ -894,13 +1107,17 @@ function AddClientPage() {
         `${API_URL}/clients`,
         {
           method: "POST",
+
           credentials: "include",
+
           headers: {
             "Content-Type":
               "application/json",
           },
-          body:
-            JSON.stringify(clientData),
+
+          body: JSON.stringify(
+            clientData
+          ),
         }
       );
 
@@ -912,7 +1129,9 @@ function AddClientPage() {
           "Unable to create client.";
 
         if (
-          Array.isArray(result?.detail)
+          Array.isArray(
+            result?.detail
+          )
         ) {
           message = result.detail
             .map((item) => {
@@ -937,22 +1156,17 @@ function AddClientPage() {
         ) {
           message =
             result.detail;
-        } else if (
-          result?.message
-        ) {
-          message =
-            result.message;
         }
 
-        throw new Error(message);
+        throw new Error(
+          message
+        );
       }
 
-      setSubmitStatus("success");
-
-      setSubmitMessage(
-        `${
-          data.businessName
-        } has been created successfully.`
+      addToast(
+        "Client Created",
+        `${data.businessName} has been initialized successfully.`,
+        "success"
       );
 
       setTimeout(() => {
@@ -961,50 +1175,55 @@ function AddClientPage() {
           {
             state: {
               successMessage:
-                `${
-                  data.businessName
-                } created successfully.`,
+                `${data.businessName} created successfully.`,
             },
           }
         );
-      }, 1000);
+      }, 900);
     } catch (error) {
       console.error(
         "Client creation failed:",
         error
       );
 
-      setSubmitStatus("error");
-
-      setSubmitMessage(
+      const msg =
         error instanceof Error
           ? error.message
-          : "Something went wrong while creating the client."
+          : "An error occurred while creating client.";
+
+      addToast(
+        "Provisioning Failed",
+        msg,
+        "error"
       );
     } finally {
       setIsSubmitting(false);
     }
   };
 
-
-  // ==========================================================
-  // NAVIGATION
-  // ==========================================================
+  /* --------------------------------------------------------------------------
+     NAVIGATION
+     -------------------------------------------------------------------------- */
 
   const handleNext = async () => {
+    /*
+     * Subscription step requires an actual
+     * resolved subscription.
+     */
     if (
       currentStep === 3 &&
       !resolvedSubscription
     ) {
-      alert(
-        "Please select a valid plan, city tier and billing cycle."
+      addToast(
+        "Subscription Incomplete",
+        "Please select a plan, city tier, and turnover scale with valid pricing.",
+        "error"
       );
+
       return;
     }
 
-    if (
-      currentStep === 5
-    ) {
+    if (currentStep === 5) {
       return;
     }
 
@@ -1017,13 +1236,19 @@ function AddClientPage() {
         : await trigger(fields);
 
     if (!valid) {
+      addToast(
+        "Validation Warning",
+        "Please fill all mandatory fields properly.",
+        "warning"
+      );
+
       return;
     }
 
     setCurrentStep(
-      (previous) =>
+      (prev) =>
         Math.min(
-          previous + 1,
+          prev + 1,
           STEPS.length - 1
         )
     );
@@ -1031,119 +1256,111 @@ function AddClientPage() {
 
   const handlePrev = () => {
     setCurrentStep(
-      (previous) =>
-        Math.max(
-          previous - 1,
-          0
-        )
+      (prev) =>
+        Math.max(prev - 1, 0)
     );
   };
 
-
-  // ==========================================================
-  // REVIEW DATA
-  // ==========================================================
+  /* --------------------------------------------------------------------------
+     GENERAL FORM WATCH
+     -------------------------------------------------------------------------- */
 
   const watchedData = watch();
 
-  const submittedDocuments =
-    [
-      watchedData.pan
-        ? "PAN"
-        : null,
+  const submittedDocuments = [
+    watchedData.pan
+      ? "PAN"
+      : null,
 
-      watchedData.gstin
-        ? "GSTIN"
-        : null,
+    watchedData.gstin
+      ? "GSTIN"
+      : null,
 
-      watchedData.aadhaar
-        ? "Aadhaar"
-        : null,
+    watchedData.aadhaar
+      ? "Aadhaar Card"
+      : null,
 
-      agreementFile
-        ? "Client Agreement"
-        : null,
-    ].filter(Boolean);
+    agreementFile
+      ? "Client Agreement"
+      : null,
+  ].filter(Boolean);
 
-  const pendingDocuments =
-    [
-      !watchedData.gstin
-        ? "GSTIN"
-        : null,
+  const pendingDocuments = [
+    !watchedData.gstin
+      ? "GSTIN"
+      : null,
 
-      !watchedData.aadhaar
-        ? "Aadhaar"
-        : null,
+    !watchedData.aadhaar
+      ? "Aadhaar Card"
+      : null,
 
-      !agreementFile
-        ? "Client Agreement"
-        : null,
-    ].filter(Boolean);
+    !agreementFile
+      ? "Client Agreement"
+      : null,
+  ].filter(Boolean);
 
-
-  // ==========================================================
-  // RENDER
-  // ==========================================================
+  /* ==========================================================================
+     RENDER
+     ======================================================================== */
 
   return (
     <div
-      className={`h-full w-full overflow-y-auto lg:overflow-hidden flex flex-col gap-4 bg-slate-50/60 p-4 sm:p-5 lg:p-6 ${noScroll}`}
+      className="abhinava-scroll relative flex h-full w-full flex-col gap-4 overflow-y-auto p-4 sm:p-6 lg:p-8"
+      style={{
+        backgroundColor:
+          theme.background,
+        color: theme.text,
+      }}
     >
+      <ToastContainer
+        toasts={toasts}
+        removeToast={removeToast}
+        theme={theme}
+      />
 
-      {/* ======================================================
-          HEADER
-      ====================================================== */}
+      {/* HEADER SECTION */}
 
       <div className="flex shrink-0 items-center justify-between">
-        <div>
-          <Link
-            to="/admin/clients"
-            className="mb-1 inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500 transition hover:text-slate-900"
-          >
-            <ArrowLeft size={14} />
-            Back to Directory
-          </Link>
-
-          <h1 className="text-xl font-bold tracking-tight text-slate-900 sm:text-2xl">
-            Add New Client
-          </h1>
-
-          <p className="mt-0.5 text-xs font-medium text-slate-500">
-            Complete onboarding, subscription,
-            billing and workspace setup.
-          </p>
-        </div>
-
         <div className="text-right">
           <p
             className="text-[10px] font-bold uppercase tracking-wider"
-            style={{ color: GOLD }}
+            style={{
+              color: theme.textMuted,
+            }}
           >
             Step {currentStep + 1} of{" "}
             {STEPS.length}
           </p>
 
-          <p className="text-xs font-semibold text-slate-600">
+          <p
+            className="text-xs font-bold"
+            style={{
+              color: theme.text,
+            }}
+          >
             {STEPS[currentStep].title}
           </p>
         </div>
       </div>
 
-
-      {/* ======================================================
-          DESKTOP STEPPER
-      ====================================================== */}
+      {/* STEPPER PROGRESS */}
 
       <div className="hidden shrink-0 sm:block">
-        <div className="flex items-center justify-between rounded-2xl border border-slate-200/70 bg-white p-2 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
+        <div
+          className="flex items-center justify-between rounded-xl border p-1.5 shadow-sm"
+          style={{
+            backgroundColor:
+              theme.surface,
+            borderColor:
+              theme.border,
+          }}
+        >
           {STEPS.map(
             (step, index) => {
-              const Icon =
-                step.icon;
+              const Icon = step.icon;
 
               const isActive =
-                currentStep ===
-                index;
+                currentStep === index;
 
               const isCompleted =
                 currentStep > index;
@@ -1151,47 +1368,66 @@ function AddClientPage() {
               return (
                 <div
                   key={step.id}
-                  className={`flex flex-1 items-center justify-center gap-3 rounded-xl px-3 py-2.5 transition ${
-                    isActive
-                      ? "bg-[#faf8f3]"
+                  className="flex flex-1 items-center justify-center gap-2.5 rounded-lg px-3 py-2 transition"
+                  style={{
+                    backgroundColor:
+                      isActive
+                        ? theme.surfaceAlt
+                        : "transparent",
+
+                    color: isActive
+                      ? theme.text
                       : isCompleted
-                      ? "text-emerald-600"
-                      : "text-slate-400"
-                  }`}
+                      ? theme.success
+                      : theme.textLight,
+                  }}
                 >
                   <div
-                    className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold ${
-                      isActive
-                        ? "bg-slate-900 text-[#e6cda3]"
+                    className="flex h-6 w-6 items-center justify-center rounded-md text-[11px] font-bold transition-all"
+                    style={{
+                      backgroundColor:
+                        isActive
+                          ? theme.primary
+                          : isCompleted
+                          ? theme.successSoft
+                          : theme.surfaceAlt,
+
+                      color: isActive
+                        ? theme.primaryText
                         : isCompleted
-                        ? "bg-emerald-100 text-emerald-600"
-                        : "bg-slate-100 text-slate-500"
-                    }`}
+                        ? theme.success
+                        : theme.textMuted,
+                    }}
                   >
                     {isCompleted ? (
                       <Check
-                        size={14}
-                        strokeWidth={3}
+                        size={13}
+                        strokeWidth={2.5}
                       />
                     ) : (
-                      <Icon
-                        size={14}
-                      />
+                      <Icon size={13} />
                     )}
                   </div>
 
                   <div className="hidden text-left lg:block">
                     <p
-                      className={`text-xs font-bold ${
-                        isActive
-                          ? "text-slate-900"
-                          : "text-slate-500"
-                      }`}
+                      className="text-[11px] font-bold"
+                      style={{
+                        color: isActive
+                          ? theme.text
+                          : theme.textMuted,
+                      }}
                     >
                       {step.title}
                     </p>
 
-                    <p className="text-[9px] font-semibold uppercase tracking-wider text-slate-400">
+                    <p
+                      className="text-[9px] uppercase tracking-wider"
+                      style={{
+                        color:
+                          theme.textLight,
+                      }}
+                    >
                       {step.subtitle}
                     </p>
                   </div>
@@ -1202,76 +1438,63 @@ function AddClientPage() {
         </div>
       </div>
 
+      {/* FORM WORKSPACE */}
 
-      {/* ======================================================
-          MOBILE PROGRESS
-      ====================================================== */}
-
-      <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-200 sm:hidden">
-        <div
-          className="h-full transition-all duration-300"
-          style={{
-            width: `${
-              ((currentStep + 1) /
-                STEPS.length) *
-              100
-            }%`,
-            backgroundColor:
-              GOLD,
-          }}
-        />
-      </div>
-
-
-      {/* ======================================================
-          MAIN FORM
-      ====================================================== */}
-
-      <div className="min-h-0 flex-1 flex flex-col overflow-hidden rounded-2xl border border-slate-200/70 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
-
+      <div
+        className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border shadow-sm"
+        style={{
+          backgroundColor:
+            theme.surface,
+          borderColor:
+            theme.border,
+        }}
+      >
         <form
           onSubmit={handleSubmit(
             onSubmit
           )}
           onKeyDown={(event) => {
             if (
-              event.key ===
-                "Enter" &&
+              event.key === "Enter" &&
               currentStep !==
                 STEPS.length - 1
             ) {
               event.preventDefault();
             }
           }}
-          className={`flex h-full flex-col overflow-y-auto p-4 sm:p-6 ${noScroll}`}
+          className="abhinava-scroll flex h-full flex-col overflow-y-auto p-4 sm:p-6"
         >
+          {/* STEP CONTROLS */}
 
-          {/* ==================================================
-              TOP NAV
-          ================================================== */}
-
-          <div className="mb-5 flex shrink-0 items-center justify-between border-b border-slate-100 pb-4">
-
+          <div
+            className="mb-5 flex shrink-0 items-center justify-between border-b pb-4"
+            style={{
+              borderColor:
+                theme.border,
+            }}
+          >
             <button
               type="button"
-              onClick={
-                handlePrev
-              }
+              onClick={handlePrev}
               disabled={
-                currentStep ===
-                  0 ||
+                currentStep === 0 ||
                 isSubmitting
               }
-              className={`flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-semibold transition ${
-                currentStep ===
-                0
+              className={`flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-xs font-semibold transition ${
+                currentStep === 0
                   ? "invisible"
-                  : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                  : "border"
               }`}
+              style={{
+                backgroundColor:
+                  theme.surfaceAlt,
+                borderColor:
+                  theme.border,
+                color:
+                  theme.textSoft,
+              }}
             >
-              <ChevronLeft
-                size={14}
-              />
+              <ChevronLeft size={14} />
               Back
             </button>
 
@@ -1279,12 +1502,16 @@ function AddClientPage() {
             STEPS.length - 1 ? (
               <button
                 type="button"
-                onClick={
-                  handleNext
-                }
-                className="flex items-center gap-1.5 rounded-xl bg-slate-900 px-5 py-2 text-xs font-semibold text-white transition hover:bg-slate-800"
+                onClick={handleNext}
+                className="flex items-center gap-1.5 rounded-lg px-4 py-1.5 text-xs font-bold shadow-sm transition hover:opacity-90 active:scale-[0.99]"
+                style={{
+                  backgroundColor:
+                    theme.primary,
+                  color:
+                    theme.primaryText,
+                }}
               >
-                Next Step
+                Continue
                 <ChevronRight
                   size={14}
                 />
@@ -1296,23 +1523,29 @@ function AddClientPage() {
                   isSubmitting ||
                   !resolvedSubscription
                 }
-                className="flex items-center gap-1.5 rounded-xl px-5 py-2 text-xs font-semibold text-white shadow-sm transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                className="flex items-center gap-2 rounded-lg px-5 py-2 text-xs font-bold shadow-sm transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
                 style={{
                   backgroundColor:
-                    GOLD,
+                    theme.primary,
+                  color:
+                    theme.primaryText,
                 }}
               >
                 {isSubmitting ? (
                   <>
-                    <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/30 border-t-white" />
-                    Creating...
+                    <RefreshCw
+                      size={13}
+                      className="animate-spin"
+                    />
+                    Provisioning...
                   </>
                 ) : (
                   <>
-                    Create Client
+                    Register &
+                    Initialize
                     <Check
                       size={14}
-                      strokeWidth={3}
+                      strokeWidth={2.5}
                     />
                   </>
                 )}
@@ -1320,57 +1553,22 @@ function AddClientPage() {
             )}
           </div>
 
+          {/* ==================================================================
+              STEP 0: BUSINESS DETAILS
+              ================================================================== */}
 
-          {/* ==================================================
-              STATUS
-          ================================================== */}
-
-          {submitStatus !==
-            "idle" && (
-            <div
-              className={`mb-5 flex items-start gap-3 rounded-xl border px-4 py-3 text-xs ${
-                submitStatus ===
-                "success"
-                  ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-                  : "border-rose-200 bg-rose-50 text-rose-800"
-              }`}
-            >
-              {submitStatus ===
-              "success" ? (
-                <Check
-                  size={16}
-                  className="mt-0.5 shrink-0 text-emerald-600"
-                />
-              ) : (
-                <AlertCircle
-                  size={16}
-                  className="mt-0.5 shrink-0 text-rose-600"
-                />
-              )}
-
-              <span>
-                {submitMessage}
-              </span>
-            </div>
-          )}
-
-
-          {/* ==================================================
-              STEP 0 BUSINESS
-          ================================================== */}
-
-          {currentStep ===
-            0 && (
+          {currentStep === 0 && (
             <Section
-              title="Business Details"
-              description="Record the legal and operational identity of the client."
+              title="Business Identification"
+              description="Establish the legal entity identity and corporate contact channels."
+              theme={theme}
             >
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-
                 <InputField
-                  label="Business Name"
-                  placeholder="ABC Jewellers"
+                  label="Display Business Name"
+                  placeholder="e.g. Acme Jewels"
                   required
+                  theme={theme}
                   {...register(
                     "businessName",
                     {
@@ -1384,9 +1582,10 @@ function AddClientPage() {
                 />
 
                 <InputField
-                  label="Legal Business Name"
-                  placeholder="ABC Jewellers Pvt Ltd"
+                  label="Registered Corporate Name"
+                  placeholder="e.g. Acme Jewels Private Limited"
                   required
+                  theme={theme}
                   {...register(
                     "legalBusinessName",
                     {
@@ -1400,8 +1599,9 @@ function AddClientPage() {
                 />
 
                 <SelectField
-                  label="Business Type"
+                  label="Entity Legal Structure"
                   required
+                  theme={theme}
                   {...register(
                     "businessType",
                     {
@@ -1414,25 +1614,31 @@ function AddClientPage() {
                   }
                 >
                   <option value="">
-                    Select type
+                    Select structure
                   </option>
+
                   <option value="proprietorship">
-                    Proprietorship
+                    Sole Proprietorship
                   </option>
+
                   <option value="partnership">
-                    Partnership
+                    Partnership Firm
                   </option>
+
                   <option value="llp">
-                    LLP
+                    Limited Liability Partnership
+                    (LLP)
                   </option>
+
                   <option value="private_limited">
-                    Private Limited
+                    Private Limited Company
                   </option>
                 </SelectField>
 
                 <SelectField
-                  label="Country"
+                  label="Operating Jurisdiction"
                   required
+                  theme={theme}
                   {...register(
                     "country",
                     {
@@ -1445,28 +1651,31 @@ function AddClientPage() {
                   }
                 >
                   <option value="India">
-                    India
+                    India (IN)
                   </option>
+
                   <option value="US">
-                    United States
+                    United States (US)
                   </option>
                 </SelectField>
 
                 <InputField
-                  label="Business Email"
+                  label="Primary Billing Email"
                   type="email"
-                  placeholder="contact@abc.com"
+                  placeholder="accounts@acme.com"
                   required
+                  theme={theme}
                   {...register(
                     "businessEmail",
                     {
                       required:
                         "Business email is required.",
+
                       pattern: {
                         value:
                           /^\S+@\S+$/i,
                         message:
-                          "Enter a valid email.",
+                          "Invalid email syntax.",
                       },
                     }
                   )}
@@ -1476,10 +1685,11 @@ function AddClientPage() {
                 />
 
                 <InputField
-                  label="Business Phone"
+                  label="Business Contact Number"
                   type="tel"
-                  placeholder="+91 XXXXX XXXXX"
+                  placeholder="+91 98765 43210"
                   required
+                  theme={theme}
                   {...register(
                     "businessPhone",
                     {
@@ -1491,28 +1701,26 @@ function AddClientPage() {
                     errors.businessPhone
                   }
                 />
-
               </div>
             </Section>
           )}
 
+          {/* ==================================================================
+              STEP 1: PRIMARY CONTACT
+              ================================================================== */}
 
-          {/* ==================================================
-              STEP 1 OWNER
-          ================================================== */}
-
-          {currentStep ===
-            1 && (
+          {currentStep === 1 && (
             <Section
-              title="Owner / Primary Contact"
-              description="This person will be the primary business contact for the account."
+              title="Authorizing Authority"
+              description="Primary contact credentials for tenant administrative ownership."
+              theme={theme}
             >
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-
                 <InputField
-                  label="Owner Name"
-                  placeholder="Full name"
+                  label="Full Legal Name"
+                  placeholder="Contact legal name"
                   required
+                  theme={theme}
                   {...register(
                     "ownerName",
                     {
@@ -1526,20 +1734,22 @@ function AddClientPage() {
                 />
 
                 <InputField
-                  label="Owner Email"
+                  label="Direct Work Email"
                   type="email"
-                  placeholder="owner@example.com"
+                  placeholder="admin@acme.com"
                   required
+                  theme={theme}
                   {...register(
                     "ownerEmail",
                     {
                       required:
                         "Owner email is required.",
+
                       pattern: {
                         value:
                           /^\S+@\S+$/i,
                         message:
-                          "Enter a valid email.",
+                          "Invalid email syntax.",
                       },
                     }
                   )}
@@ -1549,10 +1759,11 @@ function AddClientPage() {
                 />
 
                 <InputField
-                  label="Owner Phone"
+                  label="Direct Contact Number"
                   type="tel"
-                  placeholder="+91 XXXXX XXXXX"
+                  placeholder="+91 98765 43210"
                   required
+                  theme={theme}
                   {...register(
                     "ownerPhone",
                     {
@@ -1566,100 +1777,115 @@ function AddClientPage() {
                 />
 
                 <SelectField
-                  label="Account Role"
+                  label="Account Authorization"
+                  theme={theme}
                   {...register(
                     "ownerRole"
                   )}
                 >
                   <option value="owner">
-                    Owner
+                    Primary Owner / Director
                   </option>
+
                   <option value="admin">
-                    Administrator
+                    System Administrator
                   </option>
                 </SelectField>
-
               </div>
             </Section>
           )}
 
+          {/* ==================================================================
+              STEP 2: DOCUMENTS
+              ================================================================== */}
 
-          {/* ==================================================
-              STEP 2 DOCUMENTS
-          ================================================== */}
-
-          {currentStep ===
-            2 && (
+          {currentStep === 2 && (
             <Section
-              title="Verification Documents"
-              description="Track the documents received during onboarding."
+              title="Statutory Verification"
+              description="Record official verification identifiers for fiscal audit compliance."
+              theme={theme}
             >
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-
                 <InputField
-                  label="PAN"
+                  label="Permanent Account Number (PAN)"
                   placeholder="ABCDE1234F"
                   required
+                  theme={theme}
                   {...register(
                     "pan",
                     {
                       required:
-                        "PAN is required.",
+                        "PAN is mandatory.",
+
                       pattern: {
                         value:
                           /^[A-Z]{5}[0-9]{4}[A-Z]$/,
+
                         message:
-                          "Invalid PAN format.",
+                          "Invalid PAN structure (Format: ABCDE1234F).",
                       },
                     }
                   )}
                   error={
                     errors.pan
                   }
-                  className="uppercase"
+                  className="uppercase font-mono"
                 />
 
                 <InputField
-                  label="GSTIN"
+                  label="Goods & Services Tax Identifier (GSTIN)"
                   placeholder="22AAAAA0000A1Z5"
-                  {...register(
-                    "gstin"
-                  )}
+                  theme={theme}
+                  {...register("gstin")}
+                  className="uppercase font-mono"
                 />
 
                 <InputField
-                  label="Aadhaar"
-                  placeholder="XXXX XXXX XXXX"
+                  label="National Identity (Aadhaar / Passport)"
+                  placeholder="12-digit number"
+                  theme={theme}
                   {...register(
                     "aadhaar"
                   )}
+                  className="font-mono"
                 />
 
                 <div>
-                  <FieldLabel>
+                  <FieldLabel theme={theme}>
                     Client Agreement
+                    Documentation
                   </FieldLabel>
 
-                  <label className="flex min-h-[44px] cursor-pointer items-center justify-between gap-3 rounded-xl border border-dashed border-slate-200 bg-[#faf8f3]/50 px-4 py-3 transition hover:border-[#c59b27]">
+                  <label
+                    className="mt-1 flex min-h-[42px] cursor-pointer items-center justify-between gap-3 rounded-lg border border-dashed px-3.5 py-2.5 transition"
+                    style={{
+                      backgroundColor:
+                        theme.surfaceAlt,
 
-                    <div className="flex min-w-0 items-center gap-3">
-                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white text-slate-400">
-                        <Upload
-                          size={14}
-                        />
-                      </div>
+                      borderColor:
+                        theme.border,
+                    }}
+                  >
+                    <div className="flex min-w-0 items-center gap-2.5">
+                      <Upload
+                        size={14}
+                        style={{
+                          color:
+                            theme.textMuted,
+                        }}
+                      />
 
-                      <div className="min-w-0">
-                        <p className="truncate text-xs font-semibold text-slate-700">
-                          {agreementFile
-                            ? agreementFile.name
-                            : "Upload agreement"}
-                        </p>
-
-                        <p className="text-[9px] text-slate-400">
-                          PDF, DOC or DOCX
-                        </p>
-                      </div>
+                      <span
+                        className="truncate text-xs font-semibold"
+                        style={{
+                          color:
+                            theme.text,
+                        }}
+                      >
+                        {agreementFile
+                          ? agreementFile.name
+                          : "Attach signed agreement"}
+                      </span>
                     </div>
 
                     <input
@@ -1672,49 +1898,28 @@ function AddClientPage() {
                     />
                   </label>
                 </div>
-
-              </div>
-
-              <div className="mt-5 rounded-xl border border-slate-200 bg-slate-50/70 p-4">
-                <div className="flex items-start gap-3">
-                  <FileText
-                    size={16}
-                    className="mt-0.5 text-slate-500"
-                  />
-
-                  <div>
-                    <p className="text-xs font-semibold text-slate-700">
-                      Document status
-                    </p>
-
-                    <p className="mt-1 text-[10px] leading-4 text-slate-500">
-                      PAN is required to create the
-                      client record. Optional documents
-                      can remain pending and be completed
-                      later.
-                    </p>
-                  </div>
-                </div>
               </div>
             </Section>
           )}
 
+          {/* ==================================================================
+              STEP 3: SUBSCRIPTION
+              ================================================================== */}
 
-          {/* ==================================================
-              STEP 3 SUBSCRIPTION
-          ================================================== */}
-
-          {currentStep ===
-            3 && (
+          {currentStep === 3 && (
             <div className="space-y-5">
+              {/* PLAN SELECTION */}
 
               <Section
-                title="Subscription"
-                description="Select one of the subscription plans configured in Abhinava."
+                title="Service Tier Selection"
+                description="Choose the active platform tier to provision workspace capability."
+                theme={theme}
               >
-
                 {subscriptionLoading ? (
-                  <LoadingBox text="Loading subscription plans..." />
+                  <LoadingBox
+                    text="Loading available tiers..."
+                    theme={theme}
+                  />
                 ) : subscriptionError ? (
                   <ErrorBox
                     message={
@@ -1723,194 +1928,223 @@ function AddClientPage() {
                     onRetry={
                       loadSubscriptionConfiguration
                     }
+                    theme={theme}
                   />
-                ) : plans.length ===
-                  0 ? (
-                  <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-6 text-center">
-                    <CreditCard
-                      size={22}
-                      className="mx-auto text-slate-400"
-                    />
+                ) : plans.length === 0 ? (
+                  <div
+                    className="rounded-lg border border-dashed p-4 text-center text-xs"
+                    style={{
+                      borderColor:
+                        theme.border,
 
-                    <p className="mt-3 text-xs font-semibold text-slate-700">
-                      No active subscription
-                      plans available
-                    </p>
-
-                    <p className="mt-1 text-[10px] text-slate-400">
-                      Create a plan from the
-                      Subscriptions page first.
-                    </p>
+                      color:
+                        theme.textMuted,
+                    }}
+                  >
+                    No active subscription
+                    plans are available.
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                    {plans.map((plan) => {
+                      const selected =
+                        Number(
+                          selectedPlanId
+                        ) ===
+                        Number(plan.id);
 
-                    {plans.map(
-                      (plan) => {
-                        const selected =
-                          Number(
-                            selectedPlanId
-                          ) ===
-                          Number(
-                            plan.id
-                          );
+                      const planModules =
+                        plan.modules || [];
 
-                        const modules =
-                          plan.modules ||
-                          [];
-
-                        return (
-                          <button
-                            key={
-                              plan.id
-                            }
-                            type="button"
-                            onClick={() => {
-                              setValue(
-                                "subscriptionPlanId",
-                                String(
-                                  plan.id
-                                ),
-                                {
-                                  shouldDirty:
-                                    true,
-                                  shouldValidate:
-                                    true,
-                                }
+                      return (
+                        <button
+                          key={plan.id}
+                          type="button"
+                          onClick={() => {
+                            const planId =
+                              String(
+                                plan.id
                               );
 
-                              setReferralResult(
-                                null
-                              );
-                              setReferralError(
-                                ""
-                              );
-                            }}
-                            className={`text-left rounded-2xl border p-4 transition ${
+                            setValue(
+                              "subscriptionPlanId",
+                              planId,
+                              {
+                                shouldDirty:
+                                  true,
+
+                                shouldTouch:
+                                  true,
+
+                                shouldValidate:
+                                  true,
+                              }
+                            );
+
+                            /*
+                             * Changing plan invalidates
+                             * the previous resolved price.
+                             */
+                            setResolvedSubscription(
+                              null
+                            );
+
+                            setReferralResult(
+                              null
+                            );
+
+                            setReferralError(
+                              ""
+                            );
+                          }}
+                          className="rounded-xl border p-4 text-left transition-all"
+                          style={{
+                            backgroundColor:
                               selected
-                                ? "border-[#c59b27]/50 bg-[#faf8f3] shadow-sm"
-                                : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50/60"
-                            }`}
-                          >
+                                ? theme.surfaceAlt
+                                : theme.surface,
 
-                            <div className="flex items-start justify-between gap-3">
-
-                              <div className="min-w-0">
-                                <div className="flex items-center gap-2">
-
-                                  <div
-                                    className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${
-                                      selected
-                                        ? "bg-slate-900 text-[#e6cda3]"
-                                        : "bg-slate-100 text-slate-500"
-                                    }`}
-                                  >
-                                    <Package
-                                      size={16}
-                                    />
-                                  </div>
-
-                                  <div>
-                                    <p className="text-sm font-bold text-slate-900">
-                                      {
-                                        plan.name
-                                      }
-                                    </p>
-
-                                    <p className="mt-0.5 text-[9px] font-bold uppercase tracking-wider text-slate-400">
-                                      {
-                                        plan.main_plan
-                                      }
-                                    </p>
-                                  </div>
-                                </div>
-                              </div>
-
-                              {selected && (
-                                <div className="flex h-6 w-6 items-center justify-center rounded-full bg-emerald-500 text-white">
-                                  <Check
-                                    size={13}
-                                    strokeWidth={
-                                      3
-                                    }
-                                  />
-                                </div>
-                              )}
-
-                            </div>
-
-                            {plan.description && (
-                              <p className="mt-3 text-[10px] leading-4 text-slate-500">
-                                {
-                                  plan.description
-                                }
+                            borderColor:
+                              selected
+                                ? theme.text
+                                : theme.border,
+                          }}
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <p
+                                className="text-xs font-bold"
+                                style={{
+                                  color:
+                                    theme.text,
+                                }}
+                              >
+                                {plan.name}
                               </p>
-                            )}
 
-                            <div className="mt-4 flex flex-wrap gap-1.5">
-
-                              {modules
-                                .slice(
-                                  0,
-                                  6
-                                )
-                                .map(
-                                  (
-                                    module
-                                  ) => (
-                                    <span
-                                      key={
-                                        getModuleKey(
-                                          module
-                                        )
-                                      }
-                                      className="inline-flex items-center gap-1 rounded-lg bg-white px-2 py-1 text-[9px] font-semibold text-slate-500 ring-1 ring-slate-100"
-                                    >
-                                      <ModuleIcon
-                                        moduleKey={getModuleKey(
-                                          module
-                                        )}
-                                        size={
-                                          10
-                                        }
-                                      />
-                                      {
-                                        getModuleName(
-                                          module
-                                        )
-                                      }
-                                    </span>
-                                  )
-                                )}
-
+                              <p
+                                className="text-[10px] font-bold uppercase tracking-wider"
+                                style={{
+                                  color:
+                                    theme.textMuted,
+                                }}
+                              >
+                                {plan.main_plan}
+                              </p>
                             </div>
-                          </button>
-                        );
-                      }
-                    )}
 
+                            {selected && (
+                              <div
+                                className="flex h-5 w-5 items-center justify-center rounded-full"
+                                style={{
+                                  backgroundColor:
+                                    theme.text,
+
+                                  color:
+                                    theme.surface,
+                                }}
+                              >
+                                <Check
+                                  size={12}
+                                  strokeWidth={
+                                    3
+                                  }
+                                />
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="mt-3 flex flex-wrap gap-1.5">
+                            {planModules
+                              .slice(0, 6)
+                              .map(
+                                (
+                                  module
+                                ) => (
+                                  <span
+                                    key={getModuleKey(
+                                      module
+                                    )}
+                                    className="inline-flex items-center gap-1 rounded border px-2 py-0.5 text-[9px] font-semibold"
+                                    style={{
+                                      backgroundColor:
+                                        theme.surface,
+
+                                      borderColor:
+                                        theme.border,
+
+                                      color:
+                                        theme.textSoft,
+                                    }}
+                                  >
+                                    <ModuleIcon
+                                      moduleKey={getModuleKey(
+                                        module
+                                      )}
+                                      size={
+                                        10
+                                      }
+                                    />
+
+                                    {getModuleName(
+                                      module
+                                    )}
+                                  </span>
+                                )
+                              )}
+                          </div>
+                        </button>
+                      );
+                    })}
                   </div>
                 )}
               </Section>
 
-
-              {/* CITY + BILLING */}
+              {/* COMMERCIAL PARAMETERS */}
 
               <Section
-                title="Billing Configuration"
-                description="Pricing is resolved from the selected plan and city tier."
+                title="Commercial Configuration"
+                description="Tier parameters determine base compute and license costs."
+                theme={theme}
               >
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                  {/* CITY TIER */}
 
                   <SelectField
-                    label="City Tier"
+                    label="City Market Tier"
                     required
+                    theme={theme}
                     value={
                       selectedCityTierId
                     }
-                    onChange={
-                      handleTierChange
-                    }
+                    onChange={(e) => {
+                      setValue(
+                        "cityTierId",
+                        e.target.value,
+                        {
+                          shouldDirty:
+                            true,
+
+                          shouldTouch:
+                            true,
+
+                          shouldValidate:
+                            true,
+                        }
+                      );
+
+                      setResolvedSubscription(
+                        null
+                      );
+
+                      setReferralResult(
+                        null
+                      );
+
+                      setReferralError(
+                        ""
+                      );
+                    }}
                   >
                     <option value="">
                       Select city tier
@@ -1919,1174 +2153,569 @@ function AddClientPage() {
                     {cityTiers.map(
                       (tier) => (
                         <option
-                          key={
-                            tier.id
-                          }
-                          value={
-                            tier.id
-                          }
+                          key={tier.id}
+                          value={tier.id}
                         >
-                          {
-                            tier.name
-                          }
+                          {tier.name}
                         </option>
                       )
                     )}
                   </SelectField>
 
+                  {/* TURNOVER */}
 
                   <SelectField
-                    label="Billing Cycle"
+                    label="Turnover Scale"
                     required
+                    theme={theme}
+                    value={
+                      selectedTurnoverBandId
+                    }
+                    onChange={(e) => {
+                      setValue(
+                        "turnoverBandId",
+                        e.target.value,
+                        {
+                          shouldDirty:
+                            true,
+
+                          shouldTouch:
+                            true,
+
+                          shouldValidate:
+                            true,
+                        }
+                      );
+
+                      setResolvedSubscription(
+                        null
+                      );
+
+                      setReferralResult(
+                        null
+                      );
+
+                      setReferralError(
+                        ""
+                      );
+                    }}
+                  >
+                    <option value="">
+                      Select turnover band
+                    </option>
+
+                    {turnoverBands.map(
+                      (band) => (
+                        <option
+                          key={band.id}
+                          value={band.id}
+                        >
+                          {band.name}
+                        </option>
+                      )
+                    )}
+                  </SelectField>
+
+                  {/* BILLING */}
+
+                  <SelectField
+                    label="Commitment Cycle"
+                    required
+                    theme={theme}
                     value={
                       selectedBillingCycle
                     }
-                    onChange={
-                      handleBillingChange
-                    }
+                    onChange={(e) => {
+                      setValue(
+                        "billingCycle",
+                        e.target.value,
+                        {
+                          shouldDirty:
+                            true,
+
+                          shouldTouch:
+                            true,
+
+                          shouldValidate:
+                            true,
+                        }
+                      );
+
+                      setResolvedSubscription(
+                        null
+                      );
+
+                      setReferralResult(
+                        null
+                      );
+
+                      setReferralError(
+                        ""
+                      );
+                    }}
                   >
                     <option value="monthly">
-                      Monthly
+                      Monthly Cycle
                     </option>
 
                     <option value="annual">
-                      Annual
+                      Annual Term
+                      (Discounted)
                     </option>
                   </SelectField>
-
-
-                  <SelectField
-                    label="Subscription Status"
-                    {...register(
-                      "subscriptionStatus"
-                    )}
-                  >
-                    <option value="active">
-                      Active
-                    </option>
-
-                    <option value="pending">
-                      Pending
-                    </option>
-                  </SelectField>
-
-                </div>
-
-                <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
-
-                  <div>
-                    <FieldLabel>
-                      Start Date
-                    </FieldLabel>
-
-                    <input
-                      type="date"
-                      {...register(
-                        "startDate",
-                        {
-                          required:
-                            "Start date is required.",
-                        }
-                      )}
-                      className="mt-1 h-11 w-full rounded-xl border border-slate-200 bg-[#faf8f3]/50 px-3.5 text-xs font-medium text-slate-900 outline-none transition focus:border-[#c59b27]"
-                    />
-
-                    {errors.startDate && (
-                      <FieldError
-                        message={
-                          errors
-                            .startDate
-                            .message
-                        }
-                      />
-                    )}
-                  </div>
-
-                  <div className="flex items-end">
-                    <div className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <MapPinned
-                          size={14}
-                          className="text-slate-400"
-                        />
-
-                        <div>
-                          <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">
-                            Pricing Market
-                          </p>
-
-                          <p className="mt-0.5 text-xs font-bold text-slate-700">
-                            {
-                              selectedCityTier?.name ||
-                              "Select a city tier"
-                            }
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
                 </div>
               </Section>
 
-
-              {/* PRICE PREVIEW */}
+              {/* INVOICE PREVIEW */}
 
               <Section
                 title="Invoice Preview"
-                description="The final amount is calculated from the selected plan, billing cycle and referral discount."
+                description="Live financial calculation including applicable taxes and promotional relief."
+                theme={theme}
               >
-
                 {resolvingSubscription ? (
-                  <LoadingBox text="Resolving plan pricing..." />
-                ) : !resolvedSubscription ? (
-                  <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-5 text-center">
-                    <CreditCard
-                      size={20}
-                      className="mx-auto text-slate-400"
-                    />
+                  <LoadingBox
+                    text="Reconciling pricing table..."
+                    theme={theme}
+                  />
+                ) : !selectedPlanId ||
+                  !selectedCityTierId ||
+                  !selectedTurnoverBandId ? (
+                  <div
+                    className="rounded-lg border border-dashed p-4 text-center text-xs"
+                    style={{
+                      borderColor:
+                        theme.border,
 
-                    <p className="mt-2 text-xs font-semibold text-slate-600">
-                      Select a plan and city
-                      tier to preview pricing.
-                    </p>
+                      color:
+                        theme.textMuted,
+                    }}
+                  >
+                    Select a plan, market
+                    tier, and turnover scale
+                    to preview cost.
+                  </div>
+                ) : !resolvedSubscription ? (
+                  <div
+                    className="rounded-lg border border-dashed p-4 text-center text-xs"
+                    style={{
+                      borderColor:
+                        theme.border,
+
+                      color:
+                        theme.textMuted,
+                    }}
+                  >
+                    No pricing configuration
+                    was found for this
+                    combination.
                   </div>
                 ) : (
-                  <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1.3fr_0.7fr]">
-
-                    {/* PLAN SUMMARY */}
-
-                    <div className="rounded-2xl border border-slate-200 bg-white p-5">
-
-                      <div className="flex items-start justify-between gap-4">
-
-                        <div>
-                          <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">
-                            Selected Plan
-                          </p>
-
-                          <h3 className="mt-1 text-base font-bold text-slate-900">
-                            {
-                              resolvedSubscription
-                                ?.subscription_plan
-                                ?.name
-                            }
-                          </h3>
-
-                          <p className="mt-0.5 text-[10px] font-medium text-slate-400">
-                            {
-                              resolvedSubscription
-                                ?.subscription_plan
-                                ?.main_plan
-                            }{" "}
-                            ·{" "}
-                            {
-                              selectedCityTier?.name
-                            }{" "}
-                            ·{" "}
-                            {
-                              formatBillingCycle(
-                                selectedBillingCycle
-                              )
-                            }
-                          </p>
-                        </div>
-
-                        <div className="rounded-xl bg-slate-900 px-3 py-2 text-right text-white">
-                          <p className="text-[8px] font-bold uppercase tracking-wider text-slate-400">
-                            Before Tax
-                          </p>
-
-                          <p className="mt-0.5 text-sm font-bold">
-                            {money(
-                              pricing.basePrice
-                            )}
-                          </p>
-                        </div>
-
-                      </div>
-
-
-                      <div className="mt-5 border-t border-slate-100 pt-4">
-
-                        <p className="mb-3 text-[9px] font-bold uppercase tracking-wider text-slate-400">
-                          Included Modules
-                        </p>
-
-                        <div className="flex flex-wrap gap-2">
-
-                          {resolvedModules.map(
-                            (module) => (
-                              <span
-                                key={getModuleKey(
-                                  module
-                                )}
-                                className="inline-flex items-center gap-1.5 rounded-lg bg-slate-50 px-2.5 py-1.5 text-[9px] font-semibold text-slate-600"
-                              >
-                                <ModuleIcon
-                                  moduleKey={getModuleKey(
-                                    module
-                                  )}
-                                  size={
-                                    11
-                                  }
-                                />
-
-                                {getModuleName(
-                                  module
-                                )}
-                              </span>
-                            )
-                          )}
-
-                        </div>
-                      </div>
-
-                    </div>
-
-
-                    {/* PRICE BREAKDOWN */}
-
-                    <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-5">
-
-                      <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">
-                        Billing Summary
-                      </p>
-
-                      <div className="mt-4 space-y-3 text-xs">
-
-                        <PriceRow
-                          label="Plan Price"
-                          value={money(
-                            pricing.basePrice
-                          )}
-                        />
-
-                        {pricing.discountAmount >
-                          0 && (
-                          <PriceRow
-                            label="Referral Discount"
-                            value={`−${money(
-                              pricing.discountAmount
-                            )}`}
-                            positive
-                          />
-                        )}
-
-                        <PriceRow
-                          label="Taxable Amount"
-                          value={money(
-                            pricing.taxableAmount
-                          )}
-                        />
-
-                        <PriceRow
-                          label={`GST (${pricing.taxRate}%)`}
-                          value={money(
-                            pricing.taxAmount
-                          )}
-                        />
-
-                        <div className="border-t border-slate-200 pt-3">
-
-                          <div className="flex items-end justify-between gap-3">
-
-                            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                              Total
-                            </span>
-
-                            <span
-                              className="text-xl font-black"
-                              style={{
-                                color: GOLD,
-                              }}
-                            >
-                              {money(
-                                pricing.total
-                              )}
-                            </span>
-
-                          </div>
-
-                        </div>
-
-                      </div>
-
-                    </div>
-
-                  </div>
-                )}
-              </Section>
-
-
-              {/* REFERRAL */}
-
-              <Section
-                title="Referral Code"
-                description="Optional promotional discount applied to this subscription."
-              >
-                <div className="max-w-xl">
-
-                  <div className="flex gap-2">
-
-                    <div className="relative min-w-0 flex-1">
-
-                      <Tag
-                        size={14}
-                        className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
-                      />
-
-                      <input
-                        value={
-                          referralCode
-                        }
-                        onChange={(
-                          event
-                        ) => {
-                          setReferralCode(
-                            event.target.value.toUpperCase()
-                          );
-
-                          setReferralResult(
-                            null
-                          );
-
-                          setReferralError(
-                            ""
-                          );
-                        }}
-                        placeholder="e.g. WELCOME10"
-                        className="h-11 w-full rounded-xl border border-slate-200 bg-white pl-9 pr-3 text-xs font-bold uppercase tracking-wider text-slate-900 outline-none focus:border-[#c59b27]"
-                      />
-
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={
-                        applyReferralCode
-                      }
-                      disabled={
-                        referralLoading ||
-                        !referralCode.trim()
-                      }
-                      className="flex h-11 shrink-0 items-center gap-2 rounded-xl bg-slate-900 px-4 text-xs font-bold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      {referralLoading ? (
-                        <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/30 border-t-white" />
-                      ) : (
-                        <Check
-                          size={14}
-                        />
-                      )}
-
-                      Apply
-                    </button>
-
-                  </div>
-
-
-                  {referralError && (
-                    <div className="mt-2 flex items-center gap-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-[10px] font-semibold text-rose-700">
-                      <AlertCircle
-                        size={13}
-                      />
-                      {
-                        referralError
-                      }
-                    </div>
-                  )}
-
-
-                  {referralResult && (
-                    <div className="mt-2 rounded-xl border border-emerald-200 bg-emerald-50 p-3">
-
-                      <div className="flex items-center justify-between gap-3">
-
-                        <div className="flex items-center gap-2">
-                          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-100 text-emerald-600">
-                            <Tag
-                              size={13}
-                            />
-                          </div>
-
-                          <div>
-                            <p className="text-xs font-bold text-emerald-800">
-                              {
-                                referralResult.code
-                              }
-                            </p>
-
-                            <p className="text-[9px] font-medium text-emerald-600">
-                              {
-                                formatDiscountType(
-                                  referralResult.discount_type
-                                )
-                              }{" "}
-                              discount
-                            </p>
-                          </div>
-                        </div>
-
-                        <p className="text-sm font-black text-emerald-700">
-                          −
-                          {money(
-                            referralResult.discount_amount
-                          )}
-                        </p>
-
-                      </div>
-
-                    </div>
-                  )}
-
-                </div>
-              </Section>
-
-            </div>
-          )}
-
-
-          {/* ==================================================
-              STEP 4 WORKSPACE
-          ================================================== */}
-
-          {currentStep ===
-            4 && (
-            <div className="space-y-5">
-
-              <Section
-                title="Firebase Workspace"
-                description="Connect the client-owned Firebase project that will hold the tenant's business data."
-              >
-
-                <div className="rounded-2xl border border-[#c59b27]/20 bg-[#faf8f3]/70 p-5">
-
-                  <div className="flex items-start gap-3">
-
-                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-900 text-[#e6cda3]">
-                      <Database
-                        size={16}
-                      />
-                    </div>
-
-                    <div>
-                      <h3 className="text-xs font-bold text-slate-900">
-                        Client-owned Firebase project
-                      </h3>
-
-                      <p className="mt-1 max-w-2xl text-[10px] font-medium leading-5 text-slate-500">
-                        Enter the Firebase project ID
-                        created and owned by the client.
-                        Abhinava will verify and connect
-                        the existing project.
-                      </p>
-                    </div>
-
-                  </div>
-
-
-                  <div className="mt-5 max-w-xl">
-
-                    <InputField
-                      label="Firebase Project ID"
-                      placeholder="shridhara-jewellers"
-                      required
-                      {...register(
-                        "firebaseProjectId",
-                        {
-                          required:
-                            "Firebase Project ID is required.",
-                          pattern: {
-                            value:
-                              /^[a-z0-9][a-z0-9-]*[a-z0-9]$/,
-                            message:
-                              "Enter a valid Google Cloud project ID.",
-                          },
-                        }
-                      )}
-                      error={
-                        errors.firebaseProjectId
-                      }
-                    />
-
-                    <p className="mt-1.5 text-[9px] font-medium text-slate-400">
-                      Example: shridhara-jewellers
-                    </p>
-
-                  </div>
-
-                </div>
-
-              </Section>
-
-
-              <Section
-                title="Business Domain"
-                description="Select the product domain for this tenant."
-              >
-
-                <div className="max-w-xl">
-
-                  <SelectField
-                    label="Domain"
-                    required
-                    {...register(
-                      "domain",
-                      {
-                        required:
-                          "Business domain is required.",
-                      }
-                    )}
+                  <div
+                    className="rounded-xl border p-4"
+                    style={{
+                      backgroundColor:
+                        theme.surfaceAlt,
+
+                      borderColor:
+                        theme.border,
+                    }}
                   >
-                    <option value="jewelry">
-                      Jewelry
-                    </option>
-                  </SelectField>
-
-                </div>
-
-              </Section>
-
-
-              {/* COMPATIBLE DEVICES */}
-
-              <Section
-                title="Compatible Devices"
-                description="The client can access the platform from supported modern browsers."
-              >
-
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-
-                  <DeviceCard
-                    icon={
-                      <Monitor
-                        size={17}
-                      />
-                    }
-                    title="Desktop"
-                    description="Windows / macOS / Linux"
-                  />
-
-                  <DeviceCard
-                    icon={
-                      <Tablet
-                        size={17}
-                      />
-                    }
-                    title="Tablet"
-                    description="Android / iPadOS"
-                  />
-
-                  <DeviceCard
-                    icon={
-                      <Smartphone
-                        size={17}
-                      />
-                    }
-                    title="Mobile"
-                    description="Android / iPhone"
-                  />
-
-                </div>
-
-                <div className="mt-3 flex items-center gap-2 rounded-xl bg-slate-50 px-4 py-3 text-[10px] font-medium text-slate-500">
-                  <Globe
-                    size={13}
-                    className="text-slate-400"
-                  />
-                  Recommended: current Chrome,
-                  Edge, Safari or Firefox.
-                </div>
-
-              </Section>
-
-
-              {/* PLATFORM DEMO */}
-
-              <Section
-                title="Platform Demo"
-                description="The welcome communication can include a platform demonstration for the new client."
-              >
-
-                <div className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-900">
-
-                  <div className="aspect-video flex items-center justify-center">
-
-                    <div className="text-center">
-
-                      <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-white/10 text-[#e6cda3]">
-                        <Sparkles
-                          size={22}
-                        />
-                      </div>
-
-                      <p className="mt-3 text-xs font-bold text-white">
-                        Abhinava Platform Demo
-                      </p>
-
-                      <p className="mt-1 text-[10px] text-slate-400">
-                        Demo video will be included
-                        in the client welcome experience.
-                      </p>
-
-                    </div>
-
-                  </div>
-
-                </div>
-
-              </Section>
-
-            </div>
-          )}
-
-
-          {/* ==================================================
-              STEP 5 REVIEW
-          ================================================== */}
-
-          {currentStep ===
-            5 && (
-            <div className="space-y-5">
-
-              <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
-
-                <div className="flex items-start gap-3">
-
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-emerald-600">
-                    <ShieldCheck
-                      size={17}
-                    />
-                  </div>
-
-                  <div>
-                    <h2 className="text-xs font-bold text-emerald-900">
-                      Ready to create client
-                    </h2>
-
-                    <p className="mt-1 text-[10px] leading-4 text-emerald-700">
-                      Review the onboarding details below.
-                      The subscription, modules and pricing
-                      will be recorded with the client.
-                    </p>
-                  </div>
-
-                </div>
-
-              </div>
-
-
-              {/* BUSINESS */}
-
-              <ReviewSection
-                title="Business"
-                icon={
-                  <Building2
-                    size={15}
-                  />
-                }
-              >
-                <ReviewGrid
-                  items={[
-                    [
-                      "Business Name",
-                      watchedData.businessName,
-                    ],
-                    [
-                      "Legal Name",
-                      watchedData.legalBusinessName,
-                    ],
-                    [
-                      "Business Type",
-                      formatBusinessType(
-                        watchedData.businessType
-                      ),
-                    ],
-                    [
-                      "Country",
-                      watchedData.country,
-                    ],
-                    [
-                      "Business Email",
-                      watchedData.businessEmail,
-                    ],
-                    [
-                      "Business Phone",
-                      watchedData.businessPhone,
-                    ],
-                  ]}
-                />
-              </ReviewSection>
-
-
-              {/* OWNER */}
-
-              <ReviewSection
-                title="Owner / Contact"
-                icon={
-                  <UserRound
-                    size={15}
-                  />
-                }
-              >
-                <ReviewGrid
-                  items={[
-                    [
-                      "Name",
-                      watchedData.ownerName,
-                    ],
-                    [
-                      "Email",
-                      watchedData.ownerEmail,
-                    ],
-                    [
-                      "Phone",
-                      watchedData.ownerPhone,
-                    ],
-                    [
-                      "Role",
-                      watchedData.ownerRole,
-                    ],
-                  ]}
-                />
-              </ReviewSection>
-
-
-              {/* DOCUMENTS */}
-
-              <ReviewSection
-                title="Documents"
-                icon={
-                  <FileText
-                    size={15}
-                  />
-                }
-              >
-
-                <div className="flex flex-wrap gap-2">
-
-                  {submittedDocuments.map(
-                    (document) => (
-                      <span
-                        key={
-                          document
-                        }
-                        className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-50 px-2.5 py-1.5 text-[9px] font-bold text-emerald-700"
-                      >
-                        <Check
-                          size={11}
-                        />
-                        {
-                          document
-                        }
-                      </span>
-                    )
-                  )}
-
-                  {pendingDocuments.map(
-                    (document) => (
-                      <span
-                        key={
-                          document
-                        }
-                        className="inline-flex items-center gap-1.5 rounded-lg bg-amber-50 px-2.5 py-1.5 text-[9px] font-bold text-amber-700"
-                      >
-                        <AlertCircle
-                          size={11}
-                        />
-                        {
-                          document
-                        }{" "}
-                        Pending
-                      </span>
-                    )
-                  )}
-
-                </div>
-
-              </ReviewSection>
-
-
-              {/* SUBSCRIPTION */}
-
-              <ReviewSection
-                title="Subscription"
-                icon={
-                  <CreditCard
-                    size={15}
-                  />
-                }
-              >
-
-                <ReviewGrid
-                  items={[
-                    [
-                      "Plan",
-                      resolvedSubscription
-                        ?.subscription_plan
-                        ?.name ||
-                        "—",
-                    ],
-                    [
-                      "Plan Type",
-                      resolvedSubscription
-                        ?.subscription_plan
-                        ?.main_plan ||
-                        "—",
-                    ],
-                    [
-                      "City Tier",
-                      selectedCityTier
-                        ?.name ||
-                        "—",
-                    ],
-                    [
-                      "Billing Cycle",
-                      formatBillingCycle(
-                        selectedBillingCycle
-                      ),
-                    ],
-                    [
-                      "Status",
-                      watchedData.subscriptionStatus,
-                    ],
-                    [
-                      "Start Date",
-                      watchedData.startDate,
-                    ],
-                  ]}
-                />
-
-                <div className="mt-4 border-t border-slate-100 pt-4">
-
-                  <p className="mb-2 text-[9px] font-bold uppercase tracking-wider text-slate-400">
-                    Included Modules
-                  </p>
-
-                  <div className="flex flex-wrap gap-2">
-
-                    {resolvedModules.map(
-                      (module) => (
-                        <span
-                          key={getModuleKey(
-                            module
-                          )}
-                          className="inline-flex items-center gap-1.5 rounded-lg bg-slate-50 px-2.5 py-1.5 text-[9px] font-semibold text-slate-600"
-                        >
-                          <ModuleIcon
-                            moduleKey={getModuleKey(
-                              module
-                            )}
-                            size={11}
-                          />
-                          {
-                            getModuleName(
-                              module
-                            )
-                          }
-                        </span>
-                      )
-                    )}
-
-                  </div>
-
-                </div>
-
-              </ReviewSection>
-
-
-              {/* INVOICE */}
-
-              <ReviewSection
-                title="Invoice Summary"
-                icon={
-                  <Receipt
-                    size={15}
-                  />
-                }
-              >
-
-                <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-
-                  <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-4">
-
-                    <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">
-                      Pricing
-                    </p>
-
-                    <div className="mt-3 space-y-2.5">
-
+                    <div className="space-y-2 text-xs">
                       <PriceRow
-                        label="Plan Price"
+                        label="Base Tier License"
                         value={money(
                           pricing.basePrice
                         )}
+                        theme={theme}
                       />
 
                       {pricing.discountAmount >
                         0 && (
                         <PriceRow
-                          label={`Referral (${referralResult?.code || ""})`}
+                          label="Promotional Credit"
                           value={`−${money(
                             pricing.discountAmount
                           )}`}
                           positive
+                          theme={theme}
                         />
                       )}
 
                       <PriceRow
-                        label="Taxable Amount"
+                        label="Net Taxable Value"
                         value={money(
                           pricing.taxableAmount
                         )}
+                        theme={theme}
                       />
 
                       <PriceRow
-                        label={`GST (${pricing.taxRate}%)`}
+                        label={`Statutory GST (${pricing.taxRate}%)`}
                         value={money(
                           pricing.taxAmount
                         )}
+                        theme={theme}
                       />
 
-                      <div className="border-t border-slate-200 pt-3">
-
+                      <div
+                        className="mt-2 border-t pt-2.5"
+                        style={{
+                          borderColor:
+                            theme.border,
+                        }}
+                      >
                         <div className="flex items-center justify-between">
-
-                          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                            Total Payable
+                          <span
+                            className="text-[11px] font-bold uppercase tracking-wider"
+                            style={{
+                              color:
+                                theme.text,
+                            }}
+                          >
+                            Total Due
                           </span>
 
                           <span
-                            className="text-lg font-black"
+                            className="text-base font-black"
                             style={{
-                              color: GOLD,
+                              color:
+                                theme.text,
                             }}
                           >
                             {money(
                               pricing.total
                             )}
                           </span>
-
                         </div>
-
                       </div>
-
                     </div>
-
                   </div>
+                )}
+              </Section>
 
+              {/* PROMOTIONAL CODE */}
 
-                  <div className="rounded-xl border border-slate-200 bg-white p-4">
+              <Section
+                title="Promotional Redemption"
+                description="Enter an authorized partner or referral code."
+                theme={theme}
+              >
+                <div className="flex max-w-sm gap-2">
+                  <input
+                    value={referralCode}
+                    onChange={(e) =>
+                      setReferralCode(
+                        e.target.value.toUpperCase()
+                      )
+                    }
+                    placeholder="e.g. PARTNER2026"
+                    className="h-10 flex-1 rounded-lg border px-3 text-xs font-mono font-bold uppercase outline-none"
+                    style={{
+                      backgroundColor:
+                        theme.surfaceAlt,
 
-                    <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">
-                      Billing
-                    </p>
+                      borderColor:
+                        theme.border,
 
-                    <div className="mt-3 space-y-3">
+                      color:
+                        theme.text,
+                    }}
+                  />
 
-                      <ReviewMiniRow
-                        label="Currency"
-                        value="INR"
-                      />
+                  <button
+                    type="button"
+                    onClick={
+                      applyReferralCode
+                    }
+                    disabled={
+                      referralLoading ||
+                      !referralCode.trim()
+                    }
+                    className="h-10 rounded-lg px-4 text-xs font-bold transition disabled:opacity-50"
+                    style={{
+                      backgroundColor:
+                        theme.primary,
 
-                      <ReviewMiniRow
-                        label="Billing Cycle"
-                        value={formatBillingCycle(
-                          selectedBillingCycle
-                        )}
-                      />
-
-                      <ReviewMiniRow
-                        label="Referral"
-                        value={
-                          referralResult
-                            ?.code ||
-                          "None"
-                        }
-                      />
-
-                      <ReviewMiniRow
-                        label="Invoice"
-                        value="Generated on creation"
-                      />
-
-                    </div>
-
-                  </div>
-
+                      color:
+                        theme.primaryText,
+                    }}
+                  >
+                    {referralLoading
+                      ? "Checking..."
+                      : "Redeem"}
+                  </button>
                 </div>
 
-              </ReviewSection>
+                {referralError && (
+                  <p className="mt-1.5 text-[10px] font-semibold text-rose-500">
+                    {referralError}
+                  </p>
+                )}
+              </Section>
+            </div>
+          )}
 
+          {/* ==================================================================
+              STEP 4: WORKSPACE
+              ================================================================== */}
 
-              {/* FIREBASE */}
+          {currentStep === 4 && (
+            <Section
+              title="Database Partition & Infrastructure"
+              description="Configure the dedicated project credentials for isolated tenant deployment."
+              theme={theme}
+            >
+              <div className="max-w-md space-y-4">
+                <InputField
+                  label="Firebase Project ID"
+                  placeholder="e.g. acme-jewellers-prod"
+                  required
+                  theme={theme}
+                  {...register(
+                    "firebaseProjectId",
+                    {
+                      required:
+                        "Firebase Project ID is required.",
 
+                      pattern: {
+                        value:
+                          /^[a-z0-9][a-z0-9-]*[a-z0-9]$/,
+
+                        message:
+                          "Must be a lowercase cloud project identifier.",
+                      },
+                    }
+                  )}
+                  error={
+                    errors.firebaseProjectId
+                  }
+                />
+
+                <SelectField
+                  label="Platform Domain"
+                  required
+                  theme={theme}
+                  {...register("domain")}
+                >
+                  <option value="jewelry">
+                    Jewelry ERP Architecture
+                  </option>
+
+                  <option value="general">
+                    Standard Multi-Branch Commerce
+                  </option>
+                </SelectField>
+              </div>
+            </Section>
+          )}
+
+          {/* ==================================================================
+              STEP 5: AUDIT & REVIEW
+              ================================================================== */}
+
+          {currentStep === 5 && (
+            <div className="space-y-4">
               <ReviewSection
-                title="Firebase Workspace"
-                icon={
-                  <Database
-                    size={15}
-                  />
-                }
+                title="Identity & Ownership"
+                theme={theme}
               >
                 <ReviewGrid
+                  theme={theme}
                   items={[
                     [
-                      "Project ID",
-                      watchedData.firebaseProjectId,
+                      "Business Name",
+                      watchedData.businessName,
                     ],
+
                     [
-                      "Domain",
-                      watchedData.domain,
+                      "Legal Name",
+                      watchedData.legalBusinessName,
                     ],
+
                     [
-                      "Data Boundary",
-                      "Client-owned Firebase",
+                      "Entity Type",
+                      formatBusinessType(
+                        watchedData.businessType
+                      ),
+                    ],
+
+                    [
+                      "Contact Email",
+                      watchedData.businessEmail,
+                    ],
+
+                    [
+                      "Direct Line",
+                      watchedData.businessPhone,
+                    ],
+
+                    [
+                      "Authorized Owner",
+                      watchedData.ownerName,
                     ],
                   ]}
                 />
               </ReviewSection>
 
-
-              {/* WELCOME PACKAGE */}
-
               <ReviewSection
-                title="Client Welcome Package"
-                icon={
-                  <Mail
-                    size={15}
-                  />
-                }
+                title="Statutory Verification Status"
+                theme={theme}
               >
+                <div className="flex flex-wrap gap-2">
+                  {submittedDocuments.map(
+                    (doc) => (
+                      <span
+                        key={doc}
+                        className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-bold"
+                        style={{
+                          backgroundColor:
+                            theme.successSoft,
 
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                          color:
+                            theme.success,
+                        }}
+                      >
+                        <Check size={12} />
+                        {doc} Verified
+                      </span>
+                    )
+                  )}
 
-                  <WelcomeItem
-                    icon={
-                      <Receipt
-                        size={14}
-                      />
-                    }
-                    text="Invoice"
-                  />
+                  {pendingDocuments.map(
+                    (doc) => (
+                      <span
+                        key={doc}
+                        className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-bold"
+                        style={{
+                          backgroundColor:
+                            theme.warningSoft,
 
-                  <WelcomeItem
-                    icon={
-                      <Sparkles
-                        size={14}
-                      />
-                    }
-                    text="Warm welcome"
-                  />
-
-                  <WelcomeItem
-                    icon={
-                      <Package
-                        size={14}
-                      />
-                    }
-                    text="Included modules"
-                  />
-
-                  <WelcomeItem
-                    icon={
-                      <Globe
-                        size={14}
-                      />
-                    }
-                    text="Login access"
-                  />
-
+                          color:
+                            theme.warning,
+                        }}
+                      >
+                        <AlertCircle
+                          size={12}
+                        />
+                        {doc} Pending
+                      </span>
+                    )
+                  )}
                 </div>
-
-                <p className="mt-3 text-[9px] font-medium text-slate-400">
-                  The welcome-email/resend workflow will use
-                  this same subscription, invoice, module and
-                  workspace information.
-                </p>
-
               </ReviewSection>
 
+              <ReviewSection
+                title="Commercial Allocation"
+                theme={theme}
+              >
+                <ReviewGrid
+                  theme={theme}
+                  items={[
+                    [
+                      "Allocated Plan",
+                      resolvedSubscription
+                        ?.subscription_plan
+                        ?.name ||
+                        selectedPlan?.name ||
+                        "—",
+                    ],
 
-              {/* FINAL WARNING */}
+                    [
+                      "City Market Tier",
+                      selectedCityTier
+                        ?.name || "—",
+                    ],
 
-              <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                    [
+                      "Turnover Scale",
+                      selectedTurnoverBand
+                        ?.name || "—",
+                    ],
 
-                <div className="flex items-start gap-3">
+                    [
+                      "Billing Term",
+                      formatBillingCycle(
+                        selectedBillingCycle
+                      ),
+                    ],
 
-                  <AlertCircle
-                    size={15}
-                    className="mt-0.5 shrink-0 text-slate-400"
-                  />
+                    [
+                      "Cloud Workspace",
+                      watchedData.firebaseProjectId,
+                    ],
 
-                  <p className="text-[10px] leading-4 text-slate-500">
-                    Creating the client will send the
-                    onboarding data to the Abhinava control
-                    plane. The selected subscription plan
-                    determines the client's authoritative
-                    module set.
-                  </p>
-
-                </div>
-
-              </div>
-
+                    [
+                      "Total Payable",
+                      money(
+                        pricing.total
+                      ),
+                    ],
+                  ]}
+                />
+              </ReviewSection>
             </div>
           )}
-
         </form>
       </div>
     </div>
   );
 }
 
-
-// ============================================================
-// SECTION
-// ============================================================
+/* ============================================================================
+   MODULAR INPUT HELPERS
+   ========================================================================== */
 
 function Section({
   title,
   description,
   children,
+  theme,
 }) {
   return (
-    <section className="rounded-2xl border border-slate-200 bg-white">
-
-      <div className="border-b border-slate-100 px-5 py-4">
-
-        <h2 className="text-sm font-bold text-slate-900">
+    <section className="mb-4">
+      <div className="mb-3">
+        <h2
+          className="text-[13px] font-bold uppercase tracking-wider"
+          style={{
+            color: theme.text,
+          }}
+        >
           {title}
         </h2>
 
         {description && (
-          <p className="mt-1 text-[10px] leading-4 text-slate-500">
+          <p
+            className="text-[11px]"
+            style={{
+              color:
+                theme.textMuted,
+            }}
+          >
             {description}
           </p>
         )}
-
       </div>
 
-      <div className="p-5">
+      <div>
         {children}
       </div>
-
     </section>
   );
 }
 
-
-// ============================================================
-// FIELD LABEL
-// ============================================================
-
 function FieldLabel({
   children,
   required = false,
+  theme,
 }) {
   return (
-    <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+    <label
+      className="text-[10px] font-bold uppercase tracking-wider"
+      style={{
+        color: theme.textMuted,
+      }}
+    >
       {children}
 
       {required && (
@@ -3098,11 +2727,6 @@ function FieldLabel({
   );
 }
 
-
-// ============================================================
-// FIELD ERROR
-// ============================================================
-
 function FieldError({
   message,
 }) {
@@ -3111,338 +2735,301 @@ function FieldError({
   }
 
   return (
-    <p className="mt-1 text-[10px] font-medium text-rose-500">
+    <p className="mt-1 text-[10px] font-semibold text-rose-500">
       {message}
     </p>
   );
 }
 
+const InputField =
+  React.forwardRef(
+    (
+      {
+        label,
+        required = false,
+        error,
+        theme,
+        className = "",
+        ...props
+      },
+      ref
+    ) => {
+      return (
+        <div>
+          <FieldLabel
+            required={required}
+            theme={theme}
+          >
+            {label}
+          </FieldLabel>
 
-// ============================================================
-// INPUT
-// ============================================================
+          <input
+            ref={ref}
+            {...props}
+            className={`mt-1 h-10 w-full rounded-lg border px-3 text-xs font-medium outline-none transition focus:border-zinc-500 ${className}`}
+            style={{
+              backgroundColor:
+                theme.surfaceAlt,
 
-const InputField = ({
-  label,
-  required = false,
-  error,
-  className = "",
-  ...props
-}) => {
-  return (
-    <div>
+              borderColor:
+                theme.border,
 
-      <FieldLabel
-        required={required}
-      >
-        {label}
-      </FieldLabel>
+              color:
+                theme.text,
+            }}
+          />
 
-      <input
-        {...props}
-        className={`mt-1 h-11 w-full rounded-xl border border-slate-200 bg-[#faf8f3]/50 px-3.5 text-xs font-medium text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-[#c59b27] focus:bg-white ${className}`}
-      />
-
-      {error && (
-        <FieldError
-          message={
-            error.message
-          }
-        />
-      )}
-
-    </div>
+          {error && (
+            <FieldError
+              message={
+                error.message
+              }
+            />
+          )}
+        </div>
+      );
+    }
   );
-};
 
+InputField.displayName =
+  "InputField";
 
-// ============================================================
-// SELECT
-// ============================================================
+const SelectField =
+  React.forwardRef(
+    (
+      {
+        label,
+        required = false,
+        error,
+        theme,
+        children,
+        ...props
+      },
+      ref
+    ) => {
+      return (
+        <div>
+          <FieldLabel
+            required={required}
+            theme={theme}
+          >
+            {label}
+          </FieldLabel>
 
-function SelectField({
-  label,
-  required = false,
-  error,
-  children,
-  ...props
-}) {
-  return (
-    <div>
+          <select
+            ref={ref}
+            {...props}
+            className="mt-1 h-10 w-full rounded-lg border px-3 text-xs font-medium outline-none transition focus:border-zinc-500"
+            style={{
+              backgroundColor:
+                theme.surfaceAlt,
 
-      <FieldLabel
-        required={required}
-      >
-        {label}
-      </FieldLabel>
+              borderColor:
+                theme.border,
 
-      <select
-        {...props}
-        className="mt-1 h-11 w-full rounded-xl border border-slate-200 bg-[#faf8f3]/50 px-3.5 text-xs font-medium text-slate-900 outline-none transition focus:border-[#c59b27] focus:bg-white"
-      >
-        {children}
-      </select>
+              color:
+                theme.text,
+            }}
+          >
+            {children}
+          </select>
 
-      {error && (
-        <FieldError
-          message={
-            error.message
-          }
-        />
-      )}
-
-    </div>
+          {error && (
+            <FieldError
+              message={
+                error.message
+              }
+            />
+          )}
+        </div>
+      );
+    }
   );
-}
 
-
-// ============================================================
-// LOADING
-// ============================================================
+SelectField.displayName =
+  "SelectField";
 
 function LoadingBox({
   text,
+  theme,
 }) {
   return (
-    <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-4">
+    <div
+      className="flex items-center gap-2.5 rounded-lg border px-3 py-3"
+      style={{
+        backgroundColor:
+          theme.surfaceAlt,
 
+        borderColor:
+          theme.border,
+      }}
+    >
       <RefreshCw
-        size={15}
-        className="animate-spin text-slate-400"
+        size={14}
+        className="animate-spin"
+        style={{
+          color: theme.text,
+        }}
       />
 
-      <span className="text-xs font-medium text-slate-500">
+      <span
+        className="text-xs font-medium"
+        style={{
+          color:
+            theme.textMuted,
+        }}
+      >
         {text}
       </span>
-
     </div>
   );
 }
-
-
-// ============================================================
-// ERROR
-// ============================================================
 
 function ErrorBox({
   message,
   onRetry,
+  theme,
 }) {
   return (
-    <div className="rounded-xl border border-rose-200 bg-rose-50 p-4">
+    <div
+      className="rounded-lg border p-3.5"
+      style={{
+        backgroundColor:
+          theme.dangerSoft,
 
-      <div className="flex items-start gap-3">
-
+        borderColor:
+          theme.danger,
+      }}
+    >
+      <div className="flex items-start gap-2.5">
         <AlertCircle
-          size={16}
-          className="mt-0.5 text-rose-600"
+          size={15}
+          className="mt-0.5 shrink-0"
+          style={{
+            color: theme.danger,
+          }}
         />
 
         <div className="flex-1">
-
-          <p className="text-xs font-semibold text-rose-800">
+          <p
+            className="text-xs font-semibold"
+            style={{
+              color:
+                theme.danger,
+            }}
+          >
             {message}
           </p>
 
           <button
             type="button"
             onClick={onRetry}
-            className="mt-2 inline-flex items-center gap-1.5 text-[10px] font-bold text-rose-700 hover:text-rose-900"
+            className="mt-1 inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider underline"
+            style={{
+              color:
+                theme.danger,
+            }}
           >
-            <RefreshCw
-              size={11}
-            />
             Retry
           </button>
-
         </div>
-
       </div>
-
     </div>
   );
 }
-
-
-// ============================================================
-// PRICE ROW
-// ============================================================
 
 function PriceRow({
   label,
   value,
   positive = false,
+  theme,
 }) {
   return (
     <div className="flex items-center justify-between gap-4">
-
-      <span className="text-[10px] font-medium text-slate-500">
+      <span
+        className="text-[11px] font-medium"
+        style={{
+          color:
+            theme.textMuted,
+        }}
+      >
         {label}
       </span>
 
       <span
-        className={`text-xs font-bold ${
-          positive
-            ? "text-emerald-600"
-            : "text-slate-800"
-        }`}
+        className="text-xs font-bold"
+        style={{
+          color: positive
+            ? theme.success
+            : theme.text,
+        }}
       >
         {value}
       </span>
-
     </div>
   );
 }
-
-
-// ============================================================
-// DEVICE CARD
-// ============================================================
-
-function DeviceCard({
-  icon,
-  title,
-  description,
-}) {
-  return (
-    <div className="rounded-xl border border-slate-200 bg-white p-4">
-
-      <div className="flex items-center gap-3">
-
-        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-100 text-slate-500">
-          {icon}
-        </div>
-
-        <div>
-          <p className="text-xs font-bold text-slate-800">
-            {title}
-          </p>
-
-          <p className="mt-0.5 text-[9px] font-medium text-slate-400">
-            {description}
-          </p>
-        </div>
-
-      </div>
-
-    </div>
-  );
-}
-
-
-// ============================================================
-// REVIEW SECTION
-// ============================================================
 
 function ReviewSection({
   title,
-  icon,
   children,
+  theme,
 }) {
   return (
-    <section className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
+    <div
+      className="rounded-lg border p-4"
+      style={{
+        borderColor:
+          theme.border,
+      }}
+    >
+      <h3
+        className="mb-2 text-[11px] font-bold uppercase tracking-wider"
+        style={{
+          color: theme.text,
+        }}
+      >
+        {title}
+      </h3>
 
-      <div className="flex items-center gap-2 border-b border-slate-100 bg-slate-50/60 px-5 py-3">
-
-        <div className="text-slate-500">
-          {icon}
-        </div>
-
-        <h3 className="text-xs font-bold text-slate-800">
-          {title}
-        </h3>
-
-      </div>
-
-      <div className="p-5">
-        {children}
-      </div>
-
-    </section>
+      {children}
+    </div>
   );
 }
-
-
-// ============================================================
-// REVIEW GRID
-// ============================================================
 
 function ReviewGrid({
   items,
+  theme,
 }) {
   return (
-    <div className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
-
+    <div className="grid grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-2 lg:grid-cols-3">
       {items.map(
         ([label, value]) => (
-          <div
-            key={label}
-            className="min-w-0"
-          >
-
-            <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">
+          <div key={label}>
+            <p
+              className="text-[9px] font-bold uppercase tracking-wider"
+              style={{
+                color:
+                  theme.textMuted,
+              }}
+            >
               {label}
             </p>
 
-            <p className="mt-1 break-words text-xs font-semibold text-slate-800">
+            <p
+              className="mt-0.5 break-words text-xs font-semibold"
+              style={{
+                color:
+                  theme.text,
+              }}
+            >
               {value || "—"}
             </p>
-
           </div>
         )
       )}
-
     </div>
   );
 }
-
-
-// ============================================================
-// REVIEW MINI ROW
-// ============================================================
-
-function ReviewMiniRow({
-  label,
-  value,
-}) {
-  return (
-    <div className="flex items-center justify-between gap-4">
-
-      <span className="text-[10px] font-medium text-slate-400">
-        {label}
-      </span>
-
-      <span className="text-[10px] font-bold text-slate-700">
-        {value}
-      </span>
-
-    </div>
-  );
-}
-
-
-// ============================================================
-// WELCOME ITEM
-// ============================================================
-
-function WelcomeItem({
-  icon,
-  text,
-}) {
-  return (
-    <div className="flex items-center gap-2 rounded-xl border border-slate-100 bg-slate-50 px-3 py-2.5">
-
-      <div className="text-slate-500">
-        {icon}
-      </div>
-
-      <span className="text-[10px] font-semibold text-slate-600">
-        {text}
-      </span>
-
-    </div>
-  );
-}
-
 
 export default AddClientPage;

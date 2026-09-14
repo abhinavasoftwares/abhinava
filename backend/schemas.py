@@ -36,6 +36,7 @@ class ClientCreate(BaseModel):
 
     subscription_plan_id: int
     city_tier_id: int
+    turnover_band_id: int
 
     # ---------------------------------------------------------
     # REFERRAL
@@ -229,6 +230,8 @@ class SubscriptionPlanUpdate(BaseModel):
         max_length=150,
     )
 
+    main_plan: str | None = None
+
     description: str | None = Field(
         default=None,
         max_length=500,
@@ -286,6 +289,7 @@ class ClientSubscriptionCreate(BaseModel):
     client_id: int
     subscription_plan_id: int
     city_tier_id: int
+    turnover_band_id: int
     billing_cycle: str
     start_date: date
 
@@ -295,18 +299,14 @@ class ClientSubscriptionResponse(BaseModel):
     client_id: int
     subscription_plan_id: int
     city_tier_id: int
-
+    turnover_band_id: int
     main_plan: str
     subscription_name: str
     billing_cycle: str
-
     start_date: date
     end_date: date
-
     status: str
-
     currency: str
-
     price_before_tax: Decimal
     tax_rate: Decimal
     tax_amount: Decimal

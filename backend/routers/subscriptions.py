@@ -692,49 +692,76 @@ def create_subscription_plan(
 # PLAN LIST
 # ============================================================
 
-@router.get(
-    "/plans",
-    response_model=list[SubscriptionPlanResponse],
-)
+@router.get("/plans")
 def list_subscription_plans(
-    include_inactive: bool = False,
-    main_plan: str | None = None,
     db: Session = Depends(get_db),
 ):
-
-    query = (
-        db.query(SubscriptionPlan)
-        .options(
-            selectinload(
-                SubscriptionPlan.modules
-            ),
-            selectinload(
-                SubscriptionPlan.prices
-            ),
-        )
-    )
-
-    if not include_inactive:
-        query = query.filter(
-            SubscriptionPlan.is_active.is_(True)
-        )
-
-    if main_plan:
-        query = query.filter(
-            SubscriptionPlan.main_plan
-            == normalize_main_plan(main_plan)
-        )
-
     plans = (
-        query
-        .order_by(SubscriptionPlan.id)
+        db.query(SubscriptionPlan)
+        .order_by(SubscriptionPlan.id.asc())
         .all()
     )
 
-    return [
-        serialize_plan(plan)
-        for plan in plans
-    ]
+    result = []
+
+    for plan in plans:
+        modules = (
+            db.query(SubscriptionPlanModule)
+            .filter(
+                SubscriptionPlanModule.subscription_plan_id
+                == plan.id
+            )
+            .order_by(SubscriptionPlanModule.id.asc())
+            .all()
+        )
+
+        prices = (
+            db.query(SubscriptionPlanPrice)
+            .filter(
+                SubscriptionPlanPrice.subscription_plan_id
+                == plan.id
+            )
+            .order_by(
+                SubscriptionPlanPrice.city_tier_id.asc(),
+                SubscriptionPlanPrice.turnover_band_id.asc(),
+            )
+            .all()
+        )
+
+        result.append(
+            {
+                "id": plan.id,
+                "name": plan.name,
+                "description": plan.description,
+                "main_plan": plan.main_plan,
+                "is_active": plan.is_active,
+                "created_at": plan.created_at,
+                "updated_at": plan.updated_at,
+
+                "modules": [
+                    {
+                        "id": module.id,
+                        "module_key": module.module_key,
+                        "module_name": module.module_name,
+                    }
+                    for module in modules
+                ],
+
+                "prices": [
+                    {
+                        "id": price.id,
+                        "city_tier_id": price.city_tier_id,
+                        "turnover_band_id": price.turnover_band_id,
+                        "monthly_price": price.monthly_price,
+                        "annual_price": price.annual_price,
+                        "currency": price.currency,
+                    }
+                    for price in prices
+                ],
+            }
+        )
+
+    return result
 
 
 # ============================================================
@@ -855,6 +882,89 @@ def update_subscription_plan(
 
     return serialize_plan(plan)
 
+
+# ============================================================
+# PLAN DELETE
+# ============================================================
+
+@router.delete("/plans/{plan_id}")
+def delete_subscription_plan(
+    plan_id: int,
+    db: Session = Depends(get_db),
+):
+
+    plan = (
+        db.query(SubscriptionPlan)
+        .filter(
+            SubscriptionPlan.id == plan_id
+        )
+        .first()
+    )
+
+    if not plan:
+        raise HTTPException(
+            status_code=404,
+            detail="Subscription plan not found",
+        )
+
+    # --------------------------------------------------------
+    # Check whether this plan is being used
+    # --------------------------------------------------------
+
+    from models import ClientSubscription
+
+    active_usage = (
+        db.query(ClientSubscription)
+        .filter(
+            ClientSubscription.subscription_plan_id
+            == plan_id
+        )
+        .first()
+    )
+
+    if active_usage:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "This subscription plan is already assigned "
+                "to a client and cannot be deleted."
+            ),
+        )
+
+    # --------------------------------------------------------
+    # Delete dependent pricing records
+    # --------------------------------------------------------
+
+    db.query(SubscriptionPlanPrice).filter(
+        SubscriptionPlanPrice.subscription_plan_id
+        == plan_id
+    ).delete(
+        synchronize_session=False
+    )
+
+    # --------------------------------------------------------
+    # Delete dependent module records
+    # --------------------------------------------------------
+
+    db.query(SubscriptionPlanModule).filter(
+        SubscriptionPlanModule.subscription_plan_id
+        == plan_id
+    ).delete(
+        synchronize_session=False
+    )
+
+    # --------------------------------------------------------
+    # Delete the plan
+    # --------------------------------------------------------
+
+    db.delete(plan)
+
+    db.commit()
+
+    return {
+        "message": "Subscription plan deleted successfully",
+        "plan_id": plan_id,
+    }
 
 # ============================================================
 # RESOLVE PRICING

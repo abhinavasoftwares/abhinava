@@ -898,6 +898,15 @@ class ClientSubscription(Base):
         nullable=False,
     )
 
+    turnover_band_id: Mapped[int] = mapped_column(
+        ForeignKey(
+            "turnover_bands.id",
+            name="fk_client_subscriptions_turnover_band",
+            ondelete="RESTRICT",
+        ),
+        nullable=False,
+    )
+
     main_plan: Mapped[str] = mapped_column(
         String(20),
         nullable=False,
@@ -1015,6 +1024,10 @@ class ClientSubscription(Base):
         Index(
             "ix_client_subscriptions_city_tier",
             "city_tier_id",
+        ),
+        Index(
+            "ix_client_subscriptions_turnover_band",
+            "turnover_band_id",
         ),
         Index(
             "ix_client_subscriptions_status",

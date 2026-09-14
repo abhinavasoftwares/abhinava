@@ -469,6 +469,9 @@ def validate_referral_code(
     city_tier_id: int = Query(
         gt=0,
     ),
+    turnover_band_id: int = Query(
+        gt=0,
+    ),
     billing_cycle: str = Query(
         min_length=1,
         max_length=20,
@@ -481,9 +484,15 @@ def validate_referral_code(
     from models import (
         SubscriptionPlan,
         SubscriptionPlanPrice,
+        CityTier,
+        TurnoverBand,
     )
 
     normalized_code = normalize_code(code)
+
+    # --------------------------------------------------------
+    # FIND REFERRAL CODE
+    # --------------------------------------------------------
 
     referral = (
         db.query(ReferralCode)
@@ -502,6 +511,10 @@ def validate_referral_code(
 
     ensure_code_usable(referral)
 
+    # --------------------------------------------------------
+    # VALIDATE PLAN
+    # --------------------------------------------------------
+
     plan = (
         db.query(SubscriptionPlan)
         .filter(
@@ -518,6 +531,51 @@ def validate_referral_code(
             detail="Subscription plan not found.",
         )
 
+    # --------------------------------------------------------
+    # VALIDATE CITY TIER
+    # --------------------------------------------------------
+
+    city_tier = (
+        db.query(CityTier)
+        .filter(
+            CityTier.id == city_tier_id,
+            CityTier.is_active.is_(True),
+        )
+        .first()
+    )
+
+    if city_tier is None:
+        raise HTTPException(
+            status_code=404,
+            detail="City tier not found.",
+        )
+
+    # --------------------------------------------------------
+    # VALIDATE TURNOVER BAND
+    # --------------------------------------------------------
+
+    turnover_band = (
+        db.query(TurnoverBand)
+        .filter(
+            TurnoverBand.id
+            == turnover_band_id,
+            TurnoverBand.is_active.is_(True),
+        )
+        .first()
+    )
+
+    if turnover_band is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Turnover band not found.",
+        )
+
+    # --------------------------------------------------------
+    # FIND EXACT PRICING MATRIX ENTRY
+    #
+    # Plan + City Tier + Turnover Band
+    # --------------------------------------------------------
+
     price = (
         db.query(SubscriptionPlanPrice)
         .filter(
@@ -525,6 +583,8 @@ def validate_referral_code(
             == subscription_plan_id,
             SubscriptionPlanPrice.city_tier_id
             == city_tier_id,
+            SubscriptionPlanPrice.turnover_band_id
+            == turnover_band_id,
         )
         .first()
     )
@@ -534,9 +594,14 @@ def validate_referral_code(
             status_code=404,
             detail=(
                 "No pricing configuration exists "
-                "for this plan and city tier."
+                "for this plan, city tier and "
+                "turnover band."
             ),
         )
+
+    # --------------------------------------------------------
+    # BILLING CYCLE
+    # --------------------------------------------------------
 
     cycle = (
         billing_cycle.strip().lower()
@@ -544,8 +609,10 @@ def validate_referral_code(
 
     if cycle == "monthly":
         base_price = price.monthly_price
+
     elif cycle == "annual":
         base_price = price.annual_price
+
     else:
         raise HTTPException(
             status_code=400,
@@ -555,11 +622,19 @@ def validate_referral_code(
             ),
         )
 
+    # --------------------------------------------------------
+    # CALCULATE DISCOUNT
+    # --------------------------------------------------------
+
     discount_amount = calculate_discount(
         discount_type=referral.discount_type,
         discount_value=referral.discount_value,
         base_price=base_price,
     )
+
+    # --------------------------------------------------------
+    # RESPONSE
+    # --------------------------------------------------------
 
     return {
         "valid": True,

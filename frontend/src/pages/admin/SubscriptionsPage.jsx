@@ -1,4 +1,3 @@
-
 import { useEffect, useMemo, useState } from "react";
 import {
   Plus,
@@ -142,25 +141,39 @@ function normalizeModules(modules, mainPlan) {
     selected.has("investments") ||
     selected.has("kareegar");
 
-  if (selected.has("whatsapp") && !hasWhatsAppParent) {
+  if (
+    selected.has("whatsapp") &&
+    !hasWhatsAppParent
+  ) {
     selected.delete("whatsapp");
   }
 
   return Array.from(selected);
 }
 
+function getPriceKey(cityTierId, turnoverBandId) {
+  return `${cityTierId}_${turnoverBandId}`;
+}
+
 // ============================================================
 // MODULE UI STATE
 // ============================================================
 
-function getModuleState(moduleKey, selectedModules, mainPlan) {
+function getModuleState(
+  moduleKey,
+  selectedModules,
+  mainPlan
+) {
   const selected = new Set(selectedModules);
 
   // ----------------------------------------------------------
   // PRO ONLY
   // ----------------------------------------------------------
 
-  if (moduleKey === "ml_analytics" && mainPlan !== "PRO") {
+  if (
+    moduleKey === "ml_analytics" &&
+    mainPlan !== "PRO"
+  ) {
     return {
       disabled: true,
       reason: "Pro plan only",
@@ -251,7 +264,10 @@ function getModuleState(moduleKey, selectedModules, mainPlan) {
       selected.has("investments") ||
       selected.has("kareegar");
 
-    if (!hasParent && !selected.has("whatsapp")) {
+    if (
+      !hasParent &&
+      !selected.has("whatsapp")
+    ) {
       return {
         disabled: true,
         reason: "Cannot be selected alone",
@@ -276,11 +292,7 @@ const EMPTY_PLAN = {
   description: "",
   main_plan: "BASIC",
   modules: [],
-  prices: {
-    1: "",
-    2: "",
-    3: "",
-  },
+  prices: {},
 };
 
 // ============================================================
@@ -288,88 +300,249 @@ const EMPTY_PLAN = {
 // ============================================================
 
 export default function SubscriptionsPage() {
-  const [activeSection, setActiveSection] = useState("plans");
-  const [activePlanType, setActivePlanType] = useState("BASIC");
+  const [activeSection, setActiveSection] =
+    useState("plans");
 
-  const [cityTiers, setCityTiers] = useState([]);
-  const [plans, setPlans] = useState([]);
+  const [activePlanType, setActivePlanType] =
+    useState("BASIC");
 
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  const [cityTiers, setCityTiers] =
+    useState([]);
 
-  const [search, setSearch] = useState("");
+  const [plans, setPlans] =
+    useState([]);
 
-  const [showPlanModal, setShowPlanModal] = useState(false);
-  const [showTierModal, setShowTierModal] = useState(false);
+  const [turnoverBands, setTurnoverBands] =
+    useState([]);
 
-  const [editingPlan, setEditingPlan] = useState(null);
-  const [editingTier, setEditingTier] = useState(null);
+  const [loading, setLoading] =
+    useState(true);
 
-  const [planForm, setPlanForm] = useState(EMPTY_PLAN);
+  const [error, setError] =
+    useState("");
 
-  const [tierForm, setTierForm] = useState({
-    name: "",
-    description: "",
-  });
+  const [search, setSearch] =
+    useState("");
+
+  const [showPlanModal, setShowPlanModal] =
+    useState(false);
+
+  const [showTierModal, setShowTierModal] =
+    useState(false);
+
+  const [editingPlan, setEditingPlan] =
+    useState(null);
+
+  const [editingTier, setEditingTier] =
+    useState(null);
+
+  const [planForm, setPlanForm] =
+    useState(EMPTY_PLAN);
+
+  const [tierForm, setTierForm] =
+    useState({
+      name: "",
+      description: "",
+    });
 
   // =========================================================
   // LOAD DATA
   // =========================================================
 
-  const fetchSubscriptionData = async () => {
-    try {
+  const fetchSubscriptionData =
+    async () => {
       setLoading(true);
       setError("");
 
-      const [tiersResponse, plansResponse] = await Promise.all([
-        fetch(`${API_URL}/subscriptions/city-tiers`, {
-          credentials: "include",
-        }),
-        fetch(`${API_URL}/subscriptions/plans`, {
-          credentials: "include",
-        }),
-      ]);
+      try {
+        const [
+          tiersResponse,
+          turnoverResponse,
+          plansResponse,
+        ] = await Promise.all([
+          fetch(
+            `${API_URL}/subscriptions/city-tiers`,
+            {
+              credentials: "include",
+            }
+          ),
 
-      if (!tiersResponse.ok || !plansResponse.ok) {
-        throw new Error("Unable to load subscription configuration.");
+          fetch(
+            `${API_URL}/subscriptions/turnover-bands`,
+            {
+              credentials: "include",
+            }
+          ),
+
+          fetch(
+            `${API_URL}/subscriptions/plans`,
+            {
+              credentials: "include",
+            }
+          ),
+        ]);
+
+        // =====================================================
+        // CITY TIERS
+        // =====================================================
+
+        let tiersData = [];
+
+        if (tiersResponse.ok) {
+          tiersData =
+            await tiersResponse
+              .json()
+              .catch(() => []);
+        } else {
+          const data =
+            await tiersResponse
+              .json()
+              .catch(() => ({}));
+
+          console.error(
+            "City tiers API failed:",
+            tiersResponse.status,
+            data
+          );
+
+          throw new Error(
+            `City tiers: ${
+              typeof data.detail ===
+              "string"
+                ? data.detail
+                : `HTTP ${tiersResponse.status}`
+            }`
+          );
+        }
+
+        // IMPORTANT:
+        // Backend may return either:
+        //
+        // [ ... ]
+        //
+        // OR
+        //
+        // { city_tiers: [ ... ] }
+        //
+        const cityTierList =
+          Array.isArray(tiersData)
+            ? tiersData
+            : tiersData?.city_tiers ||
+              [];
+
+        setCityTiers(
+          cityTierList.filter(
+            (tier) =>
+              tier.is_active !== false
+          )
+        );
+
+        // =====================================================
+        // TURNOVER BANDS
+        // =====================================================
+
+        let turnoverData = [];
+
+        if (turnoverResponse.ok) {
+          turnoverData =
+            await turnoverResponse
+              .json()
+              .catch(() => []);
+        } else {
+          const data =
+            await turnoverResponse
+              .json()
+              .catch(() => ({}));
+
+          console.error(
+            "Turnover bands API failed:",
+            turnoverResponse.status,
+            data
+          );
+
+          throw new Error(
+            `Turnover bands: ${
+              typeof data.detail ===
+              "string"
+                ? data.detail
+                : `HTTP ${turnoverResponse.status}`
+            }`
+          );
+        }
+
+        // IMPORTANT:
+        // Support both:
+        //
+        // [ ... ]
+        //
+        // OR
+        //
+        // { turnover_bands: [ ... ] }
+        //
+        const turnoverBandList =
+          Array.isArray(
+            turnoverData
+          )
+            ? turnoverData
+            : turnoverData?.turnover_bands ||
+              [];
+
+        setTurnoverBands(
+          turnoverBandList.filter(
+            (band) =>
+              band.is_active !== false
+          )
+        );
+
+        // =====================================================
+        // PLANS
+        // =====================================================
+
+        if (!plansResponse.ok) {
+          const data =
+            await plansResponse
+              .json()
+              .catch(() => ({}));
+
+          console.error(
+            "Plans API failed:",
+            plansResponse.status,
+            data
+          );
+
+          setPlans([]);
+
+          setError(
+            `Subscription plans could not be loaded (HTTP ${plansResponse.status}).`
+          );
+
+          return;
+        }
+
+        const plansData =
+          await plansResponse.json();
+
+        setPlans(
+          Array.isArray(
+            plansData
+          )
+            ? plansData
+            : plansData?.plans || []
+        );
+      } catch (err) {
+        console.error(
+          "Subscription configuration error:",
+          err
+        );
+
+        setError(
+          err?.message ||
+            "Unable to load subscription configuration."
+        );
+      } finally {
+        setLoading(false);
       }
-
-      const tiersData = await tiersResponse.json();
-      const plansData = await plansResponse.json();
-
-      setCityTiers(tiersData.city_tiers || []);
-      setPlans(plansData.plans || []);
-    } catch (err) {
-      console.error("Subscription loading error:", err);
-
-      setError("");
-
-      setCityTiers([
-        {
-          id: 1,
-          name: "Tier 1",
-          description: "Metro / premium markets",
-          is_active: true,
-        },
-        {
-          id: 2,
-          name: "Tier 2",
-          description: "Major cities",
-          is_active: true,
-        },
-        {
-          id: 3,
-          name: "Tier 3",
-          description: "Other cities",
-          is_active: true,
-        },
-      ]);
-
-      setPlans([]);
-    } finally {
-      setLoading(false);
-    }
-  };
+    };
 
   useEffect(() => {
     fetchSubscriptionData();
@@ -379,13 +552,26 @@ export default function SubscriptionsPage() {
   // PLAN FILTERING
   // =========================================================
 
-  const filteredPlans = useMemo(() => {
-    return plans
-      .filter((plan) => plan.main_plan === activePlanType)
-      .filter((plan) =>
-        plan.name?.toLowerCase().includes(search.toLowerCase())
-      );
-  }, [plans, activePlanType, search]);
+  const filteredPlans =
+    useMemo(() => {
+      return plans
+        .filter(
+          (plan) =>
+            plan.main_plan ===
+            activePlanType
+        )
+        .filter((plan) =>
+          plan.name
+            ?.toLowerCase()
+            .includes(
+              search.toLowerCase()
+            )
+        );
+    }, [
+      plans,
+      activePlanType,
+      search,
+    ]);
 
   // =========================================================
   // PLAN MODAL
@@ -394,15 +580,29 @@ export default function SubscriptionsPage() {
   const openCreatePlan = () => {
     setEditingPlan(null);
 
+    const prices = {};
+
+    cityTiers.forEach(
+      (tier) => {
+        turnoverBands.forEach(
+          (band) => {
+            prices[
+              getPriceKey(
+                tier.id,
+                band.id
+              )
+            ] = "";
+          }
+        );
+      }
+    );
+
     setPlanForm({
       ...EMPTY_PLAN,
-      main_plan: activePlanType,
+      main_plan:
+        activePlanType,
       modules: [],
-      prices: {
-        1: "",
-        2: "",
-        3: "",
-      },
+      prices,
     });
 
     setShowPlanModal(true);
@@ -410,34 +610,66 @@ export default function SubscriptionsPage() {
 
   const openEditPlan = (plan) => {
     const moduleKeys =
-      plan.modules?.map((module) =>
-        typeof module === "string" ? module : module.module_key
+      plan.modules?.map(
+        (module) =>
+          typeof module === "string"
+            ? module
+            : module.module_key
       ) || [];
 
-    const normalizedModules = normalizeModules(
-      moduleKeys,
-      plan.main_plan
-    );
+    const normalizedModules =
+      normalizeModules(
+        moduleKeys,
+        plan.main_plan
+      );
 
     const prices = {};
 
-    (plan.prices || []).forEach((price) => {
-      prices[price.city_tier_id] =
-        price.monthly_price ?? price.price ?? "";
-    });
+    // Initialize all current
+    // matrix combinations first.
+    cityTiers.forEach(
+      (tier) => {
+        turnoverBands.forEach(
+          (band) => {
+            prices[
+              getPriceKey(
+                tier.id,
+                band.id
+              )
+            ] = "";
+          }
+        );
+      }
+    );
+
+    // Then populate existing prices.
+    (plan.prices || []).forEach(
+      (price) => {
+        const key =
+          getPriceKey(
+            price.city_tier_id,
+            price.turnover_band_id
+          );
+
+        prices[key] =
+          price.monthly_price ??
+          price.price ??
+          "";
+      }
+    );
 
     setEditingPlan(plan);
 
     setPlanForm({
-      name: plan.name || "",
-      description: plan.description || "",
-      main_plan: plan.main_plan,
-      modules: normalizedModules,
-      prices: {
-        1: prices[1] ?? "",
-        2: prices[2] ?? "",
-        3: prices[3] ?? "",
-      },
+      name:
+        plan.name || "",
+      description:
+        plan.description || "",
+      main_plan:
+        plan.main_plan,
+      modules:
+        normalizedModules,
+      prices,
     });
 
     setShowPlanModal(true);
@@ -452,35 +684,54 @@ export default function SubscriptionsPage() {
   // MODULE TOGGLE
   // =========================================================
 
-  const toggleModule = (moduleKey) => {
+  const toggleModule = (
+    moduleKey
+  ) => {
     setPlanForm((current) => {
-      const moduleState = getModuleState(
-        moduleKey,
-        current.modules,
-        current.main_plan
-      );
+      const moduleState =
+        getModuleState(
+          moduleKey,
+          current.modules,
+          current.main_plan
+        );
 
-      // Never allow an unavailable module to be toggled.
+      // Never allow an unavailable
+      // module to be toggled.
       if (moduleState.disabled) {
         return current;
       }
 
-      const selected = new Set(current.modules);
+      const selected =
+        new Set(
+          current.modules
+        );
 
-      if (selected.has(moduleKey)) {
-        selected.delete(moduleKey);
+      if (
+        selected.has(
+          moduleKey
+        )
+      ) {
+        selected.delete(
+          moduleKey
+        );
       } else {
-        selected.add(moduleKey);
+        selected.add(
+          moduleKey
+        );
       }
 
-      const normalized = normalizeModules(
-        Array.from(selected),
-        current.main_plan
-      );
+      const normalized =
+        normalizeModules(
+          Array.from(
+            selected
+          ),
+          current.main_plan
+        );
 
       return {
         ...current,
-        modules: normalized,
+        modules:
+          normalized,
       };
     });
   };
@@ -489,310 +740,587 @@ export default function SubscriptionsPage() {
   // CHANGE MAIN PLAN
   // =========================================================
 
-  const changeMainPlan = (mainPlan) => {
-    setPlanForm((current) => {
-      let modules = current.modules;
+  const changeMainPlan = (
+    mainPlan
+  ) => {
+    setPlanForm(
+      (current) => {
+        let modules =
+          current.modules;
 
-      if (mainPlan === "BASIC") {
-        modules = modules.filter(
-          (moduleKey) => moduleKey !== "ml_analytics"
-        );
+        if (
+          mainPlan ===
+          "BASIC"
+        ) {
+          modules =
+            modules.filter(
+              (moduleKey) =>
+                moduleKey !==
+                "ml_analytics"
+            );
+        }
+
+        modules =
+          normalizeModules(
+            modules,
+            mainPlan
+          );
+
+        return {
+          ...current,
+          main_plan:
+            mainPlan,
+          modules,
+        };
       }
-
-      modules = normalizeModules(modules, mainPlan);
-
-      return {
-        ...current,
-        main_plan: mainPlan,
-        modules,
-      };
-    });
+    );
   };
 
   // =========================================================
   // PRICING
   // =========================================================
 
-  const updateTierPrice = (tierId, value) => {
-    setPlanForm((current) => ({
-      ...current,
-      prices: {
-        ...current.prices,
-        [tierId]: value,
-      },
-    }));
+  const updateTierPrice = (
+    tierId,
+    turnoverBandId,
+    value
+  ) => {
+    const key =
+      getPriceKey(
+        tierId,
+        turnoverBandId
+      );
+
+    setPlanForm(
+      (current) => ({
+        ...current,
+        prices: {
+          ...current.prices,
+          [key]: value,
+        },
+      })
+    );
   };
 
   // =========================================================
   // SAVE PLAN
   // =========================================================
 
-  const savePlan = async () => {
-    if (!planForm.name.trim()) {
-      alert("Subscription plan name is required.");
-      return;
-    }
-
-    if (planForm.modules.length === 0) {
-      alert("Select at least one module.");
-      return;
-    }
-
-    for (const tier of cityTiers) {
+  const savePlan =
+    async () => {
       if (
-        planForm.prices[tier.id] === "" ||
-        planForm.prices[tier.id] === null ||
-        planForm.prices[tier.id] === undefined
+        !planForm.name.trim()
       ) {
-        alert(`Enter pricing for ${tier.name}.`);
+        alert(
+          "Subscription plan name is required."
+        );
         return;
       }
 
-      if (Number(planForm.prices[tier.id]) < 0) {
-        alert(`Pricing for ${tier.name} cannot be negative.`);
+      if (
+        planForm.modules.length ===
+        0
+      ) {
+        alert(
+          "Select at least one module."
+        );
         return;
       }
-    }
 
-    try {
-      const payload = {
-        name: planForm.name.trim(),
-        description: planForm.description.trim() || null,
-        main_plan: planForm.main_plan,
+      if (
+        cityTiers.length ===
+        0
+      ) {
+        alert(
+          "No active city tiers are available."
+        );
+        return;
+      }
 
-        modules: planForm.modules.map((moduleKey) => {
-          const module = MODULES.find(
-            (item) => item.key === moduleKey
-          );
+      if (
+        turnoverBands.length ===
+        0
+      ) {
+        alert(
+          "No active turnover bands are available."
+        );
+        return;
+      }
 
-          return {
-            module_key: moduleKey,
-            module_name: module?.name || moduleKey,
-          };
-        }),
+      // -------------------------------------------------------
+      // VALIDATE EVERY PRICE
+      // -------------------------------------------------------
 
-        prices: cityTiers.map((tier) => ({
-          city_tier_id: tier.id,
-          monthly_price: Number(planForm.prices[tier.id]),
-          annual_price:
-            Number(planForm.prices[tier.id]) * 12,
-          currency: "INR",
-        })),
-      };
+      for (
+        const tier of cityTiers
+      ) {
+        for (
+          const band of turnoverBands
+        ) {
+          const key =
+            getPriceKey(
+              tier.id,
+              band.id
+            );
 
-      const url = editingPlan
-        ? `${API_URL}/subscriptions/plans/${editingPlan.id}`
-        : `${API_URL}/subscriptions/plans`;
+          const value =
+            planForm.prices[
+              key
+            ];
 
-      const response = await fetch(url, {
-        method: editingPlan ? "PATCH" : "POST",
-        credentials: "include",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
-      });
+          if (
+            value === "" ||
+            value === null ||
+            value === undefined
+          ) {
+            alert(
+              `Enter pricing for ${tier.name} · ${band.name}.`
+            );
+            return;
+          }
 
-      if (!response.ok) {
-        const data = await response.json().catch(() => ({}));
+          if (
+            Number(value) < 0
+          ) {
+            alert(
+              `Pricing for ${tier.name} · ${band.name} cannot be negative.`
+            );
+            return;
+          }
+        }
+      }
 
-        let message = "Unable to save subscription plan.";
+      try {
+        const payload = {
+          name: planForm.name.trim(),
+          description: planForm.description.trim() || null,
+          main_plan: planForm.main_plan.trim().toUpperCase(),
+          modules: planForm.modules.map((moduleKey) => {
+            const module = MODULES.find(
+              (item) => item.key === moduleKey
+            );
 
-        if (Array.isArray(data.detail)) {
-          message = data.detail
-            .map((error) => {
-              const location = Array.isArray(error.loc)
-                ? error.loc.join(" → ")
-                : "";
+            return {
+              module_key: moduleKey,
+              module_name: module?.name || moduleKey,
+            };
+              }
+            ),
 
-              return `${
-                location ? `${location}: ` : ""
-              }${error.msg || "Invalid value"}`;
-            })
-            .join("\n");
-        } else if (typeof data.detail === "string") {
-          message = data.detail;
-        } else if (data.detail) {
-          message = JSON.stringify(
-            data.detail,
-            null,
-            2
+          prices:
+            cityTiers.flatMap(
+              (tier) =>
+                turnoverBands.map(
+                  (band) => {
+                    const key =
+                      getPriceKey(
+                        tier.id,
+                        band.id
+                      );
+
+                    const monthlyPrice =
+                      Number(
+                        planForm
+                          .prices[
+                          key
+                        ]
+                      );
+
+                    return {
+                      city_tier_id:
+                        Number(
+                          tier.id
+                        ),
+
+                      turnover_band_id:
+                        Number(
+                          band.id
+                        ),
+
+                      monthly_price:
+                        monthlyPrice,
+
+                      annual_price:
+                        monthlyPrice *
+                        12,
+
+                      currency:
+                        "INR",
+                    };
+                  }
+                )
+            ),
+        };
+
+        console.log(
+          "Saving subscription plan:",
+          payload
+        );
+
+        const url =
+          editingPlan
+            ? `${API_URL}/subscriptions/plans/${editingPlan.id}`
+            : `${API_URL}/subscriptions/plans`;
+
+        const response =
+          await fetch(url, {
+            method:
+              editingPlan
+                ? "PATCH"
+                : "POST",
+
+            credentials:
+              "include",
+
+            headers: {
+              "Content-Type":
+                "application/json",
+            },
+
+            body: JSON.stringify(
+              payload
+            ),
+          });
+
+        if (!response.ok) {
+          const data =
+            await response
+              .json()
+              .catch(
+                () => ({})
+              );
+
+          let message =
+            "Unable to save subscription plan.";
+
+          if (
+            Array.isArray(
+              data.detail
+            )
+          ) {
+            message =
+              data.detail
+                .map(
+                  (error) => {
+                    const location =
+                      Array.isArray(
+                        error.loc
+                      )
+                        ? error.loc.join(
+                            " → "
+                          )
+                        : "";
+
+                    return `${
+                      location
+                        ? `${location}: `
+                        : ""
+                    }${
+                      error.msg ||
+                      "Invalid value"
+                    }`;
+                  }
+                )
+                .join("\n");
+          } else if (
+            typeof data.detail ===
+            "string"
+          ) {
+            message =
+              data.detail;
+          } else if (
+            data.detail
+          ) {
+            message =
+              JSON.stringify(
+                data.detail,
+                null,
+                2
+              );
+          }
+
+          throw new Error(
+            message
           );
         }
 
-        throw new Error(message);
-      }
+        closePlanModal();
 
-      closePlanModal();
-      await fetchSubscriptionData();
-    } catch (err) {
-      console.error("Save plan error:", err);
-      alert(
-        err.message ||
-          "Unable to save subscription plan."
-      );
-    }
-  };
+        await fetchSubscriptionData();
+      } catch (err) {
+        console.error(
+          "Save plan error:",
+          err
+        );
+
+        alert(
+          err.message ||
+            "Unable to save subscription plan."
+        );
+      }
+    };
 
   // =========================================================
   // DELETE PLAN
   // =========================================================
 
-  const deletePlan = async (plan) => {
-    const confirmed = window.confirm(
-      `Delete subscription plan "${plan.name}"?`
-    );
+  const deletePlan =
+    async (plan) => {
+      const confirmed =
+        window.confirm(
+          `Delete subscription plan "${plan.name}"?`
+        );
 
-    if (!confirmed) return;
+      if (!confirmed) return;
 
-    try {
-      const response = await fetch(
-        `${API_URL}/subscriptions/plans/${plan.id}`,
-        {
-          method: "DELETE",
-          credentials: "include",
-        }
-      );
+      try {
+        const response =
+          await fetch(
+            `${API_URL}/subscriptions/plans/${plan.id}`,
+            {
+              method:
+                "DELETE",
+              credentials:
+                "include",
+            }
+          );
 
-      if (!response.ok) {
-        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          const data =
+            await response
+              .json()
+              .catch(
+                () => ({})
+              );
 
-        let message =
-          "Unable to delete subscription plan.";
+          let message =
+            "Unable to delete subscription plan.";
 
-        if (Array.isArray(data.detail)) {
-          message = data.detail
-            .map((error) => {
-              const location = Array.isArray(error.loc)
-                ? error.loc.join(" → ")
-                : "";
+          if (
+            Array.isArray(
+              data.detail
+            )
+          ) {
+            message =
+              data.detail
+                .map(
+                  (error) => {
+                    const location =
+                      Array.isArray(
+                        error.loc
+                      )
+                        ? error.loc.join(
+                            " → "
+                          )
+                        : "";
 
-              return `${
-                location ? `${location}: ` : ""
-              }${error.msg || "Invalid value"}`;
-            })
-            .join("\n");
-        } else if (typeof data.detail === "string") {
-          message = data.detail;
-        } else if (data.detail) {
-          message = JSON.stringify(
-            data.detail,
-            null,
-            2
+                    return `${
+                      location
+                        ? `${location}: `
+                        : ""
+                    }${
+                      error.msg ||
+                      "Invalid value"
+                    }`;
+                  }
+                )
+                .join("\n");
+          } else if (
+            typeof data.detail ===
+            "string"
+          ) {
+            message =
+              data.detail;
+          } else if (
+            data.detail
+          ) {
+            message =
+              JSON.stringify(
+                data.detail,
+                null,
+                2
+              );
+          }
+
+          throw new Error(
+            message
           );
         }
 
-        throw new Error(message);
-      }
+        await fetchSubscriptionData();
+      } catch (err) {
+        console.error(
+          "Delete plan error:",
+          err
+        );
 
-      await fetchSubscriptionData();
-    } catch (err) {
-      console.error("Delete plan error:", err);
-      alert(
-        err.message ||
-          "Unable to delete subscription plan."
-      );
-    }
-  };
+        alert(
+          err.message ||
+            "Unable to delete subscription plan."
+        );
+      }
+    };
 
   // =========================================================
   // CITY TIER MODAL
   // =========================================================
 
-  const openCreateTier = () => {
-    setEditingTier(null);
+  const openCreateTier =
+    () => {
+      setEditingTier(null);
 
-    setTierForm({
-      name: "",
-      description: "",
-    });
+      setTierForm({
+        name: "",
+        description: "",
+      });
 
-    setShowTierModal(true);
-  };
+      setShowTierModal(true);
+    };
 
-  const openEditTier = (tier) => {
-    setEditingTier(tier);
+  const openEditTier =
+    (tier) => {
+      setEditingTier(tier);
 
-    setTierForm({
-      name: tier.name || "",
-      description: tier.description || "",
-    });
+      setTierForm({
+        name:
+          tier.name || "",
+        description:
+          tier.description ||
+          "",
+      });
 
-    setShowTierModal(true);
-  };
+      setShowTierModal(true);
+    };
 
-  const closeTierModal = () => {
-    setShowTierModal(false);
-    setEditingTier(null);
-  };
+  const closeTierModal =
+    () => {
+      setShowTierModal(false);
+      setEditingTier(null);
+    };
 
   // =========================================================
   // SAVE TIER
   // =========================================================
 
-  const saveTier = async () => {
-    if (!tierForm.name.trim()) {
-      alert("City tier name is required.");
-      return;
-    }
+  const saveTier =
+    async () => {
+      if (
+        !tierForm.name.trim()
+      ) {
+        alert(
+          "City tier name is required."
+        );
+        return;
+      }
 
-    try {
-      const url = editingTier
-        ? `${API_URL}/subscriptions/city-tiers/${editingTier.id}`
-        : `${API_URL}/subscriptions/city-tiers`;
+      try {
+        const url =
+          editingTier
+            ? `${API_URL}/subscriptions/city-tiers/${editingTier.id}`
+            : `${API_URL}/subscriptions/city-tiers`;
 
-      const response = await fetch(url, {
-        method: editingTier ? "PUT" : "POST",
-        credentials: "include",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          name: tierForm.name.trim(),
-          description:
-            tierForm.description.trim() || null,
-        }),
-      });
+        const response =
+          await fetch(url, {
+            method:
+              editingTier
+                ? "PATCH"
+                : "POST",
 
-      if (!response.ok) {
-        const data = await response.json().catch(() => ({}));
+            credentials:
+              "include",
 
-        let message = "Unable to save city tier.";
+            headers: {
+              "Content-Type":
+                "application/json",
+            },
 
-        if (Array.isArray(data.detail)) {
-          message = data.detail
-            .map((error) => {
-              const location = Array.isArray(error.loc)
-                ? error.loc.join(" → ")
-                : "";
+            body: JSON.stringify({
+              name:
+                tierForm.name.trim(),
 
-              return `${
-                location ? `${location}: ` : ""
-              }${error.msg || "Invalid value"}`;
-            })
-            .join("\n");
-        } else if (typeof data.detail === "string") {
-          message = data.detail;
-        } else if (data.detail) {
-          message = JSON.stringify(
-            data.detail,
-            null,
-            2
+              description:
+                tierForm.description.trim() ||
+                null,
+            }),
+          });
+
+        if (!response.ok) {
+          const data =
+            await response
+              .json()
+              .catch(
+                () => ({})
+              );
+
+          let message =
+            "Unable to save city tier.";
+
+          if (
+            Array.isArray(
+              data.detail
+            )
+          ) {
+            message =
+              data.detail
+                .map(
+                  (error) => {
+                    const location =
+                      Array.isArray(
+                        error.loc
+                      )
+                        ? error.loc.join(
+                            " → "
+                          )
+                        : "";
+
+                    return `${
+                      location
+                        ? `${location}: `
+                        : ""
+                    }${
+                      error.msg ||
+                      "Invalid value"
+                    }`;
+                  }
+                )
+                .join("\n");
+          } else if (
+            typeof data.detail ===
+            "string"
+          ) {
+            message =
+              data.detail;
+          } else if (
+            data.detail
+          ) {
+            message =
+              JSON.stringify(
+                data.detail,
+                null,
+                2
+              );
+          }
+
+          throw new Error(
+            message
           );
         }
 
-        throw new Error(message);
-      }
+        closeTierModal();
 
-      closeTierModal();
-      await fetchSubscriptionData();
-    } catch (err) {
-      console.error("Save tier error:", err);
-      alert(
-        err.message || "Unable to save city tier."
-      );
-    }
-  };
+        await fetchSubscriptionData();
+      } catch (err) {
+        console.error(
+          "Save tier error:",
+          err
+        );
+
+        alert(
+          err.message ||
+            "Unable to save city tier."
+        );
+      }
+    };
 
   // =========================================================
   // UI
@@ -800,71 +1328,99 @@ export default function SubscriptionsPage() {
 
   return (
     <div className="flex h-full w-full flex-col overflow-hidden bg-slate-50/60">
+
       {/* =====================================================
           HEADER
       ===================================================== */}
 
       <header className="shrink-0 border-b border-slate-200/70 bg-white">
+
         <div className="flex min-h-[72px] items-center justify-between gap-4 px-4 sm:px-6">
+
           <div className="min-w-0">
+
             <div className="flex items-center gap-2">
+
               <Layers
                 size={18}
                 strokeWidth={2.3}
-                style={{ color: GOLD }}
+                style={{
+                  color: GOLD,
+                }}
               />
 
               <h1 className="truncate text-lg font-semibold tracking-tight text-slate-900">
                 Subscriptions
               </h1>
+
             </div>
 
             <p className="mt-0.5 text-xs text-slate-500">
-              Manage subscription plans, modules and
-              city-tier pricing.
+              Manage subscription plans,
+              modules and city-tier pricing.
             </p>
+
           </div>
 
           <div className="flex shrink-0 items-center gap-2">
+
             <button
               type="button"
-              onClick={fetchSubscriptionData}
+              onClick={
+                fetchSubscriptionData
+              }
               className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-50 hover:text-slate-900"
               title="Refresh"
             >
               <RefreshCw size={15} />
             </button>
 
-            {activeSection === "plans" && (
+            {activeSection ===
+              "plans" && (
               <button
                 type="button"
-                onClick={openCreatePlan}
+                onClick={
+                  openCreatePlan
+                }
                 className="flex items-center gap-2 rounded-lg px-3.5 py-2.5 text-xs font-semibold text-white shadow-sm transition hover:opacity-90"
-                style={{ backgroundColor: GOLD }}
+                style={{
+                  backgroundColor:
+                    GOLD,
+                }}
               >
                 <Plus
                   size={15}
                   strokeWidth={2.5}
                 />
+
                 New Plan
               </button>
             )}
 
-            {activeSection === "tiers" && (
+            {activeSection ===
+              "tiers" && (
               <button
                 type="button"
-                onClick={openCreateTier}
+                onClick={
+                  openCreateTier
+                }
                 className="flex items-center gap-2 rounded-lg px-3.5 py-2.5 text-xs font-semibold text-white shadow-sm transition hover:opacity-90"
-                style={{ backgroundColor: GOLD }}
+                style={{
+                  backgroundColor:
+                    GOLD,
+                }}
               >
                 <Plus
                   size={15}
                   strokeWidth={2.5}
                 />
+
                 New City Tier
               </button>
             )}
+
           </div>
+
         </div>
 
         {/* ===================================================
@@ -872,42 +1428,65 @@ export default function SubscriptionsPage() {
         =================================================== */}
 
         <div className="flex gap-1 overflow-x-auto px-4 sm:px-6">
+
           <button
             type="button"
-            onClick={() => setActiveSection("plans")}
+            onClick={() =>
+              setActiveSection(
+                "plans"
+              )
+            }
             className={`relative flex items-center gap-2 border-b-2 px-3 py-3 text-xs font-semibold transition ${
-              activeSection === "plans"
+              activeSection ===
+              "plans"
                 ? "text-slate-900"
                 : "border-transparent text-slate-400 hover:text-slate-700"
             }`}
             style={
-              activeSection === "plans"
-                ? { borderColor: GOLD }
+              activeSection ===
+              "plans"
+                ? {
+                    borderColor:
+                      GOLD,
+                  }
                 : undefined
             }
           >
             <Package size={14} />
+
             Subscription Plans
           </button>
 
           <button
             type="button"
-            onClick={() => setActiveSection("tiers")}
+            onClick={() =>
+              setActiveSection(
+                "tiers"
+              )
+            }
             className={`relative flex items-center gap-2 border-b-2 px-3 py-3 text-xs font-semibold transition ${
-              activeSection === "tiers"
+              activeSection ===
+              "tiers"
                 ? "text-slate-900"
                 : "border-transparent text-slate-400 hover:text-slate-700"
             }`}
             style={
-              activeSection === "tiers"
-                ? { borderColor: GOLD }
+              activeSection ===
+              "tiers"
+                ? {
+                    borderColor:
+                      GOLD,
+                  }
                 : undefined
             }
           >
             <MapPinned size={14} />
+
             City Tiers
           </button>
+
         </div>
+
       </header>
 
       {/* =====================================================
@@ -917,33 +1496,73 @@ export default function SubscriptionsPage() {
       <main
         className={`min-h-0 flex-1 overflow-y-auto ${noScroll}`}
       >
+
         <div className="mx-auto max-w-[1500px] p-4 sm:p-5 lg:p-6">
+
+          {error && (
+            <div className="mb-5 flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3">
+
+              <AlertCircle
+                size={16}
+                className="mt-0.5 shrink-0 text-red-500"
+              />
+
+              <div>
+
+                <p className="text-xs font-semibold text-red-700">
+                  Subscription configuration
+                  failed
+                </p>
+
+                <p className="mt-1 text-[11px] leading-5 text-red-600">
+                  {error}
+                </p>
+
+              </div>
+
+            </div>
+          )}
+
           {loading ? (
             <div className="flex min-h-[400px] items-center justify-center">
+
               <div className="flex flex-col items-center">
+
                 <div className="h-8 w-8 animate-spin rounded-full border-4 border-slate-200 border-t-[#c59b27]" />
 
                 <p className="mt-3 text-xs font-medium text-slate-500">
                   Loading subscriptions...
                 </p>
+
               </div>
+
             </div>
-          ) : activeSection === "plans" ? (
+          ) : activeSection ===
+            "plans" ? (
+
             <>
+
               {/* =============================================
                   PLAN TYPE SWITCH
               ============================================== */}
 
-              <div className={`${card} mb-5 p-1.5`}>
+              <div
+                className={`${card} mb-5 p-1.5`}
+              >
+
                 <div className="grid grid-cols-2 gap-1">
+
                   <button
                     type="button"
                     onClick={() => {
-                      setActivePlanType("BASIC");
+                      setActivePlanType(
+                        "BASIC"
+                      );
                       setSearch("");
                     }}
                     className={`rounded-xl px-4 py-3 text-sm font-semibold transition ${
-                      activePlanType === "BASIC"
+                      activePlanType ===
+                      "BASIC"
                         ? "bg-slate-900 text-white shadow-sm"
                         : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
                     }`}
@@ -952,23 +1571,28 @@ export default function SubscriptionsPage() {
 
                     <span
                       className={`ml-2 text-[10px] ${
-                        activePlanType === "BASIC"
+                        activePlanType ===
+                        "BASIC"
                           ? "text-slate-300"
                           : "text-slate-400"
                       }`}
                     >
                       Standard
                     </span>
+
                   </button>
 
                   <button
                     type="button"
                     onClick={() => {
-                      setActivePlanType("PRO");
+                      setActivePlanType(
+                        "PRO"
+                      );
                       setSearch("");
                     }}
                     className={`rounded-xl px-4 py-3 text-sm font-semibold transition ${
-                      activePlanType === "PRO"
+                      activePlanType ===
+                      "PRO"
                         ? "bg-slate-900 text-white shadow-sm"
                         : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
                     }`}
@@ -977,15 +1601,19 @@ export default function SubscriptionsPage() {
 
                     <span
                       className={`ml-2 text-[10px] ${
-                        activePlanType === "PRO"
+                        activePlanType ===
+                        "PRO"
                           ? "text-slate-300"
                           : "text-slate-400"
                       }`}
                     >
                       Advanced
                     </span>
+
                   </button>
+
                 </div>
+
               </div>
 
               {/* =============================================
@@ -993,7 +1621,9 @@ export default function SubscriptionsPage() {
               ============================================== */}
 
               <div className="mb-5 flex items-center justify-between gap-3">
+
                 <div className="relative max-w-sm flex-1">
+
                   <Search
                     size={15}
                     className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
@@ -1002,34 +1632,45 @@ export default function SubscriptionsPage() {
                   <input
                     value={search}
                     onChange={(event) =>
-                      setSearch(event.target.value)
+                      setSearch(
+                        event.target
+                          .value
+                      )
                     }
                     placeholder={`Search ${activePlanType} plans...`}
                     className="h-10 w-full rounded-xl border border-slate-200 bg-white pl-9 pr-3 text-xs text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-300 focus:ring-2 focus:ring-slate-100"
                   />
+
                 </div>
 
                 <span className="text-xs font-medium text-slate-400">
                   {filteredPlans.length}{" "}
-                  {filteredPlans.length === 1
+                  {filteredPlans.length ===
+                  1
                     ? "plan"
                     : "plans"}
                 </span>
+
               </div>
 
               {/* =============================================
                   PLAN LIST
               ============================================== */}
 
-              {filteredPlans.length === 0 ? (
+              {filteredPlans.length ===
+              0 ? (
+
                 <div
                   className={`${card} flex min-h-[360px] items-center justify-center`}
                 >
+
                   <div className="max-w-sm text-center">
+
                     <div
                       className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl"
                       style={{
-                        backgroundColor: `${GOLD}12`,
+                        backgroundColor:
+                          `${GOLD}12`,
                         color: GOLD,
                       }}
                     >
@@ -1037,153 +1678,240 @@ export default function SubscriptionsPage() {
                     </div>
 
                     <h2 className="mt-4 text-sm font-semibold text-slate-900">
-                      No {activePlanType} plans yet
+                      No {activePlanType}{" "}
+                      plans yet
                     </h2>
 
                     <p className="mt-1.5 text-xs leading-5 text-slate-500">
-                      Create a subscription plan, choose
-                      its modules and set pricing
-                      independently for each city tier.
+                      Create a subscription
+                      plan, choose its
+                      modules and set
+                      pricing independently
+                      for each city tier.
                     </p>
 
                     <button
                       type="button"
-                      onClick={openCreatePlan}
+                      onClick={
+                        openCreatePlan
+                      }
                       className="mt-5 inline-flex items-center gap-2 rounded-lg px-4 py-2.5 text-xs font-semibold text-white"
                       style={{
-                        backgroundColor: GOLD,
+                        backgroundColor:
+                          GOLD,
                       }}
                     >
                       <Plus size={14} />
-                      Create {activePlanType} Plan
+
+                      Create{" "}
+                      {activePlanType}{" "}
+                      Plan
                     </button>
+
                   </div>
+
                 </div>
+
               ) : (
+
                 <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-                  {filteredPlans.map((plan) => (
-                    <PlanCard
-                      key={plan.id}
-                      plan={plan}
-                      cityTiers={cityTiers}
-                      onEdit={() =>
-                        openEditPlan(plan)
-                      }
-                      onDelete={() =>
-                        deletePlan(plan)
-                      }
-                    />
-                  ))}
+
+                  {filteredPlans.map(
+                    (plan) => (
+                      <PlanCard
+                        key={
+                          plan.id
+                        }
+                        plan={plan}
+                        cityTiers={
+                          cityTiers
+                        }
+                        turnoverBands={
+                          turnoverBands
+                        }
+                        onEdit={() =>
+                          openEditPlan(
+                            plan
+                          )
+                        }
+                        onDelete={() =>
+                          deletePlan(
+                            plan
+                          )
+                        }
+                      />
+                    )
+                  )}
+
                 </div>
+
               )}
+
             </>
+
           ) : (
+
             /* ===============================================
                CITY TIERS
             ================================================ */
 
             <div className="space-y-4">
+
               <div
                 className={`${card} overflow-hidden`}
               >
+
                 <div className="border-b border-slate-100 px-5 py-4">
+
                   <h2 className="text-sm font-semibold text-slate-900">
                     City Tiers
                   </h2>
 
                   <p className="mt-1 text-xs text-slate-500">
-                    Pricing is determined by the
-                    client's city tier.
+                    Pricing is determined by
+                    the client's city tier.
                   </p>
+
                 </div>
 
                 <div className="divide-y divide-slate-100">
-                  {cityTiers.map((tier) => (
-                    <div
-                      key={tier.id}
-                      className="flex items-center justify-between gap-4 px-5 py-4 transition hover:bg-slate-50/60"
-                    >
-                      <div className="flex min-w-0 items-center gap-3">
-                        <div
-                          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl"
-                          style={{
-                            backgroundColor: `${GOLD}12`,
-                            color: GOLD,
-                          }}
-                        >
-                          <MapPinned size={16} />
+
+                  {cityTiers.map(
+                    (tier) => (
+                      <div
+                        key={
+                          tier.id
+                        }
+                        className="flex items-center justify-between gap-4 px-5 py-4 transition hover:bg-slate-50/60"
+                      >
+
+                        <div className="flex min-w-0 items-center gap-3">
+
+                          <div
+                            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl"
+                            style={{
+                              backgroundColor:
+                                `${GOLD}12`,
+                              color: GOLD,
+                            }}
+                          >
+                            <MapPinned
+                              size={16}
+                            />
+                          </div>
+
+                          <div className="min-w-0">
+
+                            <p className="text-sm font-semibold text-slate-900">
+                              {tier.name}
+                            </p>
+
+                            <p className="mt-0.5 truncate text-xs text-slate-500">
+                              {tier.description ||
+                                "No description"}
+                            </p>
+
+                          </div>
+
                         </div>
 
-                        <div className="min-w-0">
-                          <p className="text-sm font-semibold text-slate-900">
-                            {tier.name}
-                          </p>
+                        <div className="flex items-center gap-2">
 
-                          <p className="mt-0.5 truncate text-xs text-slate-500">
-                            {tier.description ||
-                              "No description"}
-                          </p>
+                          <span
+                            className={`rounded-full px-2 py-1 text-[10px] font-semibold ${
+                              tier.is_active
+                                ? "bg-emerald-50 text-emerald-600"
+                                : "bg-slate-100 text-slate-400"
+                            }`}
+                          >
+                            {tier.is_active
+                              ? "ACTIVE"
+                              : "INACTIVE"}
+                          </span>
+
+                          <button
+                            type="button"
+                            onClick={() =>
+                              openEditTier(
+                                tier
+                              )
+                            }
+                            className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-white hover:text-slate-900"
+                          >
+                            <Pencil size={14} />
+                          </button>
+
                         </div>
-                      </div>
 
-                      <div className="flex items-center gap-2">
-                        <span
-                          className={`rounded-full px-2 py-1 text-[10px] font-semibold ${
-                            tier.is_active
-                              ? "bg-emerald-50 text-emerald-600"
-                              : "bg-slate-100 text-slate-400"
-                          }`}
-                        >
-                          {tier.is_active
-                            ? "ACTIVE"
-                            : "INACTIVE"}
-                        </span>
-
-                        <button
-                          type="button"
-                          onClick={() =>
-                            openEditTier(tier)
-                          }
-                          className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-white hover:text-slate-900"
-                        >
-                          <Pencil size={14} />
-                        </button>
                       </div>
+                    )
+                  )}
+
+                  {cityTiers.length ===
+                    0 && (
+                    <div className="px-5 py-12 text-center">
+
+                      <MapPinned
+                        size={22}
+                        className="mx-auto text-slate-300"
+                      />
+
+                      <p className="mt-3 text-xs font-semibold text-slate-500">
+                        No city tiers
+                        configured.
+                      </p>
+
                     </div>
-                  ))}
+                  )}
+
                 </div>
+
               </div>
 
-              <div className={`${card} p-5`}>
+              <div
+                className={`${card} p-5`}
+              >
+
                 <div className="flex gap-3">
+
                   <div
                     className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl"
                     style={{
-                      backgroundColor: `${GOLD}12`,
+                      backgroundColor:
+                        `${GOLD}12`,
                       color: GOLD,
                     }}
                   >
-                    <AlertCircle size={16} />
+                    <AlertCircle
+                      size={16}
+                    />
                   </div>
 
                   <div>
+
                     <h3 className="text-xs font-semibold text-slate-900">
                       How tier pricing works
                     </h3>
 
                     <p className="mt-1 text-xs leading-5 text-slate-500">
-                      The same subscription plan can have
-                      completely different pricing for
-                      Tier 1, Tier 2 and Tier 3. This allows
-                      Abhinava to price the same software
-                      according to the client's market.
+                      The same subscription
+                      plan can have completely
+                      different pricing for Tier
+                      1, Tier 2, Tier 3 and other
+                      configured city tiers.
                     </p>
+
                   </div>
+
                 </div>
+
               </div>
+
             </div>
           )}
+
         </div>
+
       </main>
 
       {/* =====================================================
@@ -1198,47 +1926,62 @@ export default function SubscriptionsPage() {
               : "Create Subscription Plan"
           }
           subtitle={`Configure a ${planForm.main_plan} subscription`}
-          onClose={closePlanModal}
+          onClose={
+            closePlanModal
+          }
           wide
         >
+
           <div className="space-y-6">
+
             {/* =================================================
                 PLAN DETAILS
             ================================================= */}
 
             <section>
+
               <SectionLabel>
                 Plan Details
               </SectionLabel>
 
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+
                 <Field
                   label="Subscription Name"
                   required
-                  value={planForm.name}
+                  value={
+                    planForm.name
+                  }
                   onChange={(value) =>
-                    setPlanForm((current) => ({
-                      ...current,
-                      name: value,
-                    }))
+                    setPlanForm(
+                      (current) => ({
+                        ...current,
+                        name: value,
+                      })
+                    )
                   }
                   placeholder="e.g. Abhinava_Inventory"
                 />
 
                 <div>
+
                   <label className="mb-1.5 block text-[11px] font-semibold text-slate-600">
                     Main Plan
                   </label>
 
                   <select
-                    value={planForm.main_plan}
+                    value={
+                      planForm.main_plan
+                    }
                     onChange={(event) =>
                       changeMainPlan(
-                        event.target.value
+                        event.target
+                          .value
                       )
                     }
                     className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-xs text-slate-900 outline-none focus:border-slate-300 focus:ring-2 focus:ring-slate-100"
                   >
+
                     <option value="BASIC">
                       Basic
                     </option>
@@ -1246,29 +1989,40 @@ export default function SubscriptionsPage() {
                     <option value="PRO">
                       Pro
                     </option>
+
                   </select>
+
                 </div>
 
                 <div className="sm:col-span-2">
+
                   <label className="mb-1.5 block text-[11px] font-semibold text-slate-600">
                     Description
                   </label>
 
                   <textarea
-                    value={planForm.description}
+                    value={
+                      planForm.description
+                    }
                     onChange={(event) =>
-                      setPlanForm((current) => ({
-                        ...current,
-                        description:
-                          event.target.value,
-                      }))
+                      setPlanForm(
+                        (current) => ({
+                          ...current,
+                          description:
+                            event.target
+                              .value,
+                        })
+                      )
                     }
                     rows={2}
                     placeholder="Describe what this subscription is intended for..."
                     className="w-full resize-none rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-xs text-slate-900 outline-none focus:border-slate-300 focus:ring-2 focus:ring-slate-100"
                   />
+
                 </div>
+
               </div>
+
             </section>
 
             {/* =================================================
@@ -1276,15 +2030,25 @@ export default function SubscriptionsPage() {
             ================================================= */}
 
             <section>
+
               <div className="mb-3 flex items-center justify-between gap-3">
+
                 <SectionLabel>
                   Included Modules
+
                   <span className="ml-2 font-normal text-slate-400">
-                    ({planForm.modules.length} selected)
+                    (
+                    {
+                      planForm
+                        .modules
+                        .length
+                    }{" "}
+                    selected)
                   </span>
                 </SectionLabel>
 
                 <div className="flex items-center gap-3 text-[10px] text-slate-400">
+
                   <span className="inline-flex items-center gap-1">
                     <Lock size={10} />
                     Restricted
@@ -1293,19 +2057,26 @@ export default function SubscriptionsPage() {
                   <span className="inline-flex items-center gap-1">
                     <Sparkles
                       size={10}
-                      style={{ color: GOLD }}
+                      style={{
+                        color: GOLD,
+                      }}
                     />
                     Automatic
                   </span>
+
                 </div>
+
               </div>
 
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+
                 {MODULES.filter(
                   (module) =>
-                    planForm.main_plan === "PRO" ||
+                    planForm.main_plan ===
+                      "PRO" ||
                     !module.proOnly
                 ).map((module) => {
+
                   const selected =
                     planForm.modules.includes(
                       module.key
@@ -1323,11 +2094,17 @@ export default function SubscriptionsPage() {
 
                   return (
                     <button
-                      key={module.key}
+                      key={
+                        module.key
+                      }
                       type="button"
-                      disabled={disabled}
+                      disabled={
+                        disabled
+                      }
                       onClick={() =>
-                        toggleModule(module.key)
+                        toggleModule(
+                          module.key
+                        )
                       }
                       className={`group relative flex items-start gap-3 rounded-xl border p-3 text-left transition ${
                         selected
@@ -1337,6 +2114,7 @@ export default function SubscriptionsPage() {
                           : "border-slate-100 bg-white hover:border-slate-200 hover:bg-slate-50/50"
                       }`}
                     >
+
                       {/* CHECK / LOCK ICON */}
 
                       <span
@@ -1348,25 +2126,35 @@ export default function SubscriptionsPage() {
                             : "border-slate-300 bg-white text-transparent"
                         }`}
                       >
+
                         {selected ? (
                           <Check
                             size={12}
-                            strokeWidth={3}
+                            strokeWidth={
+                              3
+                            }
                           />
                         ) : disabled ? (
-                          <Lock size={10} />
+                          <Lock
+                            size={10}
+                          />
                         ) : (
                           <Check
                             size={12}
-                            strokeWidth={3}
+                            strokeWidth={
+                              3
+                            }
                           />
                         )}
+
                       </span>
 
                       {/* MODULE CONTENT */}
 
                       <span className="min-w-0 flex-1">
+
                         <span className="flex flex-wrap items-center gap-1.5">
+
                           <span
                             className={`block text-xs font-semibold ${
                               disabled
@@ -1374,28 +2162,36 @@ export default function SubscriptionsPage() {
                                 : "text-slate-900"
                             }`}
                           >
-                            {module.name}
+                            {
+                              module.name
+                            }
                           </span>
 
                           {module.proOnly && (
                             <span
                               className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[8px] font-bold"
                               style={{
-                                backgroundColor: `${GOLD}14`,
+                                backgroundColor:
+                                  `${GOLD}14`,
                                 color: GOLD,
                               }}
                             >
-                              <Sparkles size={8} />
+                              <Sparkles
+                                size={
+                                  8
+                                }
+                              />
                               PRO
                             </span>
                           )}
+
                         </span>
 
                         <span className="mt-0.5 block text-[10px] leading-4 text-slate-500">
-                          {module.description}
+                          {
+                            module.description
+                          }
                         </span>
-
-                        {/* RESTRICTION / AUTOMATIC MESSAGE */}
 
                         {moduleState.reason && (
                           <span
@@ -1405,58 +2201,75 @@ export default function SubscriptionsPage() {
                                 : "text-slate-400"
                             }`}
                           >
+
                             {moduleState.automatic ? (
                               <Sparkles
                                 size={9}
                                 style={{
-                                  color: GOLD,
+                                  color:
+                                    GOLD,
                                 }}
                               />
                             ) : (
-                              <Lock size={9} />
+                              <Lock
+                                size={9}
+                              />
                             )}
 
-                            {moduleState.reason}
+                            {
+                              moduleState.reason
+                            }
+
                           </span>
                         )}
+
                       </span>
+
                     </button>
                   );
                 })}
+
               </div>
 
-              {/* MODULE RULE INFORMATION */}
-
               <div className="mt-3 rounded-xl border border-slate-100 bg-slate-50/60 px-3.5 py-3">
+
                 <div className="flex gap-2.5">
+
                   <AlertCircle
                     size={14}
                     className="mt-0.5 shrink-0 text-slate-400"
                   />
 
                   <div className="text-[10px] leading-4 text-slate-500">
+
                     <p className="font-semibold text-slate-600">
                       Module dependencies
                     </p>
 
                     <p className="mt-0.5">
-                      Customer Directory and WhatsApp
-                      cannot be offered independently.
-                      Stock automatically includes
-                      Customer Directory and Sales &
-                      Invoicing. Investments automatically
+                      Customer Directory and
+                      WhatsApp cannot be offered
+                      independently. Stock
+                      automatically includes Customer
+                      Directory and Sales & Invoicing.
+                      Investments automatically
                       includes Customer Directory.
                     </p>
 
-                    {planForm.main_plan === "BASIC" && (
+                    {planForm.main_plan ===
+                      "BASIC" && (
                       <p className="mt-1 font-medium text-slate-500">
-                        Reports & ML Analytics is available
-                        only with Pro.
+                        Reports & ML Analytics is
+                        available only with Pro.
                       </p>
                     )}
+
                   </div>
+
                 </div>
+
               </div>
+
             </section>
 
             {/* =================================================
@@ -1464,86 +2277,266 @@ export default function SubscriptionsPage() {
             ================================================= */}
 
             <section>
+
               <SectionLabel>
-                City Tier Pricing
+                City Tier × Turnover Pricing
+
                 <span className="ml-2 font-normal text-slate-400">
                   Monthly / Annual
                 </span>
               </SectionLabel>
 
-              <div className="overflow-hidden rounded-xl border border-slate-200">
-                <div className="grid grid-cols-[1fr_160px_160px] border-b border-slate-100 bg-slate-50 px-4 py-2.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">
-                  <span>City Tier</span>
-                  <span>Monthly</span>
-                  <span>Annual</span>
+              <div className="mb-3 flex flex-wrap gap-2">
+
+                <div className="rounded-lg bg-slate-50 px-3 py-2 text-[10px] font-medium text-slate-500">
+                  City Tiers:{" "}
+                  <span className="font-bold text-slate-700">
+                    {cityTiers.length}
+                  </span>
                 </div>
 
-                {cityTiers.map((tier) => {
-                  const monthly = Number(
-                    planForm.prices[tier.id] || 0
-                  );
+                <div className="rounded-lg bg-slate-50 px-3 py-2 text-[10px] font-medium text-slate-500">
+                  Turnover Bands:{" "}
+                  <span className="font-bold text-slate-700">
+                    {
+                      turnoverBands.length
+                    }
+                  </span>
+                </div>
 
-                  const annual = monthly * 12;
+                <div className="rounded-lg bg-slate-50 px-3 py-2 text-[10px] font-medium text-slate-500">
+                  Pricing Cells:{" "}
+                  <span className="font-bold text-slate-700">
+                    {cityTiers.length *
+                      turnoverBands.length}
+                  </span>
+                </div>
 
-                  return (
-                    <div
-                      key={tier.id}
-                      className="grid grid-cols-[1fr_160px_160px] items-center border-b border-slate-100 px-4 py-3 last:border-0"
-                    >
-                      <div>
-                        <p className="text-xs font-semibold text-slate-900">
-                          {tier.name}
-                        </p>
-
-                        <p className="mt-0.5 text-[10px] text-slate-400">
-                          Price for this market
-                        </p>
-                      </div>
-
-                      <div className="relative pr-3">
-                        <IndianRupee
-                          size={12}
-                          className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
-                        />
-
-                        <input
-                          type="number"
-                          min="0"
-                          value={
-                            planForm.prices[
-                              tier.id
-                            ]
-                          }
-                          onChange={(event) =>
-                            updateTierPrice(
-                              tier.id,
-                              event.target.value
-                            )
-                          }
-                          className="h-9 w-full rounded-lg border border-slate-200 pl-7 pr-2 text-xs font-medium text-slate-900 outline-none focus:border-slate-300 focus:ring-2 focus:ring-slate-100"
-                          placeholder="0"
-                        />
-                      </div>
-
-                      <div className="pl-1">
-                        <div className="flex h-9 items-center rounded-lg bg-slate-50 px-3 text-xs font-semibold text-slate-700">
-                          ₹
-                          {annual.toLocaleString(
-                            "en-IN"
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
               </div>
 
+              {cityTiers.length ===
+              0 ? (
+
+                <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center">
+
+                  <MapPinned
+                    size={22}
+                    className="mx-auto text-slate-300"
+                  />
+
+                  <p className="mt-3 text-xs font-semibold text-slate-500">
+                    No city tiers available.
+                  </p>
+
+                  <p className="mt-1 text-[10px] text-slate-400">
+                    Create an active city tier
+                    first.
+                  </p>
+
+                </div>
+
+              ) : turnoverBands.length ===
+                0 ? (
+
+                <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center">
+
+                  <IndianRupee
+                    size={22}
+                    className="mx-auto text-slate-300"
+                  />
+
+                  <p className="mt-3 text-xs font-semibold text-slate-500">
+                    No turnover bands available.
+                  </p>
+
+                  <p className="mt-1 text-[10px] text-slate-400">
+                    Create an active turnover
+                    band first.
+                  </p>
+
+                </div>
+
+              ) : (
+
+                <div className="overflow-hidden rounded-xl border border-slate-200">
+
+                  {/* HEADER */}
+
+                  <div className="grid grid-cols-[1.2fr_1.2fr_180px_180px] border-b border-slate-100 bg-slate-50 px-4 py-3 text-[9px] font-bold uppercase tracking-widest text-slate-400">
+
+                    <span>
+                      City Tier
+                    </span>
+
+                    <span>
+                      Turnover Band
+                    </span>
+
+                    <span>
+                      Monthly
+                    </span>
+
+                    <span>
+                      Annual
+                    </span>
+
+                  </div>
+
+                  {/* PRICING ROWS */}
+
+                  {cityTiers.map(
+                    (tier) =>
+                      turnoverBands.map(
+                        (band) => {
+
+                          const key =
+                            getPriceKey(
+                              tier.id,
+                              band.id
+                            );
+
+                          const monthly =
+                            Number(
+                              planForm
+                                .prices[
+                                key
+                              ] || 0
+                            );
+
+                          const annual =
+                            monthly * 12;
+
+                          return (
+                            <div
+                              key={
+                                key
+                              }
+                              className="grid grid-cols-[1.2fr_1.2fr_180px_180px] items-center border-b border-slate-100 px-4 py-3 last:border-0"
+                            >
+
+                              {/* CITY TIER */}
+
+                              <div>
+
+                                <p className="text-xs font-semibold text-slate-900">
+                                  {
+                                    tier.name
+                                  }
+                                </p>
+
+                                <p className="mt-0.5 text-[9px] text-slate-400">
+                                  Tier #
+                                  {
+                                    tier.id
+                                  }
+                                </p>
+
+                              </div>
+
+                              {/* TURNOVER BAND */}
+
+                              <div>
+
+                                <p className="text-xs font-semibold text-slate-700">
+                                  {
+                                    band.name
+                                  }
+                                </p>
+
+                                <p className="mt-0.5 text-[9px] text-slate-400">
+
+                                  ₹
+                                  {Number(
+                                    band.min_turnover ||
+                                      0
+                                  ).toLocaleString(
+                                    "en-IN"
+                                  )}
+
+                                  {" – "}
+
+                                  {band.max_turnover ==
+                                  null
+                                    ? "No limit"
+                                    : `₹${Number(
+                                        band.max_turnover
+                                      ).toLocaleString(
+                                        "en-IN"
+                                      )}`}
+
+                                </p>
+
+                              </div>
+
+                              {/* MONTHLY INPUT */}
+
+                              <div className="relative pr-4">
+
+                                <IndianRupee
+                                  size={12}
+                                  className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+                                />
+
+                                <input
+                                  type="number"
+                                  min="0"
+                                  step="0.01"
+                                  value={
+                                    planForm
+                                      .prices[
+                                      key
+                                    ] ??
+                                    ""
+                                  }
+                                  onChange={(
+                                    event
+                                  ) =>
+                                    updateTierPrice(
+                                      tier.id,
+                                      band.id,
+                                      event
+                                        .target
+                                        .value
+                                    )
+                                  }
+                                  placeholder="0"
+                                  className="h-9 w-full rounded-lg border border-slate-200 bg-white pl-7 pr-2 text-xs font-medium text-slate-900 outline-none transition focus:border-slate-300 focus:ring-2 focus:ring-slate-100"
+                                />
+
+                              </div>
+
+                              {/* ANNUAL */}
+
+                              <div>
+
+                                <div className="flex h-9 items-center rounded-lg bg-slate-50 px-3 text-xs font-semibold text-slate-700">
+
+                                  ₹
+                                  {annual.toLocaleString(
+                                    "en-IN"
+                                  )}
+
+                                </div>
+
+                              </div>
+
+                            </div>
+                          );
+                        }
+                      )
+                  )}
+
+                </div>
+
+              )}
+
               <p className="mt-2 text-[10px] text-slate-400">
+                Pricing is configured independently
+                for each city tier and turnover band.
                 Annual pricing is currently calculated
-                as 12 × monthly pricing. We can later
-                support independent annual pricing and
-                annual discounts.
+                as 12 × monthly pricing.
               </p>
+
             </section>
 
             {/* =================================================
@@ -1551,9 +2544,12 @@ export default function SubscriptionsPage() {
             ================================================= */}
 
             <div className="flex justify-end gap-2 border-t border-slate-100 pt-4">
+
               <button
                 type="button"
-                onClick={closePlanModal}
+                onClick={
+                  closePlanModal
+                }
                 className="rounded-lg border border-slate-200 px-4 py-2.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50"
               >
                 Cancel
@@ -1564,15 +2560,19 @@ export default function SubscriptionsPage() {
                 onClick={savePlan}
                 className="rounded-lg px-5 py-2.5 text-xs font-semibold text-white transition hover:opacity-90"
                 style={{
-                  backgroundColor: GOLD,
+                  backgroundColor:
+                    GOLD,
                 }}
               >
                 {editingPlan
                   ? "Save Changes"
                   : "Create Plan"}
               </button>
+
             </div>
+
           </div>
+
         </Modal>
       )}
 
@@ -1588,46 +2588,64 @@ export default function SubscriptionsPage() {
               : "Create City Tier"
           }
           subtitle="Define a market pricing tier"
-          onClose={closeTierModal}
+          onClose={
+            closeTierModal
+          }
         >
+
           <div className="space-y-5">
+
             <Field
               label="Tier Name"
               required
-              value={tierForm.name}
+              value={
+                tierForm.name
+              }
               onChange={(value) =>
-                setTierForm((current) => ({
-                  ...current,
-                  name: value,
-                }))
+                setTierForm(
+                  (current) => ({
+                    ...current,
+                    name: value,
+                  })
+                )
               }
               placeholder="e.g. Tier 1"
             />
 
             <div>
+
               <label className="mb-1.5 block text-[11px] font-semibold text-slate-600">
                 Description
               </label>
 
               <textarea
-                value={tierForm.description}
+                value={
+                  tierForm.description
+                }
                 onChange={(event) =>
-                  setTierForm((current) => ({
-                    ...current,
-                    description:
-                      event.target.value,
-                  }))
+                  setTierForm(
+                    (current) => ({
+                      ...current,
+                      description:
+                        event.target
+                          .value,
+                    })
+                  )
                 }
                 rows={3}
                 placeholder="Describe the cities / markets included..."
                 className="w-full resize-none rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-xs text-slate-900 outline-none focus:border-slate-300 focus:ring-2 focus:ring-slate-100"
               />
+
             </div>
 
             <div className="flex justify-end gap-2 border-t border-slate-100 pt-4">
+
               <button
                 type="button"
-                onClick={closeTierModal}
+                onClick={
+                  closeTierModal
+                }
                 className="rounded-lg border border-slate-200 px-4 py-2.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50"
               >
                 Cancel
@@ -1638,17 +2656,22 @@ export default function SubscriptionsPage() {
                 onClick={saveTier}
                 className="rounded-lg px-5 py-2.5 text-xs font-semibold text-white transition hover:opacity-90"
                 style={{
-                  backgroundColor: GOLD,
+                  backgroundColor:
+                    GOLD,
                 }}
               >
                 {editingTier
                   ? "Save Changes"
                   : "Create Tier"}
               </button>
+
             </div>
+
           </div>
+
         </Modal>
       )}
+
     </div>
   );
 }
@@ -1657,66 +2680,361 @@ export default function SubscriptionsPage() {
 // PLAN CARD
 // =============================================================
 
-// =============================================================
-// PLAN CARD
-// =============================================================
+function PlanCard({
+  plan,
+  cityTiers,
+  turnoverBands,
+  onEdit,
+  onDelete,
+}) {
+  // -----------------------------------------------------------
+  // MODULES
+  // -----------------------------------------------------------
 
-function PlanCard({ plan, cityTiers, onEdit, onDelete }) {
-  // FIX: Properly extract the key whether it's a string or an object from the backend
-  const modules = plan.modules?.map((m) => {
-    const key = typeof m === "string" ? m : (m.module_key || m.key);
-    const found = MODULES.find((item) => item.key === key);
-    return found || { 
-      key, 
-      name: typeof m === "string" ? m : (m.module_name || m.name || key) 
-    };
-  }) || [];
+  const modules =
+    plan.modules?.map(
+      (module) => {
+        const key =
+          typeof module ===
+          "string"
+            ? module
+            : module.module_key ||
+              module.key;
+
+        const found =
+          MODULES.find(
+            (item) =>
+              item.key === key
+          );
+
+        return (
+          found || {
+            key,
+            name:
+              typeof module ===
+              "string"
+                ? module
+                : module.module_name ||
+                  module.name ||
+                  key,
+          }
+        );
+      }
+    ) || [];
+
+  // -----------------------------------------------------------
+  // PRICE HELPER
+  // -----------------------------------------------------------
+
+  const getPrice = (
+    tierId,
+    turnoverBandId
+  ) => {
+    const price =
+      plan.prices?.find(
+        (item) =>
+          Number(
+            item.city_tier_id
+          ) ===
+            Number(
+              tierId
+            ) &&
+          Number(
+            item.turnover_band_id
+          ) ===
+            Number(
+              turnoverBandId
+            )
+      );
+
+    return (
+      price?.monthly_price ??
+      price?.price ??
+      0
+    );
+  };
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-white shadow-sm flex flex-col hover:border-slate-300 transition-colors h-full">
-      <div className="flex items-start justify-between gap-4 border-b border-slate-100 p-5 bg-slate-50/50 rounded-t-xl">
+    <div className="flex h-full flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm transition-colors hover:border-slate-300">
+
+      {/* =====================================================
+          HEADER
+      ===================================================== */}
+
+      <div className="flex items-start justify-between gap-4 border-b border-slate-100 bg-slate-50/50 p-5">
+
         <div className="min-w-0">
-          <div className="flex items-center gap-2.5 mb-1.5">
-            <h2 className="truncate text-sm font-black text-slate-900">{plan.name}</h2>
-            <span className={`rounded px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-widest border ${plan.main_plan === 'PRO' ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-600 border-slate-200 shadow-sm'}`}>
-              {plan.main_plan}
+
+          <div className="mb-1.5 flex items-center gap-2.5">
+
+            <h2 className="truncate text-sm font-black text-slate-900">
+              {plan.name}
+            </h2>
+
+            <span
+              className={`rounded border px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-widest ${
+                plan.main_plan ===
+                "PRO"
+                  ? "border-slate-900 bg-slate-900 text-white"
+                  : "border-slate-200 bg-white text-slate-600 shadow-sm"
+              }`}
+            >
+              {
+                plan.main_plan
+              }
             </span>
+
           </div>
-          <p className="text-[11px] font-medium leading-relaxed text-slate-500 line-clamp-2">{plan.description || "No description provided."}</p>
+
+          <p className="line-clamp-2 text-[11px] font-medium leading-relaxed text-slate-500">
+            {plan.description ||
+              "No description provided."}
+          </p>
+
         </div>
+
+        {/* ACTIONS */}
+
         <div className="flex shrink-0 items-center gap-1.5">
-          <button type="button" onClick={onEdit} className="flex h-7 w-7 items-center justify-center rounded bg-white border border-slate-200 text-slate-400 transition hover:bg-slate-50 hover:text-slate-900 shadow-sm" title="Edit"><Pencil size={12} /></button>
-          <button type="button" onClick={onDelete} className="flex h-7 w-7 items-center justify-center rounded bg-white border border-rose-100 text-rose-400 transition hover:bg-rose-50 hover:text-rose-600 shadow-sm" title="Delete"><Trash2 size={12} /></button>
+
+          <button
+            type="button"
+            onClick={onEdit}
+            className="flex h-7 w-7 items-center justify-center rounded border border-slate-200 bg-white text-slate-400 shadow-sm transition hover:bg-slate-50 hover:text-slate-900"
+            title="Edit"
+          >
+            <Pencil size={12} />
+          </button>
+
+          <button
+            type="button"
+            onClick={onDelete}
+            className="flex h-7 w-7 items-center justify-center rounded border border-rose-100 bg-white text-rose-400 shadow-sm transition hover:bg-rose-50 hover:text-rose-600"
+            title="Delete"
+          >
+            <Trash2 size={12} />
+          </button>
+
         </div>
+
       </div>
+
+      {/* =====================================================
+          INCLUDED MODULES
+      ===================================================== */}
 
       <div className="border-b border-slate-100 p-5">
-        <p className="mb-3 text-[9px] font-bold uppercase tracking-widest text-slate-400">Included Modules</p>
+
+        <p className="mb-3 text-[9px] font-bold uppercase tracking-widest text-slate-400">
+          Included Modules
+        </p>
+
         <div className="flex flex-wrap gap-2">
-          {modules.map((module) => (
-            <span key={module.key} className="inline-flex items-center gap-1.5 rounded bg-slate-100 border border-slate-200 px-2 py-1 text-[9px] font-bold uppercase tracking-widest text-slate-700">
-              <Check size={10} strokeWidth={3} className="text-slate-900" /> {module.name}
+
+          {modules.map(
+            (module) => (
+              <span
+                key={
+                  module.key
+                }
+                className="inline-flex items-center gap-1.5 rounded border border-slate-200 bg-slate-100 px-2 py-1 text-[9px] font-bold uppercase tracking-widest text-slate-700"
+              >
+
+                <Check
+                  size={10}
+                  strokeWidth={3}
+                  className="text-slate-900"
+                />
+
+                {
+                  module.name
+                }
+
+              </span>
+            )
+          )}
+
+          {modules.length ===
+            0 && (
+            <span className="text-[10px] italic text-slate-400">
+              No modules configured
             </span>
-          ))}
-          {modules.length === 0 && <span className="text-[10px] text-slate-400 italic">No modules configured</span>}
+          )}
+
         </div>
+
       </div>
 
-      <div className="p-5 flex-1 bg-white rounded-b-xl">
-        <p className="mb-3 text-[9px] font-bold uppercase tracking-widest text-slate-400">Tier Pricing</p>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          {cityTiers.map((tier) => {
-            const price = plan.prices?.find((item) => item.city_tier_id === tier.id);
-            const monthly = price?.monthly_price ?? price?.price ?? 0;
-            return (
-              <div key={tier.id} className="rounded-lg border border-slate-100 bg-slate-50 p-3 text-center sm:text-left flex flex-row sm:flex-col justify-between items-center sm:items-start">
-                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 sm:mb-1">{tier.name}</p>
-                <p className="text-[13px] font-mono font-black text-slate-900">₹{Number(monthly).toLocaleString("en-IN")}<span className="text-[9px] font-sans font-bold text-slate-400 uppercase tracking-widest ml-0.5">/mo</span></p>
-              </div>
-            );
-          })}
+      {/* =====================================================
+          PRICING
+      ===================================================== */}
+
+      <div className="flex-1 bg-white p-5">
+
+        <div className="mb-3 flex items-center justify-between">
+
+          <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400">
+            City Tier × Turnover Pricing
+          </p>
+
+          <span className="text-[9px] font-medium text-slate-400">
+            Monthly
+          </span>
+
         </div>
+
+        <div className="space-y-3">
+
+          {cityTiers.map(
+            (tier) => (
+
+              <div
+                key={
+                  tier.id
+                }
+                className="overflow-hidden rounded-lg border border-slate-100"
+              >
+
+                {/* CITY TIER HEADER */}
+
+                <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50 px-3 py-2">
+
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-slate-700">
+                    {
+                      tier.name
+                    }
+                  </p>
+
+                  <MapPinned
+                    size={11}
+                    className="text-slate-400"
+                  />
+
+                </div>
+
+                {/* TURNOVER PRICES */}
+
+                <div className="divide-y divide-slate-100">
+
+                  {turnoverBands.map(
+                    (band) => {
+
+                      const monthly =
+                        getPrice(
+                          tier.id,
+                          band.id
+                        );
+
+                      const annual =
+                        Number(
+                          monthly
+                        ) * 12;
+
+                      return (
+                        <div
+                          key={`${tier.id}_${band.id}`}
+                          className="flex items-center justify-between gap-3 px-3 py-2.5"
+                        >
+
+                          <div className="min-w-0">
+
+                            <p className="text-[10px] font-semibold text-slate-700">
+                              {
+                                band.name
+                              }
+                            </p>
+
+                            <p className="mt-0.5 text-[9px] text-slate-400">
+
+                              ₹
+                              {Number(
+                                band.min_turnover ||
+                                  0
+                              ).toLocaleString(
+                                "en-IN"
+                              )}
+
+                              {" – "}
+
+                              {band.max_turnover ==
+                              null
+                                ? "No limit"
+                                : `₹${Number(
+                                    band.max_turnover
+                                  ).toLocaleString(
+                                    "en-IN"
+                                  )}`}
+
+                            </p>
+
+                          </div>
+
+                          <div className="shrink-0 text-right">
+
+                            <p className="text-[12px] font-black text-slate-900">
+
+                              ₹
+                              {Number(
+                                monthly
+                              ).toLocaleString(
+                                "en-IN"
+                              )}
+
+                              <span className="ml-0.5 text-[8px] font-bold uppercase tracking-widest text-slate-400">
+                                /mo
+                              </span>
+
+                            </p>
+
+                            <p className="mt-0.5 text-[8px] font-medium text-slate-400">
+
+                              ₹
+                              {annual.toLocaleString(
+                                "en-IN"
+                              )}
+                              /yr
+
+                            </p>
+
+                          </div>
+
+                        </div>
+                      );
+                    }
+                  )}
+
+                </div>
+
+              </div>
+            )
+          )}
+
+        </div>
+
+        {cityTiers.length ===
+          0 && (
+          <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 p-5 text-center">
+
+            <p className="text-[10px] font-medium text-slate-400">
+              No city tiers configured.
+            </p>
+
+          </div>
+        )}
+
+        {turnoverBands.length ===
+          0 && (
+          <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 p-5 text-center">
+
+            <p className="text-[10px] font-medium text-slate-400">
+              No turnover bands configured.
+            </p>
+
+          </div>
+        )}
+
       </div>
+
     </div>
   );
 }
@@ -1734,13 +3052,19 @@ function Modal({
 }) {
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/30 p-4 backdrop-blur-sm">
+
       <div
         className={`flex max-h-[90vh] w-full flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl ${
-          wide ? "max-w-4xl" : "max-w-md"
+          wide
+            ? "max-w-4xl"
+            : "max-w-md"
         }`}
       >
+
         <div className="flex shrink-0 items-start justify-between border-b border-slate-100 px-5 py-4">
+
           <div>
+
             <h2 className="text-sm font-semibold text-slate-900">
               {title}
             </h2>
@@ -1750,6 +3074,7 @@ function Modal({
                 {subtitle}
               </p>
             )}
+
           </div>
 
           <button
@@ -1759,6 +3084,7 @@ function Modal({
           >
             <X size={16} />
           </button>
+
         </div>
 
         <div
@@ -1766,7 +3092,9 @@ function Modal({
         >
           {children}
         </div>
+
       </div>
+
     </div>
   );
 }
@@ -1775,7 +3103,9 @@ function Modal({
 // SECTION LABEL
 // =============================================================
 
-function SectionLabel({ children }) {
+function SectionLabel({
+  children,
+}) {
   return (
     <h3 className="mb-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">
       {children}
@@ -1796,7 +3126,9 @@ function Field({
 }) {
   return (
     <div>
+
       <label className="mb-1.5 block text-[11px] font-semibold text-slate-600">
+
         {label}
 
         {required && (
@@ -1804,17 +3136,22 @@ function Field({
             *
           </span>
         )}
+
       </label>
 
       <input
         value={value}
         onChange={(event) =>
-          onChange(event.target.value)
+          onChange(
+            event.target.value
+          )
         }
-        placeholder={placeholder}
+        placeholder={
+          placeholder
+        }
         className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-xs text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-300 focus:ring-2 focus:ring-slate-100"
       />
+
     </div>
   );
 }
-
