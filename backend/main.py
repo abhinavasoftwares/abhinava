@@ -21,6 +21,14 @@ from sqlalchemy.orm import Session
 from routers.platform_auth import router as platform_auth_router
 from routers.subscriptions import router as subscriptions_router
 from routers.referrals import router as referrals_router
+from routers.payments import router as payments_router
+from routers.billing import router as billing_router
+from routers.communications import (
+    router as communications_router,
+)
+from routers.client_lifecycle import (
+    router as client_lifecycle_router,
+)
 
 from database import SessionLocal
 
@@ -28,10 +36,6 @@ from models import (
     Client,
     PlatformUser,
     SubscriptionPlan,
-    SubscriptionPlanModule,
-    SubscriptionPlanPrice,
-    CityTier,
-    TurnoverBand,
     ClientSubscription,
     ClientSubscriptionModule,
     Invoice,
@@ -45,7 +49,10 @@ from schemas import (
     FirebaseConnectionRequest,
 )
 
-from services.crm_tenant import resolve_crm_client
+from services.crm_tenant import (
+    resolve_crm_client,
+    generate_unique_crm_slug,
+)
 
 from services.tenant_connection import (
     verify_existing_firebase_project,
@@ -76,8 +83,15 @@ app.add_middleware(
 
 app.include_router(platform_auth_router)
 app.include_router(subscriptions_router)
+app.include_router(payments_router)
+app.include_router(billing_router)
 app.include_router(referrals_router)
-
+app.include_router(
+    communications_router
+)
+app.include_router(
+    client_lifecycle_router
+)
 
 
 app.add_middleware(
@@ -111,22 +125,36 @@ def get_db():
 # ============================================================
 
 
-@app.get("/crm/tenant")
+@app.get("/crm/{crm_slug}/tenant")
 def get_crm_tenant(
-    request: Request,
+    crm_slug: str,
     db: Session = Depends(get_db),
 ):
     """
-    Return the CRM tenant configuration.
+    Return the public CRM tenant configuration.
 
-    Tenant resolution is handled centrally by
-    resolve_crm_client().
+    Tenant is identified by:
+
+        /crm/{crm_slug}/tenant
+
+    Example:
+
+        /crm/shri-ram-jewels/tenant
+
+    This endpoint intentionally returns only tenant
+    configuration required to bootstrap the CRM.
     """
 
     client = resolve_crm_client(
-        request=request,
+        crm_slug=crm_slug,
         db=db,
     )
+
+    if client.account_status != "ACTIVE":
+        raise HTTPException(
+            status_code=403,
+            detail="This CRM account is currently disabled.",
+        )
 
     if not client.firebase_project_id:
         raise HTTPException(
@@ -137,7 +165,13 @@ def get_crm_tenant(
             ),
         )
 
-    if client.firebase_provisioning_status != "READY":
+    if (
+        str(
+            client.firebase_provisioning_status
+            or ""
+        ).upper()
+        != "READY"
+    ):
         raise HTTPException(
             status_code=409,
             detail="CRM tenant is not ready.",
@@ -146,10 +180,19 @@ def get_crm_tenant(
     return {
         "client_id": client.id,
         "tenant_id": client.tenant_id,
+        "crm_slug": client.crm_slug,
         "business_name": client.business_name,
         "logo_url": client.logo_url,
-        "firebase_project_id": client.firebase_project_id,
-        "firebase_web_app_id": client.firebase_web_app_id,
+        "welcome_message": (
+            client.welcome_message
+            or f"Welcome to {client.business_name}"
+        ),
+        "firebase_project_id": (
+            client.firebase_project_id
+        ),
+        "firebase_web_app_id": (
+            client.firebase_web_app_id
+        ),
     }
 
 
@@ -1096,9 +1139,7 @@ def create_client(
     # BASIC INPUT
     # ========================================================
 
-    project_id = (
-        client.firebase_project_id.strip()
-    )
+    project_id = client.firebase_project_id.strip()
 
     if not project_id:
         raise HTTPException(
@@ -1106,9 +1147,7 @@ def create_client(
             detail="Firebase project ID is required.",
         )
 
-    billing_cycle = (
-        client.billing_cycle.strip().lower()
-    )
+    billing_cycle = client.billing_cycle.strip().lower()
 
     if billing_cycle not in {
         "monthly",
@@ -1127,10 +1166,7 @@ def create_client(
     # ========================================================
 
     try:
-        start_date = date.fromisoformat(
-            client.start_date
-        )
-
+        start_date = date.fromisoformat(client.start_date)
     except (TypeError, ValueError):
         raise HTTPException(
             status_code=400,
@@ -1145,12 +1181,9 @@ def create_client(
     # ========================================================
 
     try:
-        verification = (
-            verify_existing_firebase_project(
-                project_id
-            )
+        verification = verify_existing_firebase_project(
+            project_id
         )
-
     except Exception as exc:
         raise HTTPException(
             status_code=400,
@@ -1183,9 +1216,7 @@ def create_client(
             detail="Subscription plan not found or inactive.",
         )
 
-    main_plan = (
-        plan.main_plan.strip().upper()
-    )
+    main_plan = (plan.main_plan or "").strip().upper()
 
     if main_plan not in {
         "BASIC",
@@ -1193,90 +1224,21 @@ def create_client(
     }:
         raise HTTPException(
             status_code=400,
-            detail=(
-                "Invalid main plan configuration."
-            ),
+            detail="Invalid main plan configuration.",
         )
 
     # ========================================================
-    # STEP 3 — CITY TIER
+    # STEP 3 — RESOLVE DIRECT PLAN PRICE
+    #
+    # Pricing is now stored directly on SubscriptionPlan.
+    # City Tier, Turnover Band and the old pricing matrix
+    # are no longer used.
     # ========================================================
-
-    city_tier = (
-        db.query(CityTier)
-        .filter(
-            CityTier.id
-            == client.city_tier_id,
-            CityTier.is_active.is_(True),
-        )
-        .first()
-    )
-
-    if city_tier is None:
-        raise HTTPException(
-            status_code=404,
-            detail=(
-                "City tier not found or inactive."
-            ),
-        )
-
-    # ========================================================
-    # STEP 4 — TURNOVER BAND
-    # ========================================================
-
-    turnover_band = (
-        db.query(TurnoverBand)
-        .filter(
-            TurnoverBand.id
-            == client.turnover_band_id,
-            TurnoverBand.is_active.is_(True),
-        )
-        .first()
-    )
-
-    if turnover_band is None:
-        raise HTTPException(
-            status_code=404,
-            detail=(
-                "Turnover band not found or inactive."
-            ),
-        )
-
-    # ========================================================
-    # STEP 5 — RESOLVE PRICE
-    # ========================================================
-
-    price = (
-        db.query(SubscriptionPlanPrice)
-        .filter(
-            SubscriptionPlanPrice.subscription_plan_id
-            == plan.id,
-            SubscriptionPlanPrice.city_tier_id
-            == city_tier.id,
-            SubscriptionPlanPrice.turnover_band_id
-            == turnover_band.id,
-        )
-        .first()
-    )
-
-    if price is None:
-        raise HTTPException(
-            status_code=404,
-            detail=(
-                "No pricing configuration exists "
-                "for the selected plan, city tier "
-                "and turnover band."
-            ),
-        )
 
     if billing_cycle == "monthly":
-        base_price = money(
-            price.monthly_price
-        )
+        base_price = money(plan.monthly_price)
     else:
-        base_price = money(
-            price.annual_price
-        )
+        base_price = money(plan.annual_price)
 
     if base_price < 0:
         raise HTTPException(
@@ -1284,13 +1246,22 @@ def create_client(
             detail="Subscription price cannot be negative.",
         )
 
+    currency = (plan.currency or "INR").strip().upper()
+
+    if not currency:
+        currency = "INR"
+
+    if len(currency) != 3:
+        raise HTTPException(
+            status_code=400,
+            detail="Subscription plan currency must be a 3-letter code.",
+        )
+
     # ========================================================
-    # STEP 6 — AUTHORITATIVE MODULES
+    # STEP 4 — AUTHORITATIVE MODULES
     # ========================================================
 
-    modules = normalize_subscription_modules(
-        plan
-    )
+    modules = normalize_subscription_modules(plan)
 
     module_keys = {
         item["module_key"]
@@ -1316,9 +1287,7 @@ def create_client(
     ):
         raise HTTPException(
             status_code=400,
-            detail=(
-                "Invoicing requires the Stock module."
-            ),
+            detail="Invoicing requires the Stock module.",
         )
 
     if (
@@ -1343,9 +1312,7 @@ def create_client(
     ):
         raise HTTPException(
             status_code=400,
-            detail=(
-                "Stock requires Customers."
-            ),
+            detail="Stock requires Customers.",
         )
 
     if (
@@ -1354,9 +1321,7 @@ def create_client(
     ):
         raise HTTPException(
             status_code=400,
-            detail=(
-                "Stock requires Invoicing."
-            ),
+            detail="Stock requires Invoicing.",
         )
 
     if (
@@ -1365,9 +1330,7 @@ def create_client(
     ):
         raise HTTPException(
             status_code=400,
-            detail=(
-                "Investments requires Customers."
-            ),
+            detail="Investments requires Customers.",
         )
 
     if (
@@ -1376,13 +1339,11 @@ def create_client(
     ):
         raise HTTPException(
             status_code=400,
-            detail=(
-                "Kareegar requires Customers."
-            ),
+            detail="Kareegar requires Customers.",
         )
 
     # ========================================================
-    # STEP 7 — REFERRAL
+    # STEP 5 — REFERRAL
     # ========================================================
 
     referral = None
@@ -1395,12 +1356,10 @@ def create_client(
     )
 
     if referral_code:
-
         referral = (
             db.query(ReferralCode)
             .filter(
-                ReferralCode.code
-                == referral_code,
+                ReferralCode.code == referral_code,
             )
             .with_for_update()
             .first()
@@ -1426,9 +1385,7 @@ def create_client(
         ):
             raise HTTPException(
                 status_code=400,
-                detail=(
-                    "Referral code is not active yet."
-                ),
+                detail="Referral code is not active yet.",
             )
 
         if (
@@ -1442,8 +1399,7 @@ def create_client(
 
         if (
             referral.max_uses is not None
-            and referral.used_count
-            >= referral.max_uses
+            and referral.used_count >= referral.max_uses
         ):
             raise HTTPException(
                 status_code=400,
@@ -1453,15 +1409,13 @@ def create_client(
                 ),
             )
 
-        discount_amount = (
-            calculate_referral_discount(
-                referral,
-                base_price,
-            )
+        discount_amount = calculate_referral_discount(
+            referral,
+            base_price,
         )
 
     # ========================================================
-    # STEP 8 — FINAL PRICE
+    # STEP 6 — FINAL PRICE
     # ========================================================
 
     taxable_amount = money(
@@ -1482,7 +1436,7 @@ def create_client(
     )
 
     # ========================================================
-    # STEP 9 — SUBSCRIPTION DATES
+    # STEP 7 — SUBSCRIPTION DATES
     # ========================================================
 
     end_date = calculate_subscription_dates(
@@ -1491,11 +1445,22 @@ def create_client(
     )
 
     # ========================================================
-    # STEP 10 — CREATE CLIENT
+    # STEP 8 — CREATE CLIENT
     # ========================================================
+
+    crm_slug = generate_unique_crm_slug(
+    db=db,
+    business_name=client.business_name,
+)
 
     new_client = Client(
         business_name=client.business_name,
+        crm_slug=crm_slug,
+        logo_url=client.logo_url,
+        welcome_message=(
+            client.welcome_message
+            or f"Welcome to {client.business_name}"
+        ),
         legal_business_name=client.legal_business_name,
         business_type=client.business_type,
         country=client.country,
@@ -1508,10 +1473,7 @@ def create_client(
         pan=client.pan,
         gstin=client.gstin,
 
-        # ----------------------------------------------------
         # Keep these synchronized with the subscription.
-        # ----------------------------------------------------
-
         plan=main_plan,
         billing_cycle=billing_cycle,
         subscription_status=client.subscription_status,
@@ -1524,10 +1486,7 @@ def create_client(
             for module in modules
         },
 
-        # ----------------------------------------------------
         # Firebase
-        # ----------------------------------------------------
-
         firebase_project_id=project["project_id"],
         firebase_web_app_id=web_app["app_id"],
         firebase_provisioning_status="READY",
@@ -1539,14 +1498,12 @@ def create_client(
     db.flush()
 
     # ========================================================
-    # STEP 11 — CREATE SUBSCRIPTION
+    # STEP 9 — CREATE SUBSCRIPTION
     # ========================================================
 
     subscription = ClientSubscription(
         client_id=new_client.id,
         subscription_plan_id=plan.id,
-        city_tier_id=city_tier.id,
-        turnover_band_id=turnover_band.id,
 
         main_plan=main_plan,
         subscription_name=plan.name,
@@ -1562,9 +1519,8 @@ def create_client(
             else "PENDING"
         ),
 
-        currency=price.currency,
+        currency=currency,
 
-        # IMPORTANT:
         # Store the final taxable subscription value.
         price_before_tax=taxable_amount,
 
@@ -1577,23 +1533,20 @@ def create_client(
     db.flush()
 
     # ========================================================
-    # STEP 12 — CREATE SUBSCRIPTION MODULES
+    # STEP 10 — CREATE SUBSCRIPTION MODULES
     # ========================================================
 
     for module in modules:
-
-        subscription_module = (
-            ClientSubscriptionModule(
-                client_subscription_id=subscription.id,
-                module_key=module["module_key"],
-                module_name=module["module_name"],
-            )
+        subscription_module = ClientSubscriptionModule(
+            client_subscription_id=subscription.id,
+            module_key=module["module_key"],
+            module_name=module["module_name"],
         )
 
         db.add(subscription_module)
 
     # ========================================================
-    # STEP 13 — CREATE INVOICE
+    # STEP 11 — CREATE INVOICE
     # ========================================================
 
     invoice_number = generate_invoice_number()
@@ -1603,15 +1556,18 @@ def create_client(
         client_subscription_id=subscription.id,
         invoice_number=invoice_number,
         invoice_date=date.today(),
-
+        due_date=subscription.start_date,
+        period_start=subscription.start_date,
+        period_end=subscription.end_date,
+        invoice_type="SUBSCRIPTION",
         status="ISSUED",
-        currency=price.currency,
-
+        currency=subscription.currency,
         subtotal=taxable_amount,
+        discount_amount=discount_amount,
         tax_rate=GST_RATE,
         tax_amount=tax_amount,
         total_amount=total_amount,
-
+        notes=None,
         pdf_path=None,
     )
 
@@ -1620,12 +1576,6 @@ def create_client(
 
     # --------------------------------------------------------
     # Invoice line item
-    #
-    # We intentionally keep the line item non-negative because
-    # the database constraint requires amount >= 0.
-    #
-    # The referral discount is recorded separately through
-    # ReferralCodeRedemption.
     # --------------------------------------------------------
 
     line_item = InvoiceLineItem(
@@ -1642,11 +1592,10 @@ def create_client(
     db.add(line_item)
 
     # ========================================================
-    # STEP 14 — REFERRAL REDEMPTION
+    # STEP 12 — REFERRAL REDEMPTION
     # ========================================================
 
     if referral is not None:
-
         redemption = ReferralCodeRedemption(
             referral_code_id=referral.id,
             client_id=new_client.id,
@@ -1663,7 +1612,7 @@ def create_client(
         referral.used_count += 1
 
     # ========================================================
-    # STEP 15 — COMMIT EVERYTHING
+    # STEP 13 — COMMIT EVERYTHING
     # ========================================================
 
     try:
@@ -1681,7 +1630,7 @@ def create_client(
         ) from exc
 
     # ========================================================
-    # STEP 16 — REFRESH
+    # STEP 14 — REFRESH
     # ========================================================
 
     db.refresh(new_client)
@@ -1689,9 +1638,8 @@ def create_client(
     db.refresh(invoice)
 
     # ========================================================
-    # STEP 17 — WELCOME EMAIL
+    # STEP 15 — WELCOME EMAIL
     #
-    # IMPORTANT:
     # Email failure does NOT roll back onboarding.
     # ========================================================
 
@@ -1703,7 +1651,7 @@ def create_client(
     )
 
     # ========================================================
-    # STEP 18 — RESPONSE
+    # STEP 16 — RESPONSE
     # ========================================================
 
     return {
@@ -1715,24 +1663,20 @@ def create_client(
             "id": new_client.id,
             "tenant_id": new_client.tenant_id,
             "business_name": new_client.business_name,
+            "crm_slug": new_client.crm_slug,
+            "crm_url": (
+                f"/{new_client.crm_slug}"
+            ),
             "owner_email": new_client.owner_email,
             "plan": main_plan,
             "billing_cycle": billing_cycle,
-            "status": (
-                new_client.subscription_status
-            ),
+            "status": new_client.subscription_status,
         },
 
         "firebase": {
-            "project_id": (
-                new_client.firebase_project_id
-            ),
-            "web_app_id": (
-                new_client.firebase_web_app_id
-            ),
-            "status": (
-                new_client.firebase_provisioning_status
-            ),
+            "project_id": new_client.firebase_project_id,
+            "web_app_id": new_client.firebase_web_app_id,
+            "status": new_client.firebase_provisioning_status,
             "verification": verification,
         },
 
@@ -1741,18 +1685,12 @@ def create_client(
             "plan_id": plan.id,
             "plan_name": plan.name,
             "main_plan": main_plan,
-            "city_tier_id": city_tier.id,
-            "city_tier": city_tier.name,
-            "turnover_band_id": turnover_band.id,
-            "turnover_band": turnover_band.name,
             "billing_cycle": billing_cycle,
             "start_date": subscription.start_date,
             "end_date": subscription.end_date,
             "status": subscription.status,
             "currency": subscription.currency,
-            "price_before_tax": (
-                subscription.price_before_tax
-            ),
+            "price_before_tax": subscription.price_before_tax,
             "tax_rate": subscription.tax_rate,
             "tax_amount": subscription.tax_amount,
             "total_amount": subscription.total_amount,
@@ -1785,6 +1723,7 @@ def create_client(
 
         "welcome_email": welcome_email,
     }
+
 
 @app.post("/clients/{client_id}/connect-firebase")
 def connect_existing_firebase(
@@ -2069,6 +2008,19 @@ def get_client(
             "subscription_status": client.subscription_status,
             "start_date": client.start_date,
             "domain": client.domain,
+            # Phase 1 CRM tenant identity
+            "crm_slug": client.crm_slug,
+            "welcome_message": (
+                client.welcome_message
+                or f"Welcome to {client.business_name}"
+            ),
+
+            # Phase 1 account lifecycle
+            "account_status": client.account_status,
+            "disabled_at": client.disabled_at,
+            "disabled_by": client.disabled_by,
+            "disabled_reason": client.disabled_reason,
+
             "modules": client.modules,
             "created_at": client.created_at,
             "updated_at": client.updated_at,
@@ -2148,6 +2100,15 @@ def get_client_firebase_status(
             client.firebase_provisioned_at
         ),
         "verification": verification,
+        "crm_slug": client.crm_slug,
+        "welcome_message": (
+            client.welcome_message
+            or f"Welcome to {client.business_name}"
+        ),
+        "account_status": client.account_status,
+        "disabled_at": client.disabled_at,
+        "disabled_by": client.disabled_by,
+        "disabled_reason": client.disabled_reason,
     }
 
 
@@ -2236,22 +2197,38 @@ def get_client_firebase_config(
 # ============================================================
 
 
-@app.get("/crm/firebase-config")
+@app.get("/crm/{crm_slug}/firebase-config")
 def get_crm_firebase_config(
-    request: Request,
+    crm_slug: str,
     db: Session = Depends(get_db),
 ):
     """
     Return Firebase Web App configuration for
-    the CRM tenant resolved from the request.
+    the CRM tenant identified by crm_slug.
+
+    Example:
+
+        /crm/shri-ram-jewels/firebase-config
     """
 
     client = resolve_crm_client(
-        request=request,
+        crm_slug=crm_slug,
         db=db,
     )
 
-    if client.firebase_provisioning_status != "READY":
+    if client.account_status != "ACTIVE":
+        raise HTTPException(
+            status_code=403,
+            detail="This CRM account is currently disabled.",
+        )
+
+    if (
+        str(
+            client.firebase_provisioning_status
+            or ""
+        ).upper()
+        != "READY"
+    ):
         raise HTTPException(
             status_code=409,
             detail=(
@@ -2273,7 +2250,7 @@ def get_crm_firebase_config(
         raise HTTPException(
             status_code=409,
             detail=(
-                "CRM tenant Firebase Web App "
+                "CRM tenant Firebase web app "
                 "is not configured."
             ),
         )
@@ -2282,8 +2259,8 @@ def get_crm_firebase_config(
         session = _get_connection_session()
 
         web_app_name = (
-            f"projects/{client.firebase_project_id}/"
-            f"webApps/{client.firebase_web_app_id}"
+            f"projects/{client.firebase_project_id}"
+            f"/webApps/{client.firebase_web_app_id}"
         )
 
         config = _get_firebase_web_app_config(
@@ -2294,25 +2271,22 @@ def get_crm_firebase_config(
         return {
             "tenantId": client.tenant_id,
             "clientId": client.id,
+            "crmSlug": client.crm_slug,
             "businessName": client.business_name,
-            "logoUrl": client.logo_url,
-            "firebaseProjectId": (
-                client.firebase_project_id
-            ),
-            "firebaseWebAppId": (
-                client.firebase_web_app_id
-            ),
             "firebase": config,
         }
+
+    except HTTPException:
+        raise
 
     except Exception as exc:
         raise HTTPException(
             status_code=500,
             detail=(
-                "Failed to load CRM Firebase "
-                f"configuration: {exc}"
+                "Unable to retrieve CRM Firebase "
+                "configuration."
             ),
-        )
+        ) from exc
 
 # ============================================================
 # TEMPORARY RESEND TEST

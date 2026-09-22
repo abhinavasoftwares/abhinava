@@ -32,67 +32,92 @@ import { Link, useParams } from "react-router-dom";
 const API_URL = import.meta.env.VITE_API_BASE_URL;
 
 /* ============================================================================
-   ABHINAVA ENTERPRISE THEME (MONOCHROME & ZINC)
+   ABHINAVA ENTERPRISE SAAS THEME (SMOKED TITANIUM & INDIGO, ZERO BLACK)
    ========================================================================== */
 export const THEMES = {
   light: {
     mode: "light",
-    background: "#F8F9FA",
+
+    background: "#F8FAFC",
     surface: "#FFFFFF",
-    surfaceAlt: "#F3F4F6",
-    surfaceHover: "#EBECEF",
+    surfaceAlt: "#F1F5F9",
+    surfaceHover: "#E2E8F0",
 
-    border: "#E4E7EB",
-    borderStrong: "#CBD0D7",
+    border: "#E2E8F0",
+    borderStrong: "#CBD5E1",
 
-    text: "#0F1117",
-    textSoft: "#363B45",
-    textMuted: "#6B7280",
-    textLight: "#9CA3AF",
+    text: "#0F172A",
+    textSoft: "#334155",
+    textMuted: "#64748B",
+    textLight: "#94A3B8",
 
-    primary: "#0F1117",
+    primary: "#2563EB",
     primaryText: "#FFFFFF",
-    primaryHover: "#1F2430",
-    primarySoft: "#F0F2F5",
+    primaryHover: "#1D4ED8",
+    primarySoft: "#EFF6FF",
 
-    success: "#047857",
+    primaryBtnBg: "#2563EB",
+    primaryBtnText: "#FFFFFF",
+    primaryBtnHover: "#1D4ED8",
+
+    navActiveBg: "#EFF6FF",
+    navActiveText: "#2563EB",
+
+    success: "#059669",
     successSoft: "#ECFDF5",
-    warning: "#B45309",
+    warning: "#D97706",
     warningSoft: "#FFFBEB",
-    danger: "#B91C1C",
-    dangerSoft: "#FEF2F2",
+    danger: "#E11D48",
+    dangerSoft: "#FFF1F2",
+
+    sidebar: "#FFFFFF",
+    header: "rgba(255, 255, 255, 0.94)",
+    chartGrid: "#E2E8F0",
   },
+
   dark: {
     mode: "dark",
-    background: "#090A0D",
-    surface: "#111318",
-    surfaceAlt: "#181B22",
-    surfaceHover: "#20242D",
 
-    border: "#20242D",
-    borderStrong: "#2E3442",
+    background: "#11141B",
+    surface: "#181D27",
+    surfaceAlt: "#202634",
+    surfaceHover: "#283042",
 
-    text: "#F9FAFB",
-    textSoft: "#D1D5DB",
-    textMuted: "#88909F",
-    textLight: "#545B6B",
+    border: "#283042",
+    borderStrong: "#38435C",
 
-    primary: "#FFFFFF",
-    primaryText: "#090A0D",
-    primaryHover: "#E5E7EB",
-    primarySoft: "#1C2029",
+    text: "#F8FAFC",
+    textSoft: "#CBD5E1",
+    textMuted: "#94A3B8",
+    textLight: "#64748B",
+
+    primary: "#3B82F6",
+    primaryText: "#FFFFFF",
+    primaryHover: "#60A5FA",
+    primarySoft: "rgba(59, 130, 246, 0.16)",
+
+    primaryBtnBg: "#3B82F6",
+    primaryBtnText: "#FFFFFF",
+    primaryBtnHover: "#60A5FA",
+
+    navActiveBg: "rgba(59, 130, 246, 0.14)",
+    navActiveText: "#60A5FA",
 
     success: "#34D399",
-    successSoft: "rgba(52, 211, 153, 0.12)",
+    successSoft: "rgba(52, 211, 153, 0.14)",
     warning: "#FBBF24",
-    warningSoft: "rgba(251, 191, 36, 0.12)",
-    danger: "#F87171",
-    dangerSoft: "rgba(248, 113, 113, 0.12)",
+    warningSoft: "rgba(251, 191, 36, 0.14)",
+    danger: "#FB7185",
+    dangerSoft: "rgba(251, 113, 133, 0.14)",
+
+    sidebar: "#141822",
+    header: "rgba(24, 29, 39, 0.88)",
+    chartGrid: "#242C3D",
   },
 };
 
 /* ============================================================================
-   THEME CONTEXT & HOOK
+   GLOBAL THEME CONTEXT & HOOK
    ========================================================================== */
 const ThemeContext = createContext({
   themeMode: "light",
@@ -241,8 +266,23 @@ export function StatusBadge({ status, type = "tenant", theme }) {
       background = theme.dangerSoft;
       Icon = AlertCircle;
     }
-  } else {
-    // Tenant / Infrastructure Status
+  } else if (type === "account") {
+    if (normalized === "ACTIVE" || normalized === "ENABLED") {
+      label = "Account Active";
+      color = theme.success;
+      background = theme.successSoft;
+      Icon = CheckCircle2;
+    } else if (normalized === "DISABLED") {
+      label = "Account Disabled";
+      color = theme.danger;
+      background = theme.dangerSoft;
+      Icon = AlertCircle;
+    } else {
+      label = "Account Status Unknown";
+      color = theme.warning;
+      background = theme.warningSoft;
+      Icon = Clock3;
+    }} else {
     if (normalized === "READY" || normalized === "ACTIVE" || normalized === "ENABLED") {
       label = normalized === "ENABLED" ? "Enabled" : "Ready";
       color = theme.success;
@@ -263,7 +303,7 @@ export function StatusBadge({ status, type = "tenant", theme }) {
 
   return (
     <span
-      className="inline-flex items-center gap-1.5 rounded px-2 py-0.5 text-[10px] font-semibold tracking-wide"
+      className="inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-[10px] font-semibold tracking-wide"
       style={{
         color,
         backgroundColor: background,
@@ -349,7 +389,7 @@ export default function ClientDetailsPage() {
         style={{ backgroundColor: theme.background }}
       >
         <div
-          className="flex flex-col items-center justify-center rounded-xl border p-8 shadow-sm"
+          className="flex flex-col items-center justify-center rounded-xl border p-8 shadow-xs"
           style={{
             backgroundColor: theme.surface,
             borderColor: theme.border,
@@ -359,7 +399,7 @@ export default function ClientDetailsPage() {
             className="h-7 w-7 animate-spin rounded-full border-2"
             style={{
               borderColor: theme.border,
-              borderTopColor: theme.text,
+              borderTopColor: theme.primary,
             }}
           />
           <p className="mt-4 text-xs font-medium" style={{ color: theme.textMuted }}>
@@ -388,7 +428,7 @@ export default function ClientDetailsPage() {
           </Link>
 
           <div
-            className="flex flex-col items-center justify-center rounded-xl border p-12 text-center shadow-sm"
+            className="flex flex-col items-center justify-center rounded-xl border p-12 text-center shadow-xs"
             style={{
               backgroundColor: theme.surface,
               borderColor: theme.border,
@@ -413,10 +453,10 @@ export default function ClientDetailsPage() {
             <button
               type="button"
               onClick={fetchClient}
-              className="mt-5 inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-xs font-bold shadow-sm transition-opacity hover:opacity-90"
+              className="mt-5 inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-xs font-bold shadow-xs transition-opacity hover:opacity-90"
               style={{
-                backgroundColor: theme.primary,
-                color: theme.primaryText,
+                backgroundColor: theme.primaryBtnBg,
+                color: theme.primaryBtnText,
               }}
             >
               <RefreshCw size={13} /> Retry Synchronization
@@ -456,7 +496,7 @@ export default function ClientDetailsPage() {
 
       {/* TENANT BANNER */}
       <div
-        className="shrink-0 rounded-xl border p-5 shadow-sm"
+        className="shrink-0 rounded-xl border p-5 shadow-xs"
         style={{
           backgroundColor: theme.surface,
           borderColor: theme.border,
@@ -465,11 +505,11 @@ export default function ClientDetailsPage() {
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-4">
             <div
-              className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border text-base font-bold shadow-sm"
+              className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border text-base font-bold shadow-xs"
               style={{
-                backgroundColor: theme.surfaceAlt,
+                backgroundColor: theme.primarySoft,
                 borderColor: theme.border,
-                color: theme.text,
+                color: theme.primary,
               }}
             >
               {client.business_name?.charAt(0).toUpperCase() || "C"}
@@ -483,6 +523,11 @@ export default function ClientDetailsPage() {
                   {client.business_name}
                 </h1>
                 <StatusBadge status={client.subscription_status} type="subscription" theme={theme} />
+                <StatusBadge
+                  status={client.account_status || "ACTIVE"}
+                  type="account"
+                  theme={theme}
+                />
               </div>
               <div className="mt-1.5 flex flex-wrap items-center gap-2">
                 <Badge icon={<CreditCard size={12} />} label={client.plan} theme={theme} />
@@ -501,25 +546,58 @@ export default function ClientDetailsPage() {
             </div>
           </div>
 
-          <div className="flex shrink-0">
+          <div className="flex shrink-0 items-center gap-2">
             <button
               type="button"
-              className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold shadow-sm transition hover:opacity-90"
+              disabled
+              title="Client editing will be enabled after the backend client-update endpoint is implemented."
+              className="inline-flex cursor-not-allowed items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold shadow-xs opacity-50"
               style={{
                 backgroundColor: theme.surfaceAlt,
                 borderColor: theme.border,
                 color: theme.textSoft,
               }}
             >
-              <Edit size={13} /> Edit Account
+              <Edit size={13} />
+              Edit Account
             </button>
+
+            {String(client.account_status || "ACTIVE").toUpperCase() === "ACTIVE" ? (
+              <button
+                type="button"
+                disabled
+                title="Disable action will be enabled after the backend lifecycle endpoint is implemented."
+                className="inline-flex cursor-not-allowed items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold shadow-xs opacity-50"
+                style={{
+                  backgroundColor: theme.dangerSoft,
+                  borderColor: theme.danger,
+                  color: theme.danger,
+                }}
+              >
+                Disable
+              </button>
+            ) : (
+              <button
+                type="button"
+                disabled
+                title="Enable action will be enabled after the backend lifecycle endpoint is implemented."
+                className="inline-flex cursor-not-allowed items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold shadow-xs opacity-50"
+                style={{
+                  backgroundColor: theme.successSoft,
+                  borderColor: theme.success,
+                  color: theme.success,
+                }}
+              >
+                Enable
+              </button>
+            )}
           </div>
         </div>
       </div>
 
       {/* DESKTOP TABS */}
       <div
-        className="hidden lg:flex shrink-0 rounded-xl border px-2 shadow-sm"
+        className="hidden lg:flex shrink-0 rounded-xl border px-2 shadow-xs"
         style={{
           backgroundColor: theme.surface,
           borderColor: theme.border,
@@ -536,14 +614,14 @@ export default function ClientDetailsPage() {
             onClick={() => setActiveTab(tab.id)}
             className="relative px-4 py-3 text-xs font-semibold transition-colors"
             style={{
-              color: activeTab === tab.id ? theme.text : theme.textMuted,
+              color: activeTab === tab.id ? theme.primary : theme.textMuted,
             }}
           >
             {tab.label}
             {activeTab === tab.id && (
               <span
                 className="absolute bottom-0 left-0 h-[2px] w-full"
-                style={{ backgroundColor: theme.text }}
+                style={{ backgroundColor: theme.primary }}
               />
             )}
           </button>
@@ -555,14 +633,14 @@ export default function ClientDetailsPage() {
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           {/* Business Entity */}
           <section
-            className="rounded-xl border p-5 shadow-sm"
+            className="rounded-xl border p-5 shadow-xs"
             style={{
               backgroundColor: theme.surface,
               borderColor: theme.border,
             }}
           >
             <div className="mb-3 flex items-center gap-2">
-              <Building2 size={16} style={{ color: theme.text }} />
+              <Building2 size={16} style={{ color: theme.primary }} />
               <h2 className="text-xs font-bold uppercase tracking-wider" style={{ color: theme.text }}>
                 Corporate Registration
               </h2>
@@ -572,6 +650,11 @@ export default function ClientDetailsPage() {
               <RecordRow label="Entity Classification" value={client.business_type} capitalize theme={theme} />
               <RecordRow label="Jurisdiction" value={client.country} theme={theme} />
               <RecordRow label="Corporate Billing Email" value={client.business_email} theme={theme} />
+              <RecordRow
+                label="CRM Welcome Message"
+                value={client.welcome_message}
+                theme={theme}
+              />
               <RecordRow label="Primary Telephony" value={client.business_phone} isLast theme={theme} />
             </div>
           </section>
@@ -579,14 +662,14 @@ export default function ClientDetailsPage() {
           <div className="flex flex-col gap-4">
             {/* Primary Contact */}
             <section
-              className="rounded-xl border p-5 shadow-sm"
+              className="rounded-xl border p-5 shadow-xs"
               style={{
                 backgroundColor: theme.surface,
                 borderColor: theme.border,
               }}
             >
               <div className="mb-3 flex items-center gap-2">
-                <UserRound size={16} style={{ color: theme.text }} />
+                <UserRound size={16} style={{ color: theme.primary }} />
                 <h2 className="text-xs font-bold uppercase tracking-wider" style={{ color: theme.text }}>
                   Primary Contact
                 </h2>
@@ -601,22 +684,57 @@ export default function ClientDetailsPage() {
 
             {/* Tenant Boundary */}
             <section
-              className="rounded-xl border p-5 shadow-sm"
+              className="rounded-xl border p-5 shadow-xs"
               style={{
                 backgroundColor: theme.surface,
                 borderColor: theme.border,
               }}
             >
               <div className="mb-3 flex items-center gap-2">
-                <Database size={16} style={{ color: theme.text }} />
+                <Database size={16} style={{ color: theme.primary }} />
                 <h2 className="text-xs font-bold uppercase tracking-wider" style={{ color: theme.text }}>
                   Tenant Isolation
                 </h2>
               </div>
               <div className="flex flex-col">
-                <RecordRow label="Database Identifier" value={client.id} theme={theme} />
-                <RecordRow label="System Tenant ID" value={client.tenant_id} theme={theme} mono />
-                <RecordRow label="Cloud Workspace ID" value={client.firebase_project_id} isLast theme={theme} mono />
+                <RecordRow
+                  label="Database Identifier"
+                  value={client.id}
+                  theme={theme}
+                />
+
+                <RecordRow
+                  label="System Tenant ID"
+                  value={client.tenant_id}
+                  theme={theme}
+                  mono
+                />
+
+                <RecordRow
+                  label="CRM Slug"
+                  value={client.crm_slug}
+                  theme={theme}
+                  mono
+                />
+
+                <RecordRow
+                  label="Cloud Workspace ID"
+                  value={client.firebase_project_id}
+                  theme={theme}
+                  mono
+                />
+
+                <RecordRow
+                  label="CRM URL"
+                  value={
+                    client.crm_slug
+                      ? `crm.abhinava.site/${client.crm_slug}`
+                      : "—"
+                  }
+                  isLast
+                  theme={theme}
+                  mono
+                />
               </div>
             </section>
           </div>
@@ -626,7 +744,7 @@ export default function ClientDetailsPage() {
       {/* TAB 2: PRODUCT & DOCUMENTS */}
       <div className={`flex-col gap-4 ${activeTab === "product" ? "flex" : "flex lg:hidden"}`}>
         <section
-          className="rounded-xl border p-5 shadow-sm"
+          className="rounded-xl border p-5 shadow-xs"
           style={{
             backgroundColor: theme.surface,
             borderColor: theme.border,
@@ -634,16 +752,16 @@ export default function ClientDetailsPage() {
         >
           <div className="mb-4 flex shrink-0 items-center justify-between border-b pb-3" style={{ borderColor: theme.border }}>
             <div className="flex items-center gap-2">
-              <Package size={16} style={{ color: theme.text }} />
+              <Package size={16} style={{ color: theme.primary }} />
               <h2 className="text-xs font-bold uppercase tracking-wider" style={{ color: theme.text }}>
                 Authoritative Modules
               </h2>
             </div>
             <span
-              className="inline-flex rounded px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider"
+              className="inline-flex rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider"
               style={{
-                backgroundColor: theme.surfaceAlt,
-                color: theme.textSoft,
+                backgroundColor: theme.primarySoft,
+                color: theme.primary,
               }}
             >
               Domain: {client.domain || "Commerce"}
@@ -667,9 +785,9 @@ export default function ClientDetailsPage() {
                     <div
                       className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border"
                       style={{
-                        backgroundColor: isEnabled ? theme.surfaceAlt : theme.surface,
+                        backgroundColor: isEnabled ? theme.primarySoft : theme.surface,
                         borderColor: theme.border,
-                        color: isEnabled ? theme.text : theme.textLight,
+                        color: isEnabled ? theme.primary : theme.textLight,
                       }}
                     >
                       <Icon size={14} />
@@ -697,14 +815,14 @@ export default function ClientDetailsPage() {
         </section>
 
         <section
-          className="rounded-xl border p-5 shadow-sm"
+          className="rounded-xl border p-5 shadow-xs"
           style={{
             backgroundColor: theme.surface,
             borderColor: theme.border,
           }}
         >
           <div className="mb-3 flex items-center gap-2">
-            <FileText size={16} style={{ color: theme.text }} />
+            <FileText size={16} style={{ color: theme.primary }} />
             <h2 className="text-xs font-bold uppercase tracking-wider" style={{ color: theme.text }}>
               Statutory Verification Status
             </h2>
@@ -712,7 +830,7 @@ export default function ClientDetailsPage() {
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             <DocumentCard label="PAN Verification" status={client.pan ? "Verified" : "Missing"} theme={theme} />
             <DocumentCard label="GSTIN Registry" status={client.gstin ? "Verified" : "Missing"} theme={theme} />
-            <DocumentCard label="National ID Record" status="Verified" theme={theme} />
+            <DocumentCard label="Identity Record" status="Verified" theme={theme} />
             <DocumentCard label="Master Agreement" status="Verified" theme={theme} />
           </div>
         </section>
@@ -721,7 +839,7 @@ export default function ClientDetailsPage() {
       {/* TAB 3: CLOUD INFRASTRUCTURE */}
       <div className={`flex-col gap-4 ${activeTab === "infrastructure" ? "flex" : "flex lg:hidden"}`}>
         <section
-          className="rounded-xl border p-5 shadow-sm"
+          className="rounded-xl border p-5 shadow-xs"
           style={{
             backgroundColor: theme.surface,
             borderColor: theme.border,
@@ -729,7 +847,7 @@ export default function ClientDetailsPage() {
         >
           <div className="mb-4 flex items-center justify-between border-b pb-3" style={{ borderColor: theme.border }}>
             <div className="flex items-center gap-2">
-              <Cloud size={16} style={{ color: theme.text }} />
+              <Cloud size={16} style={{ color: theme.primary }} />
               <h2 className="text-xs font-bold uppercase tracking-wider" style={{ color: theme.text }}>
                 Cloud Infrastructure Telemetry
               </h2>
@@ -738,7 +856,7 @@ export default function ClientDetailsPage() {
               type="button"
               onClick={fetchFirebaseStatus}
               disabled={firebaseLoading}
-              className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition shadow-sm disabled:cursor-not-allowed disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition shadow-xs disabled:cursor-not-allowed disabled:opacity-50"
               style={{
                 backgroundColor: theme.surfaceAlt,
                 borderColor: theme.border,
@@ -771,7 +889,7 @@ export default function ClientDetailsPage() {
                         style={{
                           backgroundColor: theme.surface,
                           borderColor: theme.border,
-                          color: theme.text,
+                          color: theme.primary,
                         }}
                       >
                         <Activity size={16} />
@@ -866,7 +984,7 @@ export default function ClientDetailsPage() {
 function Badge({ icon, label, capitalize, theme }) {
   return (
     <div
-      className="flex items-center gap-1.5 rounded border px-2 py-0.5 text-[10px] font-semibold"
+      className="flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-[10px] font-semibold"
       style={{
         backgroundColor: theme.surfaceAlt,
         borderColor: theme.border,
@@ -903,7 +1021,7 @@ function RecordRow({ label, value, capitalize, mono, isLast, theme }) {
 function InfrastructureCard({ icon, title, children, theme }) {
   return (
     <div
-      className="rounded-lg border p-4 shadow-sm"
+      className="rounded-lg border p-4 shadow-xs"
       style={{
         backgroundColor: theme.surfaceAlt,
         borderColor: theme.border,
@@ -911,11 +1029,11 @@ function InfrastructureCard({ icon, title, children, theme }) {
     >
       <div className="mb-2.5 flex items-center gap-2 border-b pb-2" style={{ borderColor: theme.border }}>
         <div
-          className="flex h-6 w-6 items-center justify-center rounded border"
+          className="flex h-6 w-6 items-center justify-center rounded-md border"
           style={{
             backgroundColor: theme.surface,
             borderColor: theme.border,
-            color: theme.text,
+            color: theme.primary,
           }}
         >
           {icon}
@@ -959,7 +1077,7 @@ function DocumentCard({ label, status, theme }) {
   const isVerified = status === "Verified";
   return (
     <div
-      className="flex flex-col justify-between rounded-lg border p-3 shadow-sm"
+      className="flex flex-col justify-between rounded-lg border p-3 shadow-xs"
       style={{
         backgroundColor: theme.surfaceAlt,
         borderColor: theme.border,
@@ -1026,11 +1144,11 @@ function InfrastructureError({ message, onRetry, theme }) {
           <button
             type="button"
             onClick={onRetry}
-            className="mt-3 inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-bold shadow-sm"
+            className="mt-3 inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-bold shadow-xs"
             style={{
               backgroundColor: theme.surface,
               borderColor: theme.border,
-              color: theme.text,
+              color: theme.primary,
             }}
           >
             <RefreshCw size={12} /> Retry Verification

@@ -1,90 +1,164 @@
-import os
+import re
 
-from fastapi import HTTPException, Request
+from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from models import Client
 
 
-DEVELOPMENT_CLIENT_ID = 15
+CRM_SLUG_PATTERN = re.compile(
+    r"^[a-z0-9]+(?:-[a-z0-9]+)*$"
+)
 
 
-def resolve_crm_client(
-    request: Request,
-    db: Session,
-) -> Client:
+def normalize_crm_slug(value: str) -> str:
     """
-    Resolve the CRM client from the incoming CRM origin.
+    Normalize a human-readable business name or slug
+    into the canonical CRM slug format.
 
-    Production:
-        The CRM Origin must match a registered
-        Client.crm_domain.
+    Examples:
 
-    Development:
-        When CRM_DEV_MODE=true, Client 15 is used
-        as the temporary development tenant.
+        Shri Ram Jewels
+            -> shri-ram-jewels
 
-    This resolver returns only the Client configuration
-    record. It does not return client business data.
+        Shri Ram Jewels & Sons
+            -> shri-ram-jewels-sons
+
+        SHRIDHARA Jewellers
+            -> shridhara-jewellers
     """
 
-    crm_dev_mode = (
-        os.getenv("CRM_DEV_MODE", "").lower()
-        == "true"
-    )
-
-    origin = request.headers.get("origin")
-
-    # ========================================================
-    # DEVELOPMENT FALLBACK
-    # ========================================================
-
-    if crm_dev_mode:
-        client = (
-            db.query(Client)
-            .filter(
-                Client.id
-                == DEVELOPMENT_CLIENT_ID
-            )
-            .first()
+    if not value:
+        raise ValueError(
+            "CRM slug source cannot be empty."
         )
 
-        if client is None:
-            raise HTTPException(
-                status_code=404,
-                detail=(
-                    "Development CRM tenant "
-                    "was not found."
-                ),
-            )
+    value = value.strip().lower()
 
-        return client
+    # Replace every non-alphanumeric sequence
+    # with a single hyphen.
+    value = re.sub(
+        r"[^a-z0-9]+",
+        "-",
+        value,
+    )
 
-    # ========================================================
-    # PRODUCTION TENANT RESOLUTION
-    # ========================================================
+    # Remove leading/trailing hyphens.
+    value = value.strip("-")
 
-    if not origin:
+    if not value:
+        raise ValueError(
+            "Unable to generate a valid CRM slug."
+        )
+
+    if not CRM_SLUG_PATTERN.fullmatch(value):
+        raise ValueError(
+            "Generated CRM slug is invalid."
+        )
+
+    return value
+
+
+def generate_unique_crm_slug(
+    db: Session,
+    business_name: str,
+) -> str:
+    """
+    Generate a unique CRM slug for a new client.
+
+    Example:
+
+        Shri Ram Jewels
+        -> shri-ram-jewels
+
+    If that slug already exists:
+
+        shri-ram-jewels-2
+        shri-ram-jewels-3
+        ...
+    """
+
+    base_slug = normalize_crm_slug(
+        business_name
+    )
+
+    slug = base_slug
+    counter = 2
+
+    while (
+        db.query(Client.id)
+        .filter(
+            Client.crm_slug == slug
+        )
+        .first()
+        is not None
+    ):
+        slug = f"{base_slug}-{counter}"
+        counter += 1
+
+    return slug
+
+
+def validate_crm_slug(
+    crm_slug: str,
+) -> str:
+    """
+    Validate an externally supplied CRM slug.
+
+    This is useful for future admin functionality
+    where we allow an administrator to choose a slug.
+    """
+
+    normalized = crm_slug.strip().lower()
+
+    if not CRM_SLUG_PATTERN.fullmatch(
+        normalized
+    ):
         raise HTTPException(
             status_code=400,
             detail=(
-                "CRM origin is required "
-                "for tenant resolution."
+                "Invalid CRM slug. Use only lowercase "
+                "letters, numbers, and single hyphens."
             ),
         )
 
-    origin = origin.rstrip("/")
+    return normalized
 
-    # Registered crm_domain values are stored as
-    # origins, for example:
-    #
-    # https://crm.shridharajewellers.com
-    #
+
+def resolve_crm_client(
+    crm_slug: str,
+    db: Session,
+) -> Client:
+    """
+    Resolve a CRM tenant using its public CRM slug.
+
+    Public URL:
+
+        https://crm.abhinava.site/{crm_slug}
+
+    The slug identifies the tenant.
+
+    The slug itself does NOT grant authorization.
+    Subsequent phases will apply account,
+    subscription, payment, and authenticated-user
+    authorization checks.
+    """
+
+    if not crm_slug:
+        raise HTTPException(
+            status_code=400,
+            detail="CRM tenant slug is required.",
+        )
+
+    normalized_slug = validate_crm_slug(
+        crm_slug
+    )
+
     client = (
         db.query(Client)
         .filter(
-            Client.crm_domain
-            == origin
+            Client.crm_slug
+            == normalized_slug
         )
         .first()
     )
@@ -93,8 +167,8 @@ def resolve_crm_client(
         raise HTTPException(
             status_code=404,
             detail=(
-                "No CRM tenant is registered "
-                "for this domain."
+                "No CRM tenant was found "
+                "for this URL."
             ),
         )
 

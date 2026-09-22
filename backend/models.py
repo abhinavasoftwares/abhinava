@@ -5,6 +5,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import (
     Boolean,
     CheckConstraint,
+    UniqueConstraint,
     Date,
     DateTime,
     ForeignKey,
@@ -15,7 +16,7 @@ from sqlalchemy import (
     text,
 )
 from sqlalchemy.dialects.postgresql import INET, JSONB, UUID as PGUUID
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from database import Base
 
@@ -66,10 +67,22 @@ class Client(Base):
     )
 
     business_name: Mapped[str] = mapped_column(
-        String(200)
+    String(200)
+    )
+
+    crm_slug: Mapped[str] = mapped_column(
+        String(120),
+        unique=True,
+        nullable=False,
+        index=True,
     )
 
     logo_url: Mapped[str | None] = mapped_column(
+        String(500),
+        nullable=True,
+    )
+
+    welcome_message: Mapped[str | None] = mapped_column(
         String(500),
         nullable=True,
     )
@@ -129,6 +142,27 @@ class Client(Base):
 
     subscription_status: Mapped[str] = mapped_column(
         String(30)
+    )
+
+    account_status: Mapped[str] = mapped_column(
+        String(30),
+        nullable=False,
+        default="ACTIVE",
+    )
+
+    disabled_at: Mapped[datetime | None] = mapped_column(
+        DateTime,
+        nullable=True,
+    )
+
+    disabled_by: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+    )
+
+    disabled_reason: Mapped[str | None] = mapped_column(
+        String(1000),
+        nullable=True,
     )
 
     start_date: Mapped[str] = mapped_column(
@@ -563,100 +597,9 @@ class PlatformAuthTransaction(Base):
 # ============================================================
 
 
-class CityTier(Base):
-    __tablename__ = "city_tiers"
-
-    id: Mapped[int] = mapped_column(
-        primary_key=True,
-        autoincrement=True,
-    )
-
-    name: Mapped[str] = mapped_column(
-        String(50),
-        unique=True,
-        nullable=False,
-    )
-
-    description: Mapped[str | None] = mapped_column(
-        String(255),
-        nullable=True,
-    )
-
-    is_active: Mapped[bool] = mapped_column(
-        Boolean,
-        nullable=False,
-        default=True,
-        server_default=text("true"),
-    )
-
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        nullable=False,
-        server_default=text("CURRENT_TIMESTAMP"),
-    )
-
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        nullable=False,
-        server_default=text("CURRENT_TIMESTAMP"),
-    )
-
-class TurnoverBand(Base):
-    __tablename__ = "turnover_bands"
-
-    id: Mapped[int] = mapped_column(
-        primary_key=True,
-        autoincrement=True,
-    )
-
-    name: Mapped[str] = mapped_column(
-        String(100),
-        nullable=False,
-        unique=True,
-    )
-
-    min_turnover: Mapped[Decimal] = mapped_column(
-        Numeric(18, 2),
-        nullable=False,
-    )
-
-    max_turnover: Mapped[Decimal | None] = mapped_column(
-        Numeric(18, 2),
-        nullable=True,
-    )
-
-    is_active: Mapped[bool] = mapped_column(
-        Boolean,
-        nullable=False,
-        server_default=text("true"),
-    )
-
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        nullable=False,
-        server_default=text("CURRENT_TIMESTAMP"),
-    )
-
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        nullable=False,
-        server_default=text("CURRENT_TIMESTAMP"),
-    )
-
-    __table_args__ = (
-        CheckConstraint(
-            "min_turnover >= 0",
-            name="ck_turnover_bands_min_nonnegative",
-        ),
-        CheckConstraint(
-            "max_turnover IS NULL OR max_turnover > min_turnover",
-            name="ck_turnover_bands_max_gt_min",
-        ),
-        Index(
-            "ix_turnover_bands_active",
-            "is_active",
-        ),
-    )
+# ============================================================
+# SUBSCRIPTION / PRICING
+# ============================================================
 
 class SubscriptionPlan(Base):
     __tablename__ = "subscription_plans"
@@ -681,6 +624,27 @@ class SubscriptionPlan(Base):
         nullable=True,
     )
 
+    monthly_price: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2),
+        nullable=False,
+        default=0,
+        server_default="0",
+    )
+
+    annual_price: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2),
+        nullable=False,
+        default=0,
+        server_default="0",
+    )
+
+    currency: Mapped[str] = mapped_column(
+        String(3),
+        nullable=False,
+        default="INR",
+        server_default="INR",
+    )
+
     is_active: Mapped[bool] = mapped_column(
         Boolean,
         nullable=False,
@@ -700,10 +664,29 @@ class SubscriptionPlan(Base):
         server_default=text("CURRENT_TIMESTAMP"),
     )
 
+    # --------------------------------------------------------
+    # PLAN MODULES
+    # --------------------------------------------------------
+
+    modules: Mapped[list["SubscriptionPlanModule"]] = relationship(
+        "SubscriptionPlanModule",
+        back_populates="subscription_plan",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
+
     __table_args__ = (
         CheckConstraint(
             "main_plan IN ('BASIC', 'PRO')",
             name="ck_subscription_plans_main_plan",
+        ),
+        CheckConstraint(
+            "monthly_price >= 0",
+            name="ck_subscription_plans_monthly_price_nonnegative",
+        ),
+        CheckConstraint(
+            "annual_price >= 0",
+            name="ck_subscription_plans_annual_price_nonnegative",
         ),
         Index(
             "ix_subscription_plans_main_plan",
@@ -749,6 +732,15 @@ class SubscriptionPlanModule(Base):
         server_default=text("CURRENT_TIMESTAMP"),
     )
 
+    # --------------------------------------------------------
+    # PLAN RELATIONSHIP
+    # --------------------------------------------------------
+
+    subscription_plan: Mapped["SubscriptionPlan"] = relationship(
+        "SubscriptionPlan",
+        back_populates="modules",
+    )
+
     __table_args__ = (
         Index(
             "ix_subscription_plan_modules_module_key",
@@ -765,98 +757,6 @@ class SubscriptionPlanModule(Base):
             unique=True,
         ),
     )
-
-
-class SubscriptionPlanPrice(Base):
-    __tablename__ = "subscription_plan_prices"
-
-    id: Mapped[int] = mapped_column(
-        primary_key=True,
-        autoincrement=True,
-    )
-
-    subscription_plan_id: Mapped[int] = mapped_column(
-        ForeignKey(
-            "subscription_plans.id",
-            name="fk_subscription_plan_prices_plan",
-            ondelete="CASCADE",
-        ),
-        nullable=False,
-    )
-
-    city_tier_id: Mapped[int] = mapped_column(
-        ForeignKey(
-            "city_tiers.id",
-            name="fk_subscription_plan_prices_city_tier",
-            ondelete="RESTRICT",
-        ),
-        nullable=False,
-    )
-
-    turnover_band_id: Mapped[int] = mapped_column(
-        ForeignKey(
-            "turnover_bands.id",
-            name="fk_subscription_plan_prices_turnover_band",
-            ondelete="RESTRICT",
-        ),
-        nullable=False,
-    )
-
-    monthly_price: Mapped[Decimal] = mapped_column(
-        Numeric(12, 2),
-        nullable=False,
-    )
-
-    annual_price: Mapped[Decimal] = mapped_column(
-        Numeric(12, 2),
-        nullable=False,
-    )
-
-    currency: Mapped[str] = mapped_column(
-        String(3),
-        nullable=False,
-        default="INR",
-        server_default="INR",
-    )
-
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        nullable=False,
-        server_default=text("CURRENT_TIMESTAMP"),
-    )
-
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        nullable=False,
-        server_default=text("CURRENT_TIMESTAMP"),
-    )
-
-    __table_args__ = (
-        CheckConstraint(
-            "monthly_price >= 0",
-            name="ck_subscription_plan_prices_monthly_nonnegative",
-        ),
-        CheckConstraint(
-            "annual_price >= 0",
-            name="ck_subscription_plan_prices_annual_nonnegative",
-        ),
-        Index(
-            "uq_subscription_plan_prices_plan_tier_turnover",
-            "subscription_plan_id",
-            "city_tier_id",
-            "turnover_band_id",
-            unique=True,
-        ),
-        Index(
-            "ix_subscription_plan_prices_city_tier",
-            "city_tier_id",
-        ),
-        Index(
-            "ix_subscription_plan_prices_turnover_band",
-            "turnover_band_id",
-        ),
-    )
-
 
 # ============================================================
 # CLIENT SUBSCRIPTIONS
@@ -889,24 +789,8 @@ class ClientSubscription(Base):
         nullable=False,
     )
 
-    city_tier_id: Mapped[int] = mapped_column(
-        ForeignKey(
-            "city_tiers.id",
-            name="fk_client_subscriptions_city_tier",
-            ondelete="RESTRICT",
-        ),
-        nullable=False,
-    )
-
-    turnover_band_id: Mapped[int] = mapped_column(
-        ForeignKey(
-            "turnover_bands.id",
-            name="fk_client_subscriptions_turnover_band",
-            ondelete="RESTRICT",
-        ),
-        nullable=False,
-    )
-
+    # Snapshot fields.
+    # These preserve what the client subscribed to at that time.
     main_plan: Mapped[str] = mapped_column(
         String(20),
         nullable=False,
@@ -946,6 +830,8 @@ class ClientSubscription(Base):
         server_default="INR",
     )
 
+    # Price captured when the subscription is created.
+    # Future plan price changes will not affect this subscription.
     price_before_tax: Mapped[Decimal] = mapped_column(
         Numeric(12, 2),
         nullable=False,
@@ -1022,14 +908,6 @@ class ClientSubscription(Base):
             "subscription_plan_id",
         ),
         Index(
-            "ix_client_subscriptions_city_tier",
-            "city_tier_id",
-        ),
-        Index(
-            "ix_client_subscriptions_turnover_band",
-            "turnover_band_id",
-        ),
-        Index(
             "ix_client_subscriptions_status",
             "status",
         ),
@@ -1038,6 +916,11 @@ class ClientSubscription(Base):
             "end_date",
         ),
     )
+
+
+# ============================================================
+# CLIENT SUBSCRIPTION MODULE SNAPSHOT
+# ============================================================
 
 
 class ClientSubscriptionModule(Base):
@@ -1129,6 +1012,40 @@ class Invoice(Base):
         nullable=False,
     )
 
+    due_date: Mapped[date | None] = mapped_column(
+        Date,
+        nullable=True,
+    )
+
+    discount_amount: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2),
+        nullable=False,
+        default=0,
+        server_default="0",
+    )
+
+    notes: Mapped[str | None] = mapped_column(
+        String(2000),
+        nullable=True,
+    )
+
+    period_start: Mapped[date | None] = mapped_column(
+        Date,
+        nullable=True,
+    )
+
+    period_end: Mapped[date | None] = mapped_column(
+        Date,
+        nullable=True,
+    )
+
+    invoice_type: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        default="SUBSCRIPTION",
+        server_default="SUBSCRIPTION",
+    )
+
     status: Mapped[str] = mapped_column(
         String(30),
         nullable=False,
@@ -1184,33 +1101,57 @@ class Invoice(Base):
 
     __table_args__ = (
         CheckConstraint(
-            "status IN ('DRAFT', 'ISSUED', 'PAID', 'VOID', 'OVERDUE')",
+            "status IN ('DRAFT', 'ISSUED', 'PARTIALLY_PAID', 'PAID', 'VOID', 'OVERDUE')",
             name="ck_invoices_status",
         ),
+
         CheckConstraint(
             "subtotal >= 0",
             name="ck_invoices_subtotal_nonnegative",
         ),
+
         CheckConstraint(
             "tax_rate >= 0",
             name="ck_invoices_tax_rate_nonnegative",
         ),
+
         CheckConstraint(
             "tax_amount >= 0",
             name="ck_invoices_tax_nonnegative",
         ),
+
         CheckConstraint(
             "total_amount >= 0",
             name="ck_invoices_total_nonnegative",
         ),
+
+        CheckConstraint(
+            "discount_amount >= 0",
+            name="ck_invoices_discount_nonnegative",
+        ),
+
+        CheckConstraint(
+            "invoice_type IN ('SUBSCRIPTION', 'UPGRADE', 'DOWNGRADE', 'RENEWAL', 'ADJUSTMENT')",
+            name="ck_invoices_type",
+        ),
+
+        UniqueConstraint(
+            "client_subscription_id",
+            "period_start",
+            "period_end",
+            name="uq_invoice_subscription_period",
+        ),
+
         Index(
             "ix_invoices_client",
             "client_id",
         ),
+
         Index(
             "ix_invoices_subscription",
             "client_subscription_id",
         ),
+
         Index(
             "ix_invoices_date",
             "invoice_date",
@@ -1276,7 +1217,280 @@ class InvoiceLineItem(Base):
         ),
     )
 
-    # ============================================================
+# ============================================================
+# PAYMENTS
+# ============================================================
+
+
+class Payment(Base):
+    __tablename__ = "payments"
+
+    id: Mapped[int] = mapped_column(
+        primary_key=True,
+        autoincrement=True,
+    )
+
+    client_id: Mapped[int] = mapped_column(
+        ForeignKey(
+            "clients.id",
+            name="fk_payments_client",
+            ondelete="RESTRICT",
+        ),
+        nullable=False,
+    )
+
+    invoice_id: Mapped[int] = mapped_column(
+        ForeignKey(
+            "invoices.id",
+            name="fk_payments_invoice",
+            ondelete="RESTRICT",
+        ),
+        nullable=False,
+    )
+
+    amount: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2),
+        nullable=False,
+    )
+
+    currency: Mapped[str] = mapped_column(
+        String(3),
+        nullable=False,
+        default="INR",
+        server_default="INR",
+    )
+
+    payment_method: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+    )
+
+    payment_reference: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+    )
+
+    status: Mapped[str] = mapped_column(
+        String(30),
+        nullable=False,
+        default="PENDING",
+        server_default="PENDING",
+    )
+
+    paid_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+    notes: Mapped[str | None] = mapped_column(
+        String(1000),
+        nullable=True,
+    )
+
+    created_by: Mapped[UUID | None] = mapped_column(
+        ForeignKey(
+            "platform_users.id",
+            name="fk_payments_created_by",
+            ondelete="SET NULL",
+        ),
+        nullable=True,
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "amount > 0",
+            name="ck_payments_amount_positive",
+        ),
+
+        CheckConstraint(
+            "status IN ('PENDING', 'SUCCESS', 'FAILED', 'REFUNDED', 'CANCELLED')",
+            name="ck_payments_status",
+        ),
+
+        Index(
+            "ix_payments_client",
+            "client_id",
+        ),
+
+        Index(
+            "ix_payments_invoice",
+            "invoice_id",
+        ),
+
+        Index(
+            "ix_payments_status",
+            "status",
+        ),
+
+        Index(
+            "ix_payments_paid_at",
+            "paid_at",
+        ),
+    )
+# ============================================================
+# CLIENT COMMUNICATIONS
+# ============================================================
+
+
+class ClientCommunication(Base):
+    __tablename__ = "client_communications"
+
+    id: Mapped[int] = mapped_column(
+        primary_key=True,
+        autoincrement=True,
+    )
+
+    client_id: Mapped[int] = mapped_column(
+        ForeignKey(
+            "clients.id",
+            name="fk_client_communications_client",
+            ondelete="RESTRICT",
+        ),
+        nullable=False,
+    )
+
+    channel: Mapped[str] = mapped_column(
+        String(30),
+        nullable=False,
+    )
+
+    direction: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+    )
+
+    communication_type: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+    )
+
+    recipient: Mapped[str] = mapped_column(
+        String(320),
+        nullable=False,
+    )
+
+    sender: Mapped[str | None] = mapped_column(
+        String(320),
+        nullable=True,
+    )
+
+    subject: Mapped[str | None] = mapped_column(
+        String(500),
+        nullable=True,
+    )
+
+    message: Mapped[str] = mapped_column(
+        String(10000),
+        nullable=False,
+    )
+
+    template_name: Mapped[str | None] = mapped_column(
+        String(150),
+        nullable=True,
+    )
+
+    status: Mapped[str] = mapped_column(
+        String(30),
+        nullable=False,
+        default="PENDING",
+        server_default="PENDING",
+    )
+
+    provider: Mapped[str | None] = mapped_column(
+        String(50),
+        nullable=True,
+    )
+
+    provider_message_id: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+    )
+
+    provider_response: Mapped[dict | None] = mapped_column(
+        JSONB,
+        nullable=True,
+    )
+
+    failure_reason: Mapped[str | None] = mapped_column(
+        String(2000),
+        nullable=True,
+    )
+
+    sent_by: Mapped[UUID | None] = mapped_column(
+        ForeignKey(
+            "platform_users.id",
+            name="fk_client_communications_sent_by",
+            ondelete="SET NULL",
+        ),
+        nullable=True,
+    )
+
+    sent_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "channel IN ('EMAIL', 'WHATSAPP')",
+            name="ck_client_communications_channel",
+        ),
+
+        CheckConstraint(
+            "direction IN ('OUTBOUND', 'INBOUND')",
+            name="ck_client_communications_direction",
+        ),
+
+        CheckConstraint(
+            "status IN ('PENDING', 'SENT', 'DELIVERED', 'READ', 'FAILED', 'RECEIVED')",
+            name="ck_client_communications_status",
+        ),
+
+        Index(
+            "ix_client_communications_client",
+            "client_id",
+        ),
+
+        Index(
+            "ix_client_communications_channel",
+            "channel",
+        ),
+
+        Index(
+            "ix_client_communications_created_at",
+            "created_at",
+        ),
+
+        Index(
+            "ix_client_communications_provider_message",
+            "provider_message_id",
+        ),
+    )
+ # ============================================================
 # REFERRAL CODES
 # ============================================================
 

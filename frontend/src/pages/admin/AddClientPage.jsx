@@ -163,8 +163,8 @@ const STEPS = [
     icon: CreditCard,
     fields: [
       "subscriptionPlanId",
-      "cityTierId",
-      "turnoverBandId",
+      "",
+      "",
       "billingCycle",
       "subscriptionStatus",
       "startDate",
@@ -475,8 +475,6 @@ function AddClientPage() {
      -------------------------------------------------------------------------- */
 
   const [plans, setPlans] = useState([]);
-  const [cityTiers, setCityTiers] = useState([]);
-  const [turnoverBands, setTurnoverBands] = useState([]);
 
   const [subscriptionLoading, setSubscriptionLoading] =
     useState(true);
@@ -532,8 +530,6 @@ function AddClientPage() {
        * - Turnover Band
        */
       subscriptionPlanId: "",
-      cityTierId: "",
-      turnoverBandId: "",
 
       billingCycle: "monthly",
       subscriptionStatus: "active",
@@ -553,19 +549,9 @@ function AddClientPage() {
     name: "subscriptionPlanId",
   });
 
-  const selectedCityTierId = useWatch({
-    control,
-    name: "cityTierId",
-  });
-
   const selectedBillingCycle = useWatch({
     control,
     name: "billingCycle",
-  });
-
-  const selectedTurnoverBandId = useWatch({
-    control,
-    name: "turnoverBandId",
   });
 
   /* --------------------------------------------------------------------------
@@ -581,24 +567,6 @@ function AddClientPage() {
     [plans, selectedPlanId]
   );
 
-  const selectedCityTier = useMemo(
-    () =>
-      cityTiers.find(
-        (tier) =>
-          Number(tier.id) === Number(selectedCityTierId)
-      ),
-    [cityTiers, selectedCityTierId]
-  );
-
-  const selectedTurnoverBand = useMemo(
-    () =>
-      turnoverBands.find(
-        (band) =>
-          Number(band.id) === Number(selectedTurnoverBandId)
-      ),
-    [turnoverBands, selectedTurnoverBandId]
-  );
-
   /* --------------------------------------------------------------------------
      LOAD SUBSCRIPTION CONFIGURATION
      -------------------------------------------------------------------------- */
@@ -608,115 +576,36 @@ function AddClientPage() {
       setSubscriptionLoading(true);
       setSubscriptionError("");
 
-      const [
-        plansResponse,
-        tiersResponse,
-        turnoverResponse,
-      ] = await Promise.all([
-        fetch(
-          `${API_URL}/subscriptions/plans`,
-          {
-            credentials: "include",
-          }
-        ),
+      const response = await fetch(
+        `${API_URL}/subscriptions/plans`,
+        { credentials: "include" }
+      );
 
-        fetch(
-          `${API_URL}/subscriptions/city-tiers`,
-          {
-            credentials: "include",
-          }
-        ),
+      const data = await response.json().catch(() => ({}));
 
-        fetch(
-          `${API_URL}/subscriptions/turnover-bands`,
-          {
-            credentials: "include",
-          }
-        ),
-      ]);
-
-      if (!plansResponse.ok) {
+      if (!response.ok) {
         throw new Error(
-          "Unable to load subscription plans."
+          typeof data.detail === "string"
+            ? data.detail
+            : "Unable to load subscription plans."
         );
       }
-
-      if (!tiersResponse.ok) {
-        throw new Error(
-          "Unable to load city tiers."
-        );
-      }
-
-      if (!turnoverResponse.ok) {
-        throw new Error(
-          "Unable to load turnover bands."
-        );
-      }
-
-      const plansData =
-        await plansResponse.json();
-
-      const tiersData =
-        await tiersResponse.json();
-
-      const turnoverData =
-        await turnoverResponse.json();
 
       const activePlans = (
-        Array.isArray(plansData)
-          ? plansData
-          : plansData.plans || []
-      ).filter(
-        (plan) => plan.is_active !== false
-      );
-
-      const activeTiers = (
-        Array.isArray(tiersData)
-          ? tiersData
-          : tiersData.city_tiers || []
-      ).filter(
-        (tier) => tier.is_active !== false
-      );
-
-      const activeTurnoverBands = (
-        Array.isArray(turnoverData)
-          ? turnoverData
-          : turnoverData.turnover_bands || []
-      ).filter(
-        (band) => band.is_active !== false
-      );
+        Array.isArray(data) ? data : data.plans || []
+      ).filter((plan) => plan.is_active !== false);
 
       setPlans(activePlans);
-      setCityTiers(activeTiers);
-      setTurnoverBands(activeTurnoverBands);
-
-      /*
-       * IMPORTANT:
-       *
-       * Do NOT automatically select:
-       *
-       * activePlans[0]
-       * activeTiers[0]
-       * activeTurnoverBands[0]
-       *
-       * The administrator must explicitly select
-       * all subscription parameters.
-       */
     } catch (error) {
-      console.error(
-        "Subscription configuration error:",
-        error
-      );
-
+      console.error("Subscription configuration error:", error);
       setSubscriptionError(
         error instanceof Error
           ? error.message
-          : "Unable to load configuration."
+          : "Unable to load subscription plans."
       );
-
       addToast(
         "Configuration Error",
-        "Could not load subscription tiers from server.",
+        "Could not load subscription plans from server.",
         "error"
       );
     } finally {
@@ -734,21 +623,8 @@ function AddClientPage() {
 
   useEffect(() => {
     const planId = Number(selectedPlanId);
-    const tierId = Number(selectedCityTierId);
-    const turnoverBandId = Number(
-      selectedTurnoverBandId
-    );
 
-    /*
-     * Nothing should resolve until the administrator
-     * explicitly selects all required parameters.
-     */
-    if (
-      !planId ||
-      !tierId ||
-      !turnoverBandId ||
-      !selectedBillingCycle
-    ) {
+    if (!planId || !selectedBillingCycle) {
       setResolvedSubscription(null);
       setResolvingSubscription(false);
       return;
@@ -761,30 +637,16 @@ function AddClientPage() {
         setResolvingSubscription(true);
 
         const params = new URLSearchParams({
-          subscription_plan_id:
-            String(selectedPlanId),
-
-          city_tier_id:
-            String(selectedCityTierId),
-
-          turnover_band_id:
-            String(selectedTurnoverBandId),
-
-          billing_cycle:
-            selectedBillingCycle,
+          subscription_plan_id: String(selectedPlanId),
+          billing_cycle: selectedBillingCycle,
         });
 
         const response = await fetch(
           `${API_URL}/subscriptions/resolve?${params.toString()}`,
-          {
-            credentials: "include",
-          }
+          { credentials: "include" }
         );
 
-        const data =
-          await response
-            .json()
-            .catch(() => ({}));
+        const data = await response.json().catch(() => ({}));
 
         if (!response.ok) {
           throw new Error(
@@ -796,23 +658,14 @@ function AddClientPage() {
 
         if (!cancelled) {
           setResolvedSubscription(data);
-
           setReferralResult(null);
           setReferralError("");
         }
       } catch (error) {
-        console.error(
-          "Subscription resolution error:",
-          error
-        );
-
-        if (!cancelled) {
-          setResolvedSubscription(null);
-        }
+        console.error("Subscription resolution error:", error);
+        if (!cancelled) setResolvedSubscription(null);
       } finally {
-        if (!cancelled) {
-          setResolvingSubscription(false);
-        }
+        if (!cancelled) setResolvingSubscription(false);
       }
     };
 
@@ -821,12 +674,7 @@ function AddClientPage() {
     return () => {
       cancelled = true;
     };
-  }, [
-    selectedPlanId,
-    selectedCityTierId,
-    selectedTurnoverBandId,
-    selectedBillingCycle,
-  ]);
+  }, [selectedPlanId, selectedBillingCycle]);
 
   /* --------------------------------------------------------------------------
      REFERRAL CODE
@@ -841,18 +689,12 @@ function AddClientPage() {
       return;
     }
 
-    if (
-      !selectedPlanId ||
-      !selectedCityTierId ||
-      !selectedTurnoverBandId ||
-      !selectedBillingCycle
-    ) {
+    if (!selectedPlanId || !selectedBillingCycle) {
       addToast(
         "Parameters Incomplete",
-        "Select a plan, city tier, and turnover scale first.",
+        "Select a subscription plan and billing cycle first.",
         "warning"
       );
-
       return;
     }
 
@@ -863,15 +705,8 @@ function AddClientPage() {
 
       const params = new URLSearchParams({
         code,
-
-        subscription_plan_id:
-          String(selectedPlanId),
-
-        city_tier_id:
-          String(selectedCityTierId),
-
-        billing_cycle:
-          selectedBillingCycle,
+        subscription_plan_id: String(selectedPlanId),
+        billing_cycle: selectedBillingCycle,
       });
 
       const response = await fetch(
@@ -1085,11 +920,6 @@ function AddClientPage() {
         subscription_plan_id:
           Number(data.subscriptionPlanId),
 
-        city_tier_id:
-          Number(data.cityTierId),
-
-        turnover_band_id:
-          Number(data.turnoverBandId),
 
         referral_code:
           referralResult?.code || null,
@@ -1216,7 +1046,7 @@ function AddClientPage() {
     ) {
       addToast(
         "Subscription Incomplete",
-        "Please select a plan, city tier, and turnover scale with valid pricing.",
+        "Please select a subscription plan and billing cycle with valid pricing.",
         "error"
       );
 
@@ -1912,12 +1742,12 @@ function AddClientPage() {
 
               <Section
                 title="Service Tier Selection"
-                description="Choose the active platform tier to provision workspace capability."
+                description="Choose the subscription plan to provision workspace capability."
                 theme={theme}
               >
                 {subscriptionLoading ? (
                   <LoadingBox
-                    text="Loading available tiers..."
+                    text="Loading available plans..."
                     theme={theme}
                   />
                 ) : subscriptionError ? (
@@ -2100,168 +1930,32 @@ function AddClientPage() {
                 )}
               </Section>
 
-              {/* COMMERCIAL PARAMETERS */}
+              {/* BILLING CONFIGURATION */}
 
               <Section
-                title="Commercial Configuration"
-                description="Tier parameters determine base compute and license costs."
+                title="Billing Configuration"
+                description="Pricing is defined directly on the selected subscription plan."
                 theme={theme}
               >
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-                  {/* CITY TIER */}
-
-                  <SelectField
-                    label="City Market Tier"
-                    required
-                    theme={theme}
-                    value={
-                      selectedCityTierId
-                    }
-                    onChange={(e) => {
-                      setValue(
-                        "cityTierId",
-                        e.target.value,
-                        {
-                          shouldDirty:
-                            true,
-
-                          shouldTouch:
-                            true,
-
-                          shouldValidate:
-                            true,
-                        }
-                      );
-
-                      setResolvedSubscription(
-                        null
-                      );
-
-                      setReferralResult(
-                        null
-                      );
-
-                      setReferralError(
-                        ""
-                      );
-                    }}
-                  >
-                    <option value="">
-                      Select city tier
-                    </option>
-
-                    {cityTiers.map(
-                      (tier) => (
-                        <option
-                          key={tier.id}
-                          value={tier.id}
-                        >
-                          {tier.name}
-                        </option>
-                      )
-                    )}
-                  </SelectField>
-
-                  {/* TURNOVER */}
-
-                  <SelectField
-                    label="Turnover Scale"
-                    required
-                    theme={theme}
-                    value={
-                      selectedTurnoverBandId
-                    }
-                    onChange={(e) => {
-                      setValue(
-                        "turnoverBandId",
-                        e.target.value,
-                        {
-                          shouldDirty:
-                            true,
-
-                          shouldTouch:
-                            true,
-
-                          shouldValidate:
-                            true,
-                        }
-                      );
-
-                      setResolvedSubscription(
-                        null
-                      );
-
-                      setReferralResult(
-                        null
-                      );
-
-                      setReferralError(
-                        ""
-                      );
-                    }}
-                  >
-                    <option value="">
-                      Select turnover band
-                    </option>
-
-                    {turnoverBands.map(
-                      (band) => (
-                        <option
-                          key={band.id}
-                          value={band.id}
-                        >
-                          {band.name}
-                        </option>
-                      )
-                    )}
-                  </SelectField>
-
-                  {/* BILLING */}
-
+                <div className="max-w-md">
                   <SelectField
                     label="Commitment Cycle"
                     required
                     theme={theme}
-                    value={
-                      selectedBillingCycle
-                    }
+                    value={selectedBillingCycle}
                     onChange={(e) => {
-                      setValue(
-                        "billingCycle",
-                        e.target.value,
-                        {
-                          shouldDirty:
-                            true,
-
-                          shouldTouch:
-                            true,
-
-                          shouldValidate:
-                            true,
-                        }
-                      );
-
-                      setResolvedSubscription(
-                        null
-                      );
-
-                      setReferralResult(
-                        null
-                      );
-
-                      setReferralError(
-                        ""
-                      );
+                      setValue("billingCycle", e.target.value, {
+                        shouldDirty: true,
+                        shouldTouch: true,
+                        shouldValidate: true,
+                      });
+                      setResolvedSubscription(null);
+                      setReferralResult(null);
+                      setReferralError("");
                     }}
                   >
-                    <option value="monthly">
-                      Monthly Cycle
-                    </option>
-
-                    <option value="annual">
-                      Annual Term
-                      (Discounted)
-                    </option>
+                    <option value="monthly">Monthly Cycle</option>
+                    <option value="annual">Annual Term</option>
                   </SelectField>
                 </div>
               </Section>
@@ -2275,12 +1969,10 @@ function AddClientPage() {
               >
                 {resolvingSubscription ? (
                   <LoadingBox
-                    text="Reconciling pricing table..."
+                    text="Calculating subscription price..."
                     theme={theme}
                   />
-                ) : !selectedPlanId ||
-                  !selectedCityTierId ||
-                  !selectedTurnoverBandId ? (
+                ) : !selectedPlanId ? (
                   <div
                     className="rounded-lg border border-dashed p-4 text-center text-xs"
                     style={{
@@ -2291,8 +1983,7 @@ function AddClientPage() {
                         theme.textMuted,
                     }}
                   >
-                    Select a plan, market
-                    tier, and turnover scale
+                    Select a subscription plan
                     to preview cost.
                   </div>
                 ) : !resolvedSubscription ? (
@@ -2323,7 +2014,7 @@ function AddClientPage() {
                   >
                     <div className="space-y-2 text-xs">
                       <PriceRow
-                        label="Base Tier License"
+                        label="Subscription Price"
                         value={money(
                           pricing.basePrice
                         )}
@@ -2606,7 +2297,7 @@ function AddClientPage() {
               </ReviewSection>
 
               <ReviewSection
-                title="Commercial Allocation"
+                title="Subscription Allocation"
                 theme={theme}
               >
                 <ReviewGrid
@@ -2614,42 +2305,33 @@ function AddClientPage() {
                   items={[
                     [
                       "Allocated Plan",
-                      resolvedSubscription
-                        ?.subscription_plan
-                        ?.name ||
-                        selectedPlan?.name ||
-                        "—",
+                      resolvedSubscription?.subscription_plan?.name ||
+                        selectedPlan?.name || "—",
                     ],
-
                     [
-                      "City Market Tier",
-                      selectedCityTier
-                        ?.name || "—",
+                      "Plan Type",
+                      resolvedSubscription?.subscription_plan?.main_plan ||
+                        selectedPlan?.main_plan || "—",
                     ],
-
-                    [
-                      "Turnover Scale",
-                      selectedTurnoverBand
-                        ?.name || "—",
-                    ],
-
                     [
                       "Billing Term",
-                      formatBillingCycle(
-                        selectedBillingCycle
-                      ),
+                      formatBillingCycle(selectedBillingCycle),
                     ],
-
+                    [
+                      "Monthly Price",
+                      selectedPlan ? money(selectedPlan.monthly_price) : "—",
+                    ],
+                    [
+                      "Annual Price",
+                      selectedPlan ? money(selectedPlan.annual_price) : "—",
+                    ],
                     [
                       "Cloud Workspace",
                       watchedData.firebaseProjectId,
                     ],
-
                     [
                       "Total Payable",
-                      money(
-                        pricing.total
-                      ),
+                      money(pricing.total),
                     ],
                   ]}
                 />

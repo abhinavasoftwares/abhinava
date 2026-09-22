@@ -1,865 +1,673 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useRef, useCallback } from "react";
 import {
   Plus,
   Search,
-  Users,
   Download,
-  MoreHorizontal,
-  Edit,
   Eye,
-  Trash2,
   Mail,
-  Phone,
   Building2,
-  CreditCard,
-  CheckCircle2,
-  Clock3,
-  XCircle,
   Check,
+  ChevronLeft,
+  ChevronRight,
+  ArrowUpDown,
+  Filter,
+  Layers,
+  RefreshCw,
+  ExternalLink,
+  Copy,
+  XCircle,
 } from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 
 const API_URL = import.meta.env.VITE_API_BASE_URL;
 
-/* =========================================================
-   ABHINAVA ENTERPRISE THEME (MONOCHROME & ZINC)
-========================================================= */
-
-const THEMES = {
-  light: {
-    mode: "light",
-    background: "#F8F9FA",
-    surface: "#FFFFFF",
-    surfaceAlt: "#F3F4F6",
-    surfaceHover: "#EBECEF",
-
-    border: "#E4E7EB",
-    borderStrong: "#CBD0D7",
-
-    text: "#0F1117",
-    textSoft: "#363B45",
-    textMuted: "#6B7280",
-    textLight: "#9CA3AF",
-
-    primary: "#0F1117",
-    primaryText: "#FFFFFF",
-    primaryHover: "#1F2430",
-    primarySoft: "#F0F2F5",
-
-    success: "#047857",
-    successSoft: "#ECFDF5",
-    warning: "#B45309",
-    warningSoft: "#FFFBEB",
-    danger: "#B91C1C",
-    dangerSoft: "#FEF2F2",
-  },
-  dark: {
-    mode: "dark",
-    background: "#090A0D",
-    surface: "#111318",
-    surfaceAlt: "#181B22",
-    surfaceHover: "#20242D",
-
-    border: "#20242D",
-    borderStrong: "#2E3442",
-
-    text: "#F9FAFB",
-    textSoft: "#D1D5DB",
-    textMuted: "#88909F",
-    textLight: "#545B6B",
-
-    primary: "#FFFFFF",
-    primaryText: "#090A0D",
-    primaryHover: "#E5E7EB",
-    primarySoft: "#1C2029",
-
-    success: "#34D399",
-    successSoft: "rgba(52, 211, 153, 0.12)",
-    warning: "#FBBF24",
-    warningSoft: "rgba(251, 191, 36, 0.12)",
-    danger: "#F87171",
-    dangerSoft: "rgba(248, 113, 113, 0.12)",
-  },
-};
-
-function getStoredTheme() {
-  if (typeof window === "undefined") {
-    return "light";
-  }
-
-  return localStorage.getItem("abhinava-admin-theme") === "dark"
-    ? "dark"
-    : "light";
-}
-
-/* =========================================================
-   PAGE
-========================================================= */
-
-function ClientsPage() {
+export default function ClientsPage() {
   const location = useLocation();
   const navigate = useNavigate();
 
+  // Core Data States
   const [clients, setClients] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [successMessage, setSuccessMessage] = useState("");
+  const [successToast, setSuccessToast] = useState("");
 
-  const [searchTerm, setSearchTerm] = useState("");
-  const [statusFilter, setStatusFilter] = useState("All Clients");
+  // Filter & Search States
+  const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState("ALL");
+  const [tierFilter, setTierFilter] = useState("ALL");
+  const [sortField, setSortField] = useState("business_name");
+  const [sortDirection, setSortDirection] = useState("asc");
 
-  const [themeMode, setThemeMode] = useState(getStoredTheme);
-  const theme = THEMES[themeMode] || THEMES.light;
-
-  /* =======================================================
-     SYNC WITH ADMINLAYOUT THEME
-  ======================================================== */
-
-  useEffect(() => {
-    const root = document.documentElement;
-
-    const updateTheme = () => {
-      const mode =
-        root.getAttribute("data-abhinava-theme") === "dark"
-          ? "dark"
-          : "light";
-
-      setThemeMode(mode);
-    };
-
-    updateTheme();
-
-    const observer = new MutationObserver(updateTheme);
-
-    observer.observe(root, {
-      attributes: true,
-      attributeFilter: ["data-abhinava-theme"],
-    });
-
-    return () => observer.disconnect();
-  }, []);
+  // Pagination & Continuous Infinite Scroll States
+  const [paginationMode, setPaginationMode] = useState("pagination"); // 'pagination' | 'infinite'
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(15);
+  const [visibleCount, setVisibleCount] = useState(20);
+  const observerTarget = useRef(null);
 
   /* =======================================================
-     SUCCESS NOTIFICATION
-  ======================================================== */
+     FETCH DATA DIRECTORY
+  ======================================================= */
+  const fetchClients = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError("");
 
-  useEffect(() => {
-    if (!location.state?.successMessage) {
-      return;
+      const response = await fetch(`${API_URL}/clients`, {
+        credentials: "include",
+        cache: "no-store",
+      });
+
+      if (response.status === 401) {
+        navigate("/login", { replace: true });
+        return;
+      }
+
+      if (response.status === 403) {
+        throw new Error("Clearance denied. Administrative privileges required.");
+      }
+
+      if (!response.ok) {
+        throw new Error(`Directory query failed with status ${response.status}`);
+      }
+
+      const data = await response.json();
+      setClients(Array.isArray(data.clients) ? data.clients : []);
+    } catch (err) {
+      console.error("Directory sync error:", err);
+      setError(err?.message || "Failed to synchronize client directory.");
+    } finally {
+      setLoading(false);
     }
+  }, [navigate]);
 
-    setSuccessMessage(location.state.successMessage);
+  useEffect(() => {
+    fetchClients();
+  }, [fetchClients]);
 
-    navigate(location.pathname, {
-      replace: true,
-      state: {},
-    });
-
-    const timer = setTimeout(() => {
-      setSuccessMessage("");
-    }, 4000);
-
-    return () => clearTimeout(timer);
+  /* =======================================================
+     SUCCESS TOAST
+  ======================================================= */
+  useEffect(() => {
+    if (location.state?.successMessage) {
+      setSuccessToast(location.state.successMessage);
+      navigate(location.pathname, { replace: true, state: {} });
+      const timer = setTimeout(() => setSuccessToast(""), 4000);
+      return () => clearTimeout(timer);
+    }
   }, [location, navigate]);
 
   /* =======================================================
-     FETCH DIRECTORY
-  ======================================================== */
+     FILTER, SEARCH & SORT LOGIC
+  ======================================================= */
+  const filteredAndSortedClients = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
 
+    const filtered = clients.filter((c) => {
+      const matchSearch =
+        !query ||
+        c.business_name?.toLowerCase().includes(query) ||
+        c.owner_name?.toLowerCase().includes(query) ||
+        c.business_email?.toLowerCase().includes(query) ||
+        String(c.id).toLowerCase().includes(query);
+
+      const rawStatus = (c.subscription_status || "UNKNOWN").toUpperCase();
+      const matchStatus =
+        statusFilter === "ALL" ||
+        (statusFilter === "ACTIVE" && (rawStatus === "ACTIVE" || rawStatus === "READY")) ||
+        (statusFilter === "PENDING" && (rawStatus === "PENDING" || rawStatus === "TRIAL")) ||
+        (statusFilter === "INACTIVE" && (rawStatus === "INACTIVE" || rawStatus === "FAILED" || rawStatus === "CANCELLED"));
+
+      const rawTier = (c.plan || "STANDARD").toUpperCase();
+      const matchTier = tierFilter === "ALL" || rawTier.includes(tierFilter);
+
+      return matchSearch && matchStatus && matchTier;
+    });
+
+    return filtered.sort((a, b) => {
+      let valA = a[sortField] || "";
+      let valB = b[sortField] || "";
+
+      if (typeof valA === "string") valA = valA.toLowerCase();
+      if (typeof valB === "string") valB = valB.toLowerCase();
+
+      if (valA < valB) return sortDirection === "asc" ? -1 : 1;
+      if (valA > valB) return sortDirection === "asc" ? 1 : -1;
+      return 0;
+    });
+  }, [clients, searchQuery, statusFilter, tierFilter, sortField, sortDirection]);
+
+  // Reset pagination on query changes
   useEffect(() => {
-    const fetchClients = async () => {
-      try {
-        setLoading(true);
-        setError("");
+    setCurrentPage(1);
+    setVisibleCount(20);
+  }, [searchQuery, statusFilter, tierFilter, pageSize]);
 
-        const response = await fetch(`${API_URL}/clients`, {
-          credentials: "include",
-          cache: "no-store",
-        });
-
-        if (response.status === 401) {
-          navigate("/login", { replace: true });
-          return;
-        }
-
-        if (response.status === 403) {
-          throw new Error("You do not have administrative clearance to access directory.");
-        }
-
-        if (!response.ok) {
-          throw new Error(`Directory query failed (${response.status})`);
-        }
-
-        const data = await response.json();
-
-        setClients(
-          Array.isArray(data.clients)
-            ? data.clients
-            : []
-        );
-      } catch (err) {
-        console.error("Error fetching clients:", err);
-        setError(err.message || "Unable to sync client directory.");
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchClients();
-  }, [navigate]);
+  const totalPages = Math.ceil(filteredAndSortedClients.length / pageSize) || 1;
+  const paginatedClients = useMemo(() => {
+    if (paginationMode === "infinite") {
+      return filteredAndSortedClients.slice(0, visibleCount);
+    }
+    const startIndex = (currentPage - 1) * pageSize;
+    return filteredAndSortedClients.slice(startIndex, startIndex + pageSize);
+  }, [filteredAndSortedClients, paginationMode, currentPage, pageSize, visibleCount]);
 
   /* =======================================================
-     FILTER
-  ======================================================== */
+     INFINITE SCROLL INTERSECTION OBSERVER
+  ======================================================= */
+  useEffect(() => {
+    if (paginationMode !== "infinite") return;
 
-  const filteredClients = useMemo(() => {
-    const search = searchTerm.trim().toLowerCase();
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && visibleCount < filteredAndSortedClients.length) {
+          setVisibleCount((prev) => Math.min(prev + 15, filteredAndSortedClients.length));
+        }
+      },
+      { threshold: 0.2 }
+    );
 
-    return clients.filter((client) => {
-      const businessName = client.business_name?.toLowerCase() || "";
-      const ownerName = client.owner_name?.toLowerCase() || "";
-      const email = client.business_email?.toLowerCase() || "";
-      const status = client.subscription_status?.toLowerCase() || "";
+    const currentTarget = observerTarget.current;
+    if (currentTarget) observer.observe(currentTarget);
 
-      const matchesSearch =
-        !search ||
-        businessName.includes(search) ||
-        ownerName.includes(search) ||
-        email.includes(search);
+    return () => {
+      if (currentTarget) observer.unobserve(currentTarget);
+    };
+  }, [paginationMode, visibleCount, filteredAndSortedClients.length]);
 
-      const matchesStatus =
-        statusFilter === "All Clients" ||
-        status === statusFilter.toLowerCase();
-
-      return matchesSearch && matchesStatus;
-    });
-  }, [clients, searchTerm, statusFilter]);
-
-  const handleExport = () => {
-    if (filteredClients.length === 0) return;
-    const headers = ["ID", "Business Name", "Owner Name", "Email", "Plan", "Status"];
-    const rows = filteredClients.map((c) => [
-      c.id ?? "",
-      `"${c.business_name || ""}"`,
-      `"${c.owner_name || ""}"`,
-      `"${c.business_email || ""}"`,
-      `"${c.plan || ""}"`,
-      `"${c.subscription_status || ""}"`,
-    ]);
-
-    const csvContent =
-      "data:text/csv;charset=utf-8," +
-      [headers.join(","), ...rows.map((e) => e.join(","))].join("\n");
-
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `abhinava_clients_${Date.now()}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+  const toggleSort = (field) => {
+    if (sortField === field) {
+      setSortDirection((prev) => (prev === "asc" ? "desc" : "asc"));
+    } else {
+      setSortField(field);
+      setSortDirection("asc");
+    }
   };
 
   /* =======================================================
-     RENDER
-  ======================================================== */
+     CSV EXPORT STREAMER
+  ======================================================= */
+  const handleExportCSV = () => {
+    if (filteredAndSortedClients.length === 0) return;
+
+    const headers = ["ID", "Business Name", "Owner Name", "Email", "Plan Tier", "Status", "Updated At"];
+    const rows = filteredAndSortedClients.map((c) => [
+      c.id ?? "",
+      `"${(c.business_name || "").replace(/"/g, '""')}"`,
+      `"${(c.owner_name || "").replace(/"/g, '""')}"`,
+      `"${(c.business_email || "").replace(/"/g, '""')}"`,
+      `"${c.plan || "Standard"}"`,
+      `"${c.subscription_status || "Active"}"`,
+      `"${c.updated_at || ""}"`,
+    ]);
+
+    const csvContent = "data:text/csv;charset=utf-8," + [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
+    const encodedUri = encodeURI(csvContent);
+    const anchor = document.createElement("a");
+    anchor.setAttribute("href", encodedUri);
+    anchor.setAttribute("download", `abhinava_directory_${Date.now()}.csv`);
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
+  };
+
+  const copyToClipboard = (text) => {
+    if (!text) return;
+    navigator.clipboard.writeText(text);
+    setSuccessToast(`Copied ${text} to clipboard`);
+    setTimeout(() => setSuccessToast(""), 3000);
+  };
 
   return (
-    <div
-      className="flex h-full min-h-0 w-full flex-col overflow-hidden"
-      style={{
-        backgroundColor: theme.background,
-        color: theme.text,
-      }}
-    >
-      {/* TOAST NOTIFICATION */}
-      {successMessage && (
-        <div
-          className="fixed right-4 top-4 z-[100] flex w-[calc(100%-2rem)] max-w-md items-start gap-3 rounded-xl border px-4 py-3.5 shadow-lg backdrop-blur-md transition-all sm:right-6 sm:top-6"
-          style={{
-            backgroundColor: theme.surface,
-            borderColor: theme.success,
-          }}
-        >
-          <div
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg"
-            style={{
-              backgroundColor: theme.successSoft,
-              color: theme.success,
-            }}
-          >
+    <div className="h-full max-h-full w-full flex flex-col bg-[#F8FAFC] font-sans text-slate-900 antialiased overflow-hidden select-none">
+      
+      {/* Toast */}
+      {successToast && (
+        <div className="fixed top-5 right-5 z-50 flex items-center gap-3 rounded-xl border border-emerald-200 bg-white/95 px-4 py-3 shadow-lg backdrop-blur-md animate-in slide-in-from-top-4">
+          <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-emerald-50 text-emerald-600">
             <Check size={14} strokeWidth={2.5} />
           </div>
-
-          <div className="min-w-0 flex-1">
-            <p className="text-[12px] font-bold" style={{ color: theme.text }}>
-              Operation Successful
-            </p>
-            <p className="mt-0.5 text-[11px] leading-relaxed" style={{ color: theme.textMuted }}>
-              {successMessage}
-            </p>
-          </div>
-
-          <button
-            type="button"
-            onClick={() => setSuccessMessage("")}
-            className="shrink-0 text-base leading-none transition opacity-60 hover:opacity-100"
-            style={{ color: theme.textMuted }}
-          >
-            ×
-          </button>
+          <p className="text-xs font-semibold text-slate-800">{successToast}</p>
         </div>
       )}
 
-      {/* PAGE HEADER */}
-      <header
-        className="shrink-0 border-b px-4 py-5 sm:px-6 lg:px-8"
-        style={{
-          backgroundColor: theme.background,
-          borderColor: theme.border,
-        }}
-      >
-        <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-          <div className="min-w-0">
-            <h1
-              className="text-[22px] sm:text-[26px] font-bold tracking-tight"
-              style={{ color: theme.text }}
-            >
-              Client Directory
-            </h1>
-            <p className="mt-1 text-[12px]" style={{ color: theme.textMuted }}>
-              Manage isolated tenant workspaces, subscription lifecycle, and account contacts.
-            </p>
+      {/* =========================================================
+          1. HEADER (STRICTLY SHRINK-0)
+      ========================================================== */}
+      <header className="shrink-0 border-b border-slate-200/80 bg-white px-4 sm:px-6 lg:px-8 py-3.5">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <div className="flex items-center gap-2 text-[10px] font-mono font-medium text-slate-500 uppercase tracking-wider">
+              <span>Tenant Ledger</span>
+            </div>
           </div>
 
-          <div className="flex shrink-0 items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            {/* View Mode */}
+            <div className="inline-flex rounded-lg border border-slate-200 bg-slate-100 p-0.5 text-xs font-medium">
+              <button
+                type="button"
+                onClick={() => setPaginationMode("pagination")}
+                className={`rounded px-2.5 py-1 transition-all ${
+                  paginationMode === "pagination"
+                    ? "bg-white text-slate-900 shadow-2xs font-bold"
+                    : "text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                Paged
+              </button>
+              <button
+                type="button"
+                onClick={() => setPaginationMode("infinite")}
+                className={`rounded px-2.5 py-1 transition-all ${
+                  paginationMode === "infinite"
+                    ? "bg-white text-slate-900 shadow-2xs font-bold"
+                    : "text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                Infinite Scroll
+              </button>
+            </div>
+
             <button
               type="button"
-              onClick={handleExport}
-              className="inline-flex items-center justify-center gap-2 rounded-lg border px-3 py-2 text-[12px] font-medium shadow-sm transition"
-              style={{
-                backgroundColor: theme.surface,
-                borderColor: theme.border,
-                color: theme.textSoft,
-              }}
+              onClick={handleExportCSV}
+              disabled={filteredAndSortedClients.length === 0}
+              className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 shadow-2xs hover:bg-slate-50 hover:border-slate-300 active:scale-[0.98] transition-all disabled:opacity-50"
             >
-              <Download size={13} strokeWidth={1.9} />
-              Export
+              <Download size={13} className="text-slate-500" />
+              <span>Export CSV</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={fetchClients}
+              className="inline-flex h-8 items-center justify-center rounded-lg border border-slate-200 bg-white p-2 text-slate-600 hover:bg-slate-50 hover:border-slate-300 active:scale-[0.98] transition-all"
+              title="Refresh Records"
+            >
+              <RefreshCw size={13} className={loading ? "animate-spin text-indigo-600" : ""} />
             </button>
 
             <Link
               to="/admin/clients/new"
-              className="inline-flex items-center justify-center gap-2 rounded-lg px-3.5 py-2 text-[12px] font-bold shadow-sm transition hover:opacity-90 active:scale-[0.99]"
-              style={{
-                backgroundColor: theme.primary,
-                color: theme.primaryText,
-              }}
+              className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-indigo-600 px-3 text-xs font-semibold text-white shadow-xs hover:bg-slate-700 active:scale-[0.98] transition-all"
             >
               <Plus size={14} strokeWidth={2.4} />
-              Register Client
+              <span>Register Client</span>
             </Link>
           </div>
         </div>
       </header>
 
-      {/* SEARCH / FILTER CONTROLS */}
-      <div
-        className="shrink-0 px-4 py-3.5 sm:px-6 lg:px-8"
-        style={{ backgroundColor: theme.background }}
-      >
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="text-[11px]" style={{ color: theme.textMuted }}>
-            Showing <span className="font-bold" style={{ color: theme.text }}>{filteredClients.length}</span> of{" "}
-            <span className="font-bold" style={{ color: theme.text }}>{clients.length}</span> registered organizations
+      {/* =========================================================
+          2. SEARCH & FILTERS (STRICTLY SHRINK-0)
+      ========================================================== */}
+      <section className="shrink-0 border-b border-slate-200/80 bg-white px-4 sm:px-6 lg:px-8 py-2.5">
+        <div className="flex flex-col gap-2.5 md:flex-row md:items-center md:justify-between">
+          
+          <div className="relative w-full md:w-72">
+            <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search by client, ID, owner..."
+              className="h-8 w-full rounded-lg border border-slate-200 bg-slate-50/70 pl-8 pr-3 text-xs text-slate-900 placeholder:text-slate-400 outline-none focus:bg-white focus:border-indigo-500 transition-all font-sans"
+            />
           </div>
 
-          <div className="flex w-full flex-col gap-2 sm:flex-row sm:w-auto">
-            {/* SEARCH */}
-            <div className="relative w-full sm:w-[260px]">
-              <Search
-                size={14}
-                strokeWidth={1.8}
-                className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
-                style={{ color: theme.textLight }}
-              />
-              <input
-                type="text"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="Search clients, owners, emails..."
-                className="h-9 w-full rounded-lg border py-1.5 pl-8 pr-3 text-[11px] font-medium outline-none transition shadow-sm"
-                style={{
-                  backgroundColor: theme.surface,
-                  borderColor: theme.border,
-                  color: theme.text,
-                }}
-                onFocus={(e) => (e.currentTarget.style.borderColor = theme.borderStrong)}
-                onBlur={(e) => (e.currentTarget.style.borderColor = theme.border)}
-              />
-            </div>
-
-            {/* STATUS DROPDOWN */}
-            <div className="relative w-full sm:w-[140px]">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="relative">
               <select
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value)}
-                className="h-9 w-full appearance-none rounded-lg border px-3 pr-8 text-[11px] font-medium outline-none transition shadow-sm"
-                style={{
-                  backgroundColor: theme.surface,
-                  borderColor: theme.border,
-                  color: theme.textSoft,
-                }}
+                className="h-8 appearance-none rounded-lg border border-slate-200 bg-slate-50/70 pl-2.5 pr-7 text-xs font-semibold text-slate-700 outline-none hover:bg-white focus:bg-white focus:border-indigo-500 transition-all cursor-pointer"
               >
-                <option value="All Clients">All Statuses</option>
-                <option value="Active">Active</option>
-                <option value="Inactive">Inactive</option>
-                <option value="Pending">Pending</option>
+                <option value="ALL">All Statuses</option>
+                <option value="ACTIVE">Active / Ready</option>
+                <option value="PENDING">Pending / Trial</option>
+                <option value="INACTIVE">Inactive / Cancelled</option>
               </select>
-
-              <svg
-                className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2"
-                width="12"
-                height="12"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                style={{ color: theme.textLight }}
-              >
-                <path d="m6 9 6 6 6-6" />
-              </svg>
+              <Filter size={10} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
             </div>
+            <span className="hidden sm:inline-flex items-center gap-1 rounded-md bg-slate-100 border border-slate-200 px-2 py-1 text-[10px] font-mono text-slate-600">
+              <span>MATCHED:</span>
+              <strong className="text-slate-900">{filteredAndSortedClients.length}</strong>
+            </span>
           </div>
-        </div>
-      </div>
 
-      {/* MAIN DATA VIEW */}
-      <main className="min-h-0 flex-1 overflow-hidden px-4 pb-6 sm:px-6 lg:px-8">
+        </div>
+      </section>
+
+      {/* =========================================================
+          3. MAIN VIEWPORT (STRICTLY CONTAINED IN VIEWPORT)
+      ========================================================== */}
+      <main className="flex-1 min-h-0 overflow-hidden flex flex-col p-4 sm:p-5">
+        
         {loading && (
-          <div
-            className="flex h-full min-h-[240px] items-center justify-center rounded-xl border"
-            style={{
-              backgroundColor: theme.surface,
-              borderColor: theme.border,
-            }}
-          >
-            <div className="flex flex-col items-center">
-              <div
-                className="h-6 w-6 animate-spin rounded-full border-2"
-                style={{
-                  borderColor: theme.border,
-                  borderTopColor: theme.text,
-                }}
-              />
-              <p className="mt-3 text-[11px] font-medium" style={{ color: theme.textMuted }}>
-                Loading directory...
-              </p>
-            </div>
+          <div className="flex-1 flex flex-col items-center justify-center rounded-xl border border-slate-200 bg-white">
+            <RefreshCw size={20} className="animate-spin text-indigo-600 mb-2" />
+            <p className="text-xs font-mono font-medium text-slate-400 uppercase tracking-wider">
+              Querying Tenant Instances...
+            </p>
           </div>
         )}
 
         {!loading && error && (
-          <div
-            className="flex h-full min-h-[240px] flex-col items-center justify-center rounded-xl border px-6 text-center"
-            style={{
-              backgroundColor: theme.dangerSoft,
-              borderColor: theme.danger,
-            }}
-          >
-            <XCircle size={24} strokeWidth={1.5} style={{ color: theme.danger }} />
-            <p className="mt-2.5 text-[12px] font-semibold" style={{ color: theme.danger }}>
-              {error}
-            </p>
+          <div className="flex-1 flex flex-col items-center justify-center rounded-xl border border-rose-200 bg-rose-50/50 p-6 text-center">
+            <XCircle size={26} className="text-rose-600 mb-2" />
+            <h3 className="text-sm font-bold text-rose-900">Query Exception Encountered</h3>
+            <p className="text-xs text-rose-700 mt-1 max-w-sm">{error}</p>
+            <button
+              onClick={fetchClients}
+              className="mt-3 rounded-lg bg-slate-900 px-3.5 py-1.5 text-xs font-semibold text-white shadow-xs hover:bg-black transition-all"
+            >
+              Re-attempt Sync
+            </button>
           </div>
         )}
 
-        {!loading && !error && filteredClients.length > 0 && (
-          <>
-            {/* DESKTOP TABLE */}
-            <div
-              className="hidden h-full min-h-0 overflow-hidden rounded-xl border shadow-sm lg:flex lg:flex-col"
-              style={{
-                backgroundColor: theme.surface,
-                borderColor: theme.border,
-              }}
-            >
-              <div
-                className="grid shrink-0 grid-cols-[minmax(0,1.7fr)_minmax(180px,1.2fr)_110px_120px_110px] border-b px-5 py-3"
-                style={{
-                  backgroundColor: theme.surfaceAlt,
-                  borderColor: theme.border,
-                }}
-              >
-                <TableHeading label="Organization" theme={theme} />
-                <TableHeading label="Primary Contact" theme={theme} />
-                <TableHeading label="Service Tier" theme={theme} />
-                <TableHeading label="Status" theme={theme} />
-                <TableHeading label="Actions" theme={theme} align="right" />
-              </div>
-
-              {/* ISOLATED SCROLLABLE TABLE BODY */}
-              <div
-                className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden divide-y"
-                style={{
-                  borderColor: theme.border,
-                  scrollbarWidth: "thin",
-                  scrollbarColor: `${theme.borderStrong} transparent`,
-                }}
-              >
-                {filteredClients.map((client) => (
-                  <DesktopClientRow
-                    key={client.id}
-                    client={client}
-                    theme={theme}
-                  />
-                ))}
-              </div>
-
-              {/* FOOTER */}
-              <div
-                className="flex shrink-0 items-center justify-between border-t px-5 py-3"
-                style={{
-                  backgroundColor: theme.surfaceAlt,
-                  borderColor: theme.border,
-                }}
-              >
-                <span className="text-[11px]" style={{ color: theme.textMuted }}>
-                  {filteredClients.length} verified {filteredClients.length === 1 ? "tenant" : "tenants"}
-                </span>
-                <span className="text-[10px]" style={{ color: theme.textLight }}>
-                  Encrypted Directory
-                </span>
-              </div>
-            </div>
-
-            {/* MOBILE CARDS */}
-            <div className="h-full overflow-y-auto overflow-x-hidden pb-2 lg:hidden space-y-3">
-              {filteredClients.map((client) => (
-                <MobileClientCard
-                  key={client.id}
-                  client={client}
-                  theme={theme}
-                />
-              ))}
-            </div>
-          </>
-        )}
-
-        {/* EMPTY STATE */}
-        {!loading && !error && filteredClients.length === 0 && (
-          <div
-            className="flex h-full min-h-[300px] flex-col items-center justify-center rounded-xl border px-6 text-center shadow-sm"
-            style={{
-              backgroundColor: theme.surface,
-              borderColor: theme.border,
-            }}
-          >
-            <div
-              className="flex h-11 w-11 items-center justify-center rounded-xl border"
-              style={{
-                backgroundColor: theme.surfaceAlt,
-                borderColor: theme.border,
-                color: theme.text,
-              }}
-            >
-              <Building2 size={20} strokeWidth={1.8} />
-            </div>
-
-            <h2 className="mt-4 text-[14px] font-bold" style={{ color: theme.text }}>
-              {clients.length === 0 ? "No Clients Registered" : "No Matching Records"}
-            </h2>
-
-            <p className="mt-1 max-w-sm text-[11px] leading-relaxed" style={{ color: theme.textMuted }}>
+        {!loading && !error && filteredAndSortedClients.length === 0 && (
+          <div className="flex-1 flex flex-col items-center justify-center rounded-xl border border-dashed border-slate-300 bg-white p-8 text-center">
+            <Building2 size={28} className="text-slate-300 mb-2" />
+            <h3 className="text-sm font-bold text-slate-900">No Matching Client Ledgers</h3>
+            <p className="text-xs text-slate-500 mt-0.5 max-w-xs">
               {clients.length === 0
-                ? "Onboard your first enterprise client to initialize database provisioning."
-                : "Adjust your search parameters or reset the status filters."}
+                ? "No client organizations registered yet."
+                : "No clients match the current search filters."}
             </p>
-
-            {clients.length === 0 && (
-              <Link
-                to="/admin/clients/new"
-                className="mt-4 inline-flex items-center gap-2 rounded-lg px-3.5 py-2 text-[11px] font-bold shadow-sm transition hover:opacity-90"
-                style={{
-                  backgroundColor: theme.primary,
-                  color: theme.primaryText,
-                }}
-              >
-                <Plus size={14} strokeWidth={2.4} />
-                Register First Client
-              </Link>
-            )}
           </div>
         )}
+
+        {/* POPULATED DATA VIEW */}
+        {!loading && !error && filteredAndSortedClients.length > 0 && (
+          <div className="flex-1 min-h-0 flex flex-col rounded-xl border border-slate-200/90 bg-white shadow-2xs overflow-hidden">
+            
+            {/* DESKTOP TABLE VIEW (INVISIBLE INTERNAL SCROLL) */}
+            <div className="hidden lg:flex flex-col flex-1 min-h-0">
+              
+              {/* Fixed Table Heading */}
+              <div className="shrink-0 grid grid-cols-[minmax(0,1.8fr)_minmax(180px,1.2fr)_120px_130px_120px_90px] border-b border-slate-200 bg-slate-50/80 px-6 py-2.5 text-[10px] font-bold uppercase tracking-wider text-slate-500 font-mono">
+                <button
+                  type="button"
+                  onClick={() => toggleSort("business_name")}
+                  className="flex items-center gap-1 text-left hover:text-slate-900"
+                >
+                  <span>Organization</span>
+                  <ArrowUpDown size={10} />
+                </button>
+                <span className="text-left">Primary Contact</span>
+                <button
+                  type="button"
+                  onClick={() => toggleSort("plan")}
+                  className="flex items-center gap-1 text-left hover:text-slate-900"
+                >
+                  <span>Tier</span>
+                  <ArrowUpDown size={10} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => toggleSort("subscription_status")}
+                  className="flex items-center gap-1 text-left hover:text-slate-900"
+                >
+                  <span>Subscription</span>
+                  <ArrowUpDown size={10} />
+                </button>
+                <span className="text-left">Tenant DB</span>
+                <span className="text-right">Actions</span>
+              </div>
+
+              {/* Internal Body with Hidden Native Scrollbars */}
+              <div className="flex-1 min-h-0 overflow-y-auto divide-y divide-slate-100 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+                {paginatedClients.map((client) => (
+                  <div
+                    key={client.id}
+                    className="grid grid-cols-[minmax(0,1.8fr)_minmax(180px,1.2fr)_120px_130px_120px_90px] items-center px-6 py-3 hover:bg-slate-50/80 transition-colors group"
+                  >
+                    <div className="pr-4 min-w-0">
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-indigo-50 border border-indigo-100 text-indigo-700 font-bold font-mono text-[11px] shadow-2xs">
+                          {getInitial(client.business_name)}
+                        </div>
+                        <div className="min-w-0">
+                          <Link
+                            to={`/admin/clients/${client.id}`}
+                            className="block truncate text-xs font-bold text-slate-900 hover:text-indigo-600 transition-colors leading-snug"
+                          >
+                            {client.business_name || "Unnamed Organization"}
+                          </Link>
+                          <div className="flex items-center gap-1.5 mt-0.5">
+                            <span className="font-mono text-[10px] text-slate-400">
+                              ID: #{client.id ?? "—"}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => copyToClipboard(client.id)}
+                              className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-slate-700 transition-opacity"
+                              title="Copy ID"
+                            >
+                              <Copy size={10} />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="pr-4 min-w-0">
+                      <p className="truncate text-xs font-semibold text-slate-800">
+                        {client.owner_name || "—"}
+                      </p>
+                      <p className="truncate text-[10.5px] text-slate-400 mt-0.5 font-mono">
+                        {client.business_email || "No email"}
+                      </p>
+                    </div>
+
+                    <div className="pr-3">
+                      <span className="inline-block rounded bg-slate-100 border border-slate-200 px-2 py-0.5 text-[9.5px] font-mono font-bold text-slate-700 uppercase">
+                        {client.plan || "Standard"}
+                      </span>
+                    </div>
+
+                    <div className="pr-3">
+                      <StatusBadge status={client.subscription_status} />
+                    </div>
+
+                    <div className="pr-3">
+                      <span className="inline-flex items-center gap-1 text-[10.5px] font-mono text-slate-600">
+                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                        <span>ISOLATED</span>
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-end gap-1">
+                      <Link
+                        to={`/admin/clients/${client.id}`}
+                        className="rounded-lg p-1.5 text-slate-400 hover:bg-indigo-50 hover:text-indigo-700 transition-colors"
+                        title="View Tenant Dossier"
+                      >
+                        <Eye size={14} />
+                      </Link>
+                      <button
+                        type="button"
+                        onClick={() => copyToClipboard(client.business_email)}
+                        className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors"
+                        title="Copy Email"
+                      >
+                        <Mail size={14} />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+
+                {paginationMode === "infinite" && (
+                  <div ref={observerTarget} className="py-3 text-center text-xs font-mono text-slate-400">
+                    {visibleCount < filteredAndSortedClients.length ? (
+                      <span className="flex items-center justify-center gap-2">
+                        <RefreshCw size={11} className="animate-spin text-indigo-600" />
+                        Loading more records...
+                      </span>
+                    ) : (
+                      <span>All {filteredAndSortedClients.length} accounts loaded</span>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* MOBILE & TABLET CARD STACK (INVISIBLE INTERNAL SCROLL) */}
+            <div className="lg:hidden flex-1 min-h-0 overflow-y-auto divide-y divide-slate-100 p-2.5 space-y-2 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+              {paginatedClients.map((client) => (
+                <div
+                  key={client.id}
+                  className="rounded-xl border border-slate-200/90 bg-white p-3.5 hover:border-slate-300 transition-all space-y-2.5"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-center gap-2.5">
+                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-indigo-50 border border-indigo-100 text-indigo-700 font-bold font-mono text-xs">
+                        {getInitial(client.business_name)}
+                      </div>
+                      <div>
+                        <Link
+                          to={`/admin/clients/${client.id}`}
+                          className="text-xs font-bold text-slate-900 hover:text-indigo-600 transition-colors"
+                        >
+                          {client.business_name || "Unnamed Organization"}
+                        </Link>
+                        <p className="text-[10px] font-mono text-slate-400">
+                          ID: #{client.id ?? "—"}
+                        </p>
+                      </div>
+                    </div>
+                    <StatusBadge status={client.subscription_status} />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 text-xs border-t border-slate-100 pt-2">
+                    <div>
+                      <span className="text-[9.5px] font-mono text-slate-400 uppercase">Contact</span>
+                      <p className="font-semibold text-slate-800 truncate mt-0.5">
+                        {client.owner_name || "—"}
+                      </p>
+                    </div>
+                    <div>
+                      <span className="text-[9.5px] font-mono text-slate-400 uppercase">Tier</span>
+                      <p className="font-semibold text-slate-800 truncate mt-0.5">
+                        {client.plan || "Standard"}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between border-t border-slate-100 pt-2 text-xs">
+                    <span className="text-[10.5px] font-mono text-slate-400 truncate max-w-[170px]">
+                      {client.business_email || "No email"}
+                    </span>
+                    <Link
+                      to={`/admin/clients/${client.id}`}
+                      className="inline-flex items-center gap-1 font-bold text-indigo-600 hover:underline text-[11px]"
+                    >
+                      <span>View Dossier</span>
+                      <ExternalLink size={11} />
+                    </Link>
+                  </div>
+                </div>
+              ))}
+
+              {paginationMode === "infinite" && (
+                <div ref={observerTarget} className="py-3 text-center text-xs font-mono text-slate-400">
+                  {visibleCount < filteredAndSortedClients.length
+                    ? "Pulling next batch..."
+                    : "End of active directory"}
+                </div>
+              )}
+            </div>
+
+            {/* =========================================================
+                4. PAGINATION FOOTER (STRICTLY SHRINK-0)
+            ========================================================== */}
+            {paginationMode === "pagination" && (
+              <div className="shrink-0 border-t border-slate-200/80 bg-slate-50/60 px-4 sm:px-6 py-2.5 flex flex-col sm:flex-row items-center justify-between gap-2.5 text-xs font-mono">
+                
+                <div className="flex items-center gap-2 text-slate-500">
+                  <span>SHOW:</span>
+                  <select
+                    value={pageSize}
+                    onChange={(e) => setPageSize(Number(e.target.value))}
+                    className="rounded border border-slate-200 bg-white px-2 py-0.5 text-xs font-bold text-slate-800 outline-none hover:border-slate-300"
+                  >
+                    <option value={10}>10 records</option>
+                    <option value={15}>15 records</option>
+                    <option value={25}>25 records</option>
+                    <option value={50}>50 records</option>
+                  </select>
+                  <span className="text-slate-400">
+                    of {filteredAndSortedClients.length} entries
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
+                    disabled={currentPage === 1}
+                    className="flex h-7 w-7 items-center justify-center rounded border border-slate-200 bg-white text-slate-600 shadow-2xs hover:bg-slate-100 hover:text-slate-900 disabled:opacity-40 disabled:hover:bg-white"
+                  >
+                    <ChevronLeft size={14} />
+                  </button>
+
+                  <span className="px-2 text-xs font-bold text-slate-800">
+                    {currentPage} / {totalPages}
+                  </span>
+
+                  <button
+                    type="button"
+                    onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
+                    disabled={currentPage === totalPages}
+                    className="flex h-7 w-7 items-center justify-center rounded border border-slate-200 bg-white text-slate-600 shadow-2xs hover:bg-slate-100 hover:text-slate-900 disabled:opacity-40 disabled:hover:bg-white"
+                  >
+                    <ChevronRight size={14} />
+                  </button>
+                </div>
+              </div>
+            )}
+
+          </div>
+        )}
+
       </main>
+
     </div>
   );
 }
 
-/* =========================================================
-   ROW & CELL COMPONENTS
-========================================================= */
+/* ============================================================================
+   STATUS BADGE COMPONENT
+============================================================================ */
 
-function TableHeading({ label, theme, align = "left" }) {
-  return (
-    <div
-      className={`text-[9px] font-bold uppercase tracking-wider ${
-        align === "right" ? "text-right" : "text-left"
-      }`}
-      style={{ color: theme.textMuted }}
-    >
-      {label}
-    </div>
-  );
-}
+function StatusBadge({ status }) {
+  const normalized = String(status || "").trim().toUpperCase();
 
-function DesktopClientRow({ client, theme }) {
-  return (
-    <div
-      className="grid grid-cols-[minmax(0,1.7fr)_minmax(180px,1.2fr)_110px_120px_110px] items-center px-5 py-3 transition-colors"
-      style={{ borderColor: theme.border }}
-      onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = theme.surfaceHover)}
-      onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
-    >
-      {/* BUSINESS */}
-      <div className="min-w-0 pr-4">
-        <div className="flex min-w-0 items-center gap-3">
-          <div
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border text-[11px] font-bold"
-            style={{
-              backgroundColor: theme.surfaceAlt,
-              borderColor: theme.border,
-              color: theme.text,
-            }}
-          >
-            {getInitial(client.business_name)}
-          </div>
+  let label = normalized || "UNKNOWN";
+  let classes = "bg-slate-100 text-slate-600 border-slate-200";
 
-          <div className="min-w-0">
-            <Link
-              to={`/admin/clients/${client.id}`}
-              className="block truncate text-[12px] font-bold transition hover:underline"
-              style={{ color: theme.text }}
-            >
-              {client.business_name || "Unnamed entity"}
-            </Link>
-
-            <span className="mt-0.5 block truncate text-[10px]" style={{ color: theme.textMuted }}>
-              Tenant #{client.id ?? "—"}
-            </span>
-          </div>
-        </div>
-      </div>
-
-      {/* OWNER */}
-      <div className="min-w-0 pr-4">
-        <div className="truncate text-[11px] font-medium" style={{ color: theme.textSoft }}>
-          {client.owner_name || "—"}
-        </div>
-        <div className="truncate text-[10px]" style={{ color: theme.textMuted }}>
-          {client.business_email || "No email"}
-        </div>
-      </div>
-
-      {/* PLAN */}
-      <div className="min-w-0 pr-3">
-        <span
-          className="inline-flex max-w-full truncate rounded px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider"
-          style={{
-            backgroundColor: theme.surfaceAlt,
-            color: theme.textSoft,
-          }}
-          title={client.plan || "—"}
-        >
-          {client.plan || "Standard"}
-        </span>
-      </div>
-
-      {/* STATUS */}
-      <div className="min-w-0 pr-3">
-        <StatusBadge status={client.subscription_status} theme={theme} />
-      </div>
-
-      {/* ACTIONS */}
-      <div className="flex items-center justify-end gap-1">
-        <ActionButton
-          to={`/admin/clients/${client.id}`}
-          icon={Eye}
-          label="View client"
-          theme={theme}
-        />
-        <ActionButton icon={Edit} label="Edit client" theme={theme} />
-        <ActionButton icon={Trash2} label="Delete client" theme={theme} danger />
-      </div>
-    </div>
-  );
-}
-
-function MobileClientCard({ client, theme }) {
-  const phone = client.whatsapp_number || client.primary_number || "";
-
-  return (
-    <div
-      className="rounded-xl border p-4 shadow-sm"
-      style={{
-        backgroundColor: theme.surface,
-        borderColor: theme.border,
-      }}
-    >
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex min-w-0 items-center gap-3">
-          <div
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border text-[13px] font-bold"
-            style={{
-              backgroundColor: theme.surfaceAlt,
-              borderColor: theme.border,
-              color: theme.text,
-            }}
-          >
-            {getInitial(client.business_name)}
-          </div>
-
-          <div className="min-w-0">
-            <Link
-              to={`/admin/clients/${client.id}`}
-              className="block truncate text-[13px] font-bold"
-              style={{ color: theme.text }}
-            >
-              {client.business_name || "Unnamed organization"}
-            </Link>
-            <p className="truncate text-[10px]" style={{ color: theme.textMuted }}>
-              {client.owner_name || "Owner unassigned"}
-            </p>
-          </div>
-        </div>
-
-        <StatusBadge status={client.subscription_status} theme={theme} />
-      </div>
-
-      <div className="mt-3 grid grid-cols-2 gap-2 text-[10px] border-t pt-3" style={{ borderColor: theme.border }}>
-        <div className="truncate" style={{ color: theme.textMuted }}>
-          Email: <span className="font-medium" style={{ color: theme.textSoft }}>{client.business_email || "—"}</span>
-        </div>
-        <div className="truncate text-right" style={{ color: theme.textMuted }}>
-          Tier: <span className="font-medium" style={{ color: theme.textSoft }}>{client.plan || "—"}</span>
-        </div>
-      </div>
-
-      <div className="mt-3 flex items-center justify-between border-t pt-3" style={{ borderColor: theme.border }}>
-        <span className="text-[10px]" style={{ color: theme.textLight }}>
-          ID: {client.id ?? "—"}
-        </span>
-
-        <div className="flex items-center gap-1.5">
-          <Link
-            to={`/admin/clients/${client.id}`}
-            className="inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-[10px] font-semibold"
-            style={{
-              backgroundColor: theme.surfaceAlt,
-              borderColor: theme.border,
-              color: theme.text,
-            }}
-          >
-            <Eye size={12} /> View
-          </Link>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function StatusBadge({ status, theme }) {
-  const normalized = status?.toLowerCase() || "";
-
-  let color = theme.textMuted;
-  let background = theme.surfaceAlt;
-  let Icon = Clock3;
-
-  if (normalized === "active" || normalized === "ready") {
-    color = theme.success;
-    background = theme.successSoft;
-    Icon = CheckCircle2;
-  } else if (normalized === "pending" || normalized === "trial") {
-    color = theme.warning;
-    background = theme.warningSoft;
-    Icon = Clock3;
-  } else if (
-    normalized === "inactive" ||
-    normalized === "failed" ||
-    normalized === "cancelled"
-  ) {
-    color = theme.danger;
-    background = theme.dangerSoft;
-    Icon = XCircle;
+  if (normalized === "ACTIVE" || normalized === "READY") {
+    label = "Active";
+    classes = "bg-emerald-50 text-emerald-700 border-emerald-200/80";
+  } else if (normalized === "PENDING" || normalized === "TRIAL") {
+    label = "Pending";
+    classes = "bg-amber-50 text-amber-800 border-amber-200/80";
+  } else if (normalized === "FAILED" || normalized === "CANCELLED" || normalized === "INACTIVE") {
+    label = "Inactive";
+    classes = "bg-rose-50 text-rose-700 border-rose-200/80";
   }
 
   return (
-    <span
-      className="inline-flex max-w-full items-center gap-1.5 rounded px-2 py-0.5 text-[9px] font-semibold"
-      style={{
-        backgroundColor: background,
-        color,
-      }}
-    >
-      <Icon size={10} strokeWidth={2.2} className="shrink-0" />
-      <span className="truncate">{status || "Unknown"}</span>
+    <span className={`inline-flex items-center gap-1.5 rounded px-2 py-0.5 text-[9.5px] font-mono font-bold border ${classes}`}>
+      <span className="h-1.5 w-1.5 rounded-full bg-current" />
+      {label}
     </span>
   );
 }
 
-function ActionButton({ to, icon: Icon, label, theme, danger = false }) {
-  const content = <Icon size={14} strokeWidth={1.8} />;
-  const className = "rounded-lg p-1.5 transition";
-
-  const style = {
-    color: danger ? theme.danger : theme.textMuted,
-  };
-
-  const handleMouseEnter = (e) => {
-    e.currentTarget.style.backgroundColor = danger
-      ? theme.dangerSoft
-      : theme.surfaceHover;
-    e.currentTarget.style.color = danger ? theme.danger : theme.text;
-  };
-
-  const handleMouseLeave = (e) => {
-    e.currentTarget.style.backgroundColor = "transparent";
-    e.currentTarget.style.color = danger ? theme.danger : theme.textMuted;
-  };
-
-  if (to) {
-    return (
-      <Link
-        to={to}
-        aria-label={label}
-        title={label}
-        className={className}
-        style={style}
-        onMouseEnter={handleMouseEnter}
-        onMouseLeave={handleMouseLeave}
-      >
-        {content}
-      </Link>
-    );
-  }
-
-  return (
-    <button
-      type="button"
-      aria-label={label}
-      title={label}
-      className={className}
-      style={style}
-      onMouseEnter={handleMouseEnter}
-      onMouseLeave={handleMouseLeave}
-    >
-      {content}
-    </button>
-  );
-}
-
 function getInitial(name) {
-  if (!name) return "C";
+  if (!name) return "O";
   return name.trim().charAt(0).toUpperCase();
 }
-
-export default ClientsPage;

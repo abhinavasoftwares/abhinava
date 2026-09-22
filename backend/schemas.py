@@ -1,19 +1,20 @@
 from datetime import date, datetime
 from decimal import Decimal
-
+from uuid import UUID
 from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 # ============================================================
 # CLIENT
 # ============================================================
 
-
 class ClientCreate(BaseModel):
     business_name: str
     legal_business_name: str
     business_type: str
     country: str
+
     business_email: EmailStr
     business_phone: str
 
@@ -25,143 +26,40 @@ class ClientCreate(BaseModel):
     pan: str
     gstin: str | None = None
 
-    # ---------------------------------------------------------
-    # SUBSCRIPTION
-    # ---------------------------------------------------------
+    logo_url: str | None = None
+    welcome_message: str | None = None
 
+    # Legacy / client-level subscription information.
+    # These can be synchronized from ClientSubscription.
     plan: str
     billing_cycle: str
     subscription_status: str
     start_date: str
 
+    # New simplified subscription reference.
     subscription_plan_id: int
-    city_tier_id: int
-    turnover_band_id: int
-
-    # ---------------------------------------------------------
-    # REFERRAL
-    # ---------------------------------------------------------
 
     referral_code: str | None = None
-
-    # ---------------------------------------------------------
-    # DOMAIN / MODULES
-    # ---------------------------------------------------------
-
     domain: str | None = None
 
-    # Backend derives the authoritative module set
-    # from the selected subscription plan.
-    modules: dict = {}
-
-    # ---------------------------------------------------------
-    # CLIENT-OWNED FIREBASE PROJECT
-    # ---------------------------------------------------------
+    modules: dict = Field(
+        default_factory=dict
+    )
 
     firebase_project_id: str
+
+
+# ============================================================
+# FIREBASE
+# ============================================================
 
 class FirebaseConnectionRequest(BaseModel):
     firebase_project_id: str
 
 
 # ============================================================
-# CITY TIERS
+# SUBSCRIPTION MODULES
 # ============================================================
-
-
-class CityTierCreate(BaseModel):
-    name: str = Field(
-        min_length=1,
-        max_length=50,
-    )
-
-    description: str | None = Field(
-        default=None,
-        max_length=255,
-    )
-
-
-class CityTierUpdate(BaseModel):
-    name: str | None = Field(
-        default=None,
-        min_length=1,
-        max_length=50,
-    )
-
-    description: str | None = Field(
-        default=None,
-        max_length=255,
-    )
-
-    is_active: bool | None = None
-
-
-class CityTierResponse(BaseModel):
-    id: int
-    name: str
-    description: str | None
-    is_active: bool
-
-    class Config:
-        from_attributes = True
-
-
-# Turnover
-
-# ============================================================
-# TURNOVER BANDS
-# ============================================================
-
-class TurnoverBandCreate(BaseModel):
-    name: str = Field(
-        min_length=1,
-        max_length=100,
-    )
-
-    min_turnover: Decimal = Field(
-        ge=0,
-    )
-
-    max_turnover: Decimal | None = Field(
-        default=None,
-        gt=0,
-    )
-
-
-class TurnoverBandUpdate(BaseModel):
-    name: str | None = Field(
-        default=None,
-        min_length=1,
-        max_length=100,
-    )
-
-    min_turnover: Decimal | None = Field(
-        default=None,
-        ge=0,
-    )
-
-    max_turnover: Decimal | None = Field(
-        default=None,
-        gt=0,
-    )
-
-    is_active: bool | None = None
-
-
-class TurnoverBandResponse(BaseModel):
-    id: int
-    name: str
-    min_turnover: Decimal
-    max_turnover: Decimal | None
-    is_active: bool
-
-    class Config:
-        from_attributes = True
-
-# ============================================================
-# SUBSCRIPTION PLAN MODULES
-# ============================================================
-
 
 class SubscriptionModuleCreate(BaseModel):
     module_key: str = Field(
@@ -175,15 +73,31 @@ class SubscriptionModuleCreate(BaseModel):
     )
 
 
+class SubscriptionModuleResponse(BaseModel):
+    id: int
+    module_key: str
+    module_name: str
+
+    class Config:
+        from_attributes = True
+
+
 # ============================================================
-# SUBSCRIPTION PLAN PRICING
+# SUBSCRIPTION PLAN
 # ============================================================
 
+class SubscriptionPlanCreate(BaseModel):
+    name: str = Field(
+        min_length=1,
+        max_length=150,
+    )
 
-class SubscriptionPlanPriceCreate(BaseModel):
-    city_tier_id: int
+    main_plan: str
 
-    turnover_band_id: int
+    description: str | None = Field(
+        default=None,
+        max_length=500,
+    )
 
     monthly_price: Decimal = Field(
         ge=0,
@@ -199,28 +113,9 @@ class SubscriptionPlanPriceCreate(BaseModel):
         max_length=3,
     )
 
-
-# ============================================================
-# SUBSCRIPTION PLANS
-# ============================================================
-
-
-class SubscriptionPlanCreate(BaseModel):
-    name: str = Field(
-        min_length=1,
-        max_length=150,
+    modules: list[SubscriptionModuleCreate] = Field(
+        default_factory=list,
     )
-
-    main_plan: str
-
-    description: str | None = Field(
-        default=None,
-        max_length=500,
-    )
-
-    modules: list[SubscriptionModuleCreate] = []
-
-    prices: list[SubscriptionPlanPriceCreate] = []
 
 
 class SubscriptionPlanUpdate(BaseModel):
@@ -237,33 +132,25 @@ class SubscriptionPlanUpdate(BaseModel):
         max_length=500,
     )
 
+    monthly_price: Decimal | None = Field(
+        default=None,
+        ge=0,
+    )
+
+    annual_price: Decimal | None = Field(
+        default=None,
+        ge=0,
+    )
+
+    currency: str | None = Field(
+        default=None,
+        min_length=3,
+        max_length=3,
+    )
+
     is_active: bool | None = None
 
-
-# ============================================================
-# SUBSCRIPTION PLAN RESPONSE
-# ============================================================
-
-
-class SubscriptionModuleResponse(BaseModel):
-    id: int
-    module_key: str
-    module_name: str
-
-    class Config:
-        from_attributes = True
-
-
-class SubscriptionPlanPriceResponse(BaseModel):
-    id: int
-    city_tier_id: int
-    turnover_band_id: int
-    monthly_price: Decimal
-    annual_price: Decimal
-    currency: str
-
-    class Config:
-        from_attributes = True
+    modules: list[SubscriptionModuleCreate] | None = None
 
 
 class SubscriptionPlanResponse(BaseModel):
@@ -271,10 +158,16 @@ class SubscriptionPlanResponse(BaseModel):
     name: str
     main_plan: str
     description: str | None
+
+    monthly_price: Decimal
+    annual_price: Decimal
+    currency: str
+
     is_active: bool
 
-    modules: list[SubscriptionModuleResponse] = []
-    prices: list[SubscriptionPlanPriceResponse] = []
+    modules: list[SubscriptionModuleResponse] = Field(
+        default_factory=list,
+    )
 
     class Config:
         from_attributes = True
@@ -284,29 +177,49 @@ class SubscriptionPlanResponse(BaseModel):
 # CLIENT SUBSCRIPTION
 # ============================================================
 
-
 class ClientSubscriptionCreate(BaseModel):
     client_id: int
+
     subscription_plan_id: int
-    city_tier_id: int
-    turnover_band_id: int
+
     billing_cycle: str
+
     start_date: date
+
+# ============================================================
+# CLIENT SUBSCRIPTION CHANGE
+# ============================================================
+
+class ClientSubscriptionChangeRequest(BaseModel):
+    subscription_plan_id: int
+
+    billing_cycle: str
+
+    effective_date: date | None = None
+
+    reason: str | None = Field(
+        default=None,
+        max_length=500,
+    )
 
 
 class ClientSubscriptionResponse(BaseModel):
     id: int
     client_id: int
     subscription_plan_id: int
-    city_tier_id: int
-    turnover_band_id: int
+
     main_plan: str
     subscription_name: str
+
     billing_cycle: str
+
     start_date: date
     end_date: date
+
     status: str
+
     currency: str
+
     price_before_tax: Decimal
     tax_rate: Decimal
     tax_amount: Decimal
@@ -315,14 +228,31 @@ class ClientSubscriptionResponse(BaseModel):
     class Config:
         from_attributes = True
 
+# ============================================================
+# CLIENT SUBSCRIPTION CHANGE
+# ============================================================
+
+class ClientSubscriptionChangeRequest(BaseModel):
+    subscription_plan_id: int
+
+    billing_cycle: str
+
+    effective_date: date | None = None
+
+    reason: str | None = Field(
+        default=None,
+        max_length=500,
+    )
+
 
 # ============================================================
 # INVOICE
 # ============================================================
 
-
 class InvoiceLineItemResponse(BaseModel):
     id: int
+    invoice_id: int
+
     description: str
     quantity: Decimal
     unit_price: Decimal
@@ -334,35 +264,168 @@ class InvoiceLineItemResponse(BaseModel):
 
 class InvoiceResponse(BaseModel):
     id: int
+
     client_id: int
-    client_subscription_id: int
+    client_subscription_id: int | None
 
     invoice_number: str
+
     invoice_date: date
+    due_date: date | None
+
+    period_start: date | None
+    period_end: date | None
+
+    invoice_type: str
 
     status: str
+
     currency: str
 
     subtotal: Decimal
+    discount_amount: Decimal
+
     tax_rate: Decimal
     tax_amount: Decimal
+
     total_amount: Decimal
 
-    pdf_path: str | None
+    notes: str | None
 
-    line_items: list[InvoiceLineItemResponse] = []
+    line_items: list[InvoiceLineItemResponse] = Field(
+        default_factory=list
+    )
 
     class Config:
         from_attributes = True
 
 # ============================================================
-# REFERRAL CODES
+# PAYMENT
 # ============================================================
 
 
+class PaymentCreate(BaseModel):
+    invoice_id: int
+
+    amount: Decimal = Field(
+        gt=0,
+    )
+
+    payment_method: str = Field(
+        min_length=1,
+        max_length=50,
+    )
+
+    payment_reference: str | None = Field(
+        default=None,
+        max_length=255,
+    )
+
+    notes: str | None = Field(
+        default=None,
+        max_length=1000,
+    )
+
+
+class PaymentResponse(BaseModel):
+    id: int
+    client_id: int
+    invoice_id: int
+    amount: Decimal
+    currency: str
+    payment_method: str
+    payment_reference: str | None
+    status: str
+    paid_at: datetime | None
+    notes: str | None
+    created_by: UUID | None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+# ============================================================
+# CLIENT LIFECYCLE
+# ============================================================
+
+class ClientStatusChangeRequest(BaseModel):
+    reason: str = Field(
+        min_length=1,
+        max_length=1000,
+    )
+
+
+class ClientLifecycleResponse(BaseModel):
+    client_id: int
+    account_status: str
+    disabled_at: datetime | None
+    disabled_by: str | None
+    disabled_reason: str | None
+
+
+# ============================================================
+# COMMUNICATION
+# ============================================================
+
+
+class CommunicationSendRequest(BaseModel):
+    channel: str
+
+    recipient: str = Field(
+        min_length=1,
+        max_length=320,
+    )
+
+    subject: str | None = Field(
+        default=None,
+        max_length=500,
+    )
+
+    message: str = Field(
+        min_length=1,
+        max_length=10000,
+    )
+
+    communication_type: str = Field(
+        default="CUSTOM",
+        max_length=50,
+    )
+
+    template_name: str | None = Field(
+        default=None,
+        max_length=150,
+    )
+
+
+class CommunicationResponse(BaseModel):
+    id: int
+    client_id: int
+    channel: str
+    direction: str
+    communication_type: str
+    recipient: str
+    sender: str | None
+    subject: str | None
+    message: str
+    template_name: str | None
+    status: str
+    provider: str | None
+    provider_message_id: str | None
+    failure_reason: str | None
+    sent_by: UUID | None
+    sent_at: datetime | None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+# ============================================================
+# REFERRAL CODE
+# ============================================================
+
 class ReferralCodeCreate(BaseModel):
     code: str = Field(
-        min_length=1,
+        min_length=3,
         max_length=50,
     )
 
@@ -374,17 +437,18 @@ class ReferralCodeCreate(BaseModel):
     discount_type: str
 
     discount_value: Decimal = Field(
-        gt=0,
+        ge=0,
     )
 
     max_uses: int | None = Field(
         default=None,
-        gt=0,
+        ge=1,
     )
 
     valid_from: date | None = None
-
     valid_until: date | None = None
+
+    is_active: bool = True
 
 
 class ReferralCodeUpdate(BaseModel):
@@ -397,16 +461,15 @@ class ReferralCodeUpdate(BaseModel):
 
     discount_value: Decimal | None = Field(
         default=None,
-        gt=0,
+        ge=0,
     )
 
     max_uses: int | None = Field(
         default=None,
-        gt=0,
+        ge=1,
     )
 
     valid_from: date | None = None
-
     valid_until: date | None = None
 
     is_active: bool | None = None
@@ -414,17 +477,20 @@ class ReferralCodeUpdate(BaseModel):
 
 class ReferralCodeResponse(BaseModel):
     id: int
+
     code: str
     description: str | None
+
     discount_type: str
     discount_value: Decimal
+
     max_uses: int | None
     used_count: int
+
     valid_from: date | None
     valid_until: date | None
+
     is_active: bool
-    created_at: datetime
-    updated_at: datetime
 
     class Config:
         from_attributes = True
@@ -433,7 +499,60 @@ class ReferralCodeResponse(BaseModel):
 class ReferralValidationResponse(BaseModel):
     valid: bool
     code: str
-    discount_type: str
-    discount_value: Decimal
-    discount_amount: Decimal
-    message: str
+
+    discount_type: str | None = None
+    discount_value: Decimal | None = None
+
+    message: str | None = None
+
+# ============================================================
+# EMAIL COMMUNICATION
+# ============================================================
+
+class EmailCommunicationCreate(BaseModel):
+    client_id: int
+
+    recipient: str = Field(
+        min_length=3,
+        max_length=320,
+    )
+
+    subject: str = Field(
+        min_length=1,
+        max_length=500,
+    )
+
+    message: str = Field(
+        min_length=1,
+        max_length=20000,
+    )
+
+    template_name: str | None = Field(
+        default=None,
+        max_length=100,
+    )
+
+
+class EmailCommunicationResponse(BaseModel):
+    id: int
+    client_id: int
+    channel: str
+    direction: str
+    communication_type: str
+    recipient: str | None
+    sender: str | None
+    subject: str | None
+    message: str | None
+    template_name: str | None
+    status: str
+    provider: str | None
+    provider_message_id: str | None
+    failure_reason: str | None
+    sent_by: UUID | None
+    sent_at: datetime | None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(
+        from_attributes=True
+    )

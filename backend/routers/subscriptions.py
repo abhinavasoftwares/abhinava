@@ -1,36 +1,38 @@
 from datetime import date
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import and_
-from sqlalchemy.orm import Session, selectinload
+from fastapi import APIRouter, Depends, HTTPException, Request
+from sqlalchemy.orm import Session
 
 from database import get_db
 from models import (
-    CityTier,
-    TurnoverBand,
+    Client,
     SubscriptionPlan,
     SubscriptionPlanModule,
-    SubscriptionPlanPrice,
-    PlatformUser,
+    ClientSubscription,
+    ClientSubscriptionModule,
+    Invoice,
+    InvoiceLineItem,
+    PlatformAuditEvent,
 )
+
+from services.platform_dependencies import (
+    get_current_platform_user,
+)
+
+from models import PlatformUser
+
 from schemas import (
-    CityTierCreate,
-    CityTierUpdate,
-    CityTierResponse,
-    TurnoverBandCreate,
-    TurnoverBandUpdate,
-    TurnoverBandResponse,
     SubscriptionModuleCreate,
-    SubscriptionPlanPriceCreate,
     SubscriptionPlanCreate,
     SubscriptionPlanUpdate,
-    SubscriptionModuleResponse,
-    SubscriptionPlanPriceResponse,
     SubscriptionPlanResponse,
+    SubscriptionModuleResponse,
     ClientSubscriptionCreate,
     ClientSubscriptionResponse,
+    ClientSubscriptionChangeRequest,
 )
+
 
 
 router = APIRouter(
@@ -40,22 +42,61 @@ router = APIRouter(
 
 
 # ============================================================
-# Helpers
+# CONSTANTS
 # ============================================================
 
 BASIC_PLAN = "BASIC"
 PRO_PLAN = "PRO"
 
-VALID_BILLING_CYCLES = {"monthly", "annual"}
+VALID_BILLING_CYCLES = {
+    "monthly",
+    "annual",
+}
 
+DEFAULT_TAX_RATE = Decimal("18.00")
+
+
+# ============================================================
+# HELPERS
+# ============================================================
 
 def normalize_main_plan(value: str) -> str:
+
     value = value.strip().upper()
 
-    if value not in {BASIC_PLAN, PRO_PLAN}:
+    if value not in {
+        BASIC_PLAN,
+        PRO_PLAN,
+    }:
         raise HTTPException(
             status_code=400,
             detail="main_plan must be BASIC or PRO",
+        )
+
+    return value
+
+
+def normalize_currency(value: str) -> str:
+
+    value = value.strip().upper()
+
+    if len(value) != 3:
+        raise HTTPException(
+            status_code=400,
+            detail="currency must be a 3-letter currency code",
+        )
+
+    return value
+
+
+def normalize_billing_cycle(value: str) -> str:
+
+    value = value.strip().lower()
+
+    if value not in VALID_BILLING_CYCLES:
+        raise HTTPException(
+            status_code=400,
+            detail="billing_cycle must be monthly or annual",
         )
 
     return value
@@ -68,10 +109,17 @@ def normalize_modules(
 
     main_plan = normalize_main_plan(main_plan)
 
-    module_map: dict[str, SubscriptionModuleCreate] = {}
+    module_map: dict[
+        str,
+        SubscriptionModuleCreate
+    ] = {}
 
     for module in modules:
+
         key = module.module_key.strip().lower()
+
+        if not key:
+            continue
 
         if key in module_map:
             continue
@@ -85,15 +133,17 @@ def normalize_modules(
     # BASIC cannot use ML Analytics
     # --------------------------------------------------------
 
-    if main_plan == BASIC_PLAN and "ml_analytics" in module_map:
+    if (
+        main_plan == BASIC_PLAN
+        and "ml_analytics" in module_map
+    ):
         raise HTTPException(
             status_code=400,
-            detail="ML Analytics is available only for the PRO plan",
+            detail=(
+                "ML Analytics is available only "
+                "for the PRO plan"
+            ),
         )
-
-    # --------------------------------------------------------
-    # Customers cannot exist independently
-    # --------------------------------------------------------
 
     parent_modules = {
         "stock",
@@ -102,80 +152,92 @@ def normalize_modules(
     }
 
     # --------------------------------------------------------
-    # Stock automatically includes Customers + Invoicing
+    # STOCK
     # --------------------------------------------------------
 
     if "stock" in module_map:
 
         if "customers" not in module_map:
-            module_map["customers"] = SubscriptionModuleCreate(
-                module_key="customers",
-                module_name="Customer Directory",
+            module_map["customers"] = (
+                SubscriptionModuleCreate(
+                    module_key="customers",
+                    module_name="Customer Directory",
+                )
             )
 
         if "invoicing" not in module_map:
-            module_map["invoicing"] = SubscriptionModuleCreate(
-                module_key="invoicing",
-                module_name="Invoicing",
+            module_map["invoicing"] = (
+                SubscriptionModuleCreate(
+                    module_key="invoicing",
+                    module_name="Invoicing",
+                )
             )
 
     # --------------------------------------------------------
-    # Investments automatically includes Customers
+    # INVESTMENTS
     # --------------------------------------------------------
 
     if "investments" in module_map:
 
         if "customers" not in module_map:
-            module_map["customers"] = SubscriptionModuleCreate(
-                module_key="customers",
-                module_name="Customer Directory",
+            module_map["customers"] = (
+                SubscriptionModuleCreate(
+                    module_key="customers",
+                    module_name="Customer Directory",
+                )
             )
 
     # --------------------------------------------------------
-    # Kareegar automatically includes Customers
+    # KAREEGAR
     # --------------------------------------------------------
 
     if "kareegar" in module_map:
 
         if "customers" not in module_map:
-            module_map["customers"] = SubscriptionModuleCreate(
-                module_key="customers",
-                module_name="Customer Directory",
+            module_map["customers"] = (
+                SubscriptionModuleCreate(
+                    module_key="customers",
+                    module_name="Customer Directory",
+                )
             )
 
     # --------------------------------------------------------
-    # Invoicing requires Stock
+    # INVOICING REQUIRES STOCK
     # --------------------------------------------------------
 
-    if "invoicing" in module_map and "stock" not in module_map:
+    if (
+        "invoicing" in module_map
+        and "stock" not in module_map
+    ):
         raise HTTPException(
             status_code=400,
             detail="Invoicing requires Stock / Inventory",
         )
 
     # --------------------------------------------------------
-    # WhatsApp requires a business module
+    # WHATSAPP
     # --------------------------------------------------------
 
     if "whatsapp" in module_map:
 
-        allowed_parents = {
-            "stock",
-            "investments",
-            "kareegar",
-        }
-
-        if not any(key in module_map for key in allowed_parents):
+        if not any(
+            key in module_map
+            for key in {
+                "stock",
+                "investments",
+                "kareegar",
+            }
+        ):
             raise HTTPException(
                 status_code=400,
                 detail=(
-                    "WhatsApp requires Stock, Investments, "
-                    "or Kareegar"
+                    "WhatsApp requires Stock, "
+                    "Investments, or Kareegar"
                 ),
             )
 
     # --------------------------------------------------------
-    # Remove standalone Customers
+    # CUSTOMERS CANNOT BE STANDALONE
     # --------------------------------------------------------
 
     if "customers" in module_map:
@@ -187,27 +249,25 @@ def normalize_modules(
             raise HTTPException(
                 status_code=400,
                 detail=(
-                    "Customer Directory cannot be selected "
-                    "as a standalone module"
+                    "Customer Directory cannot be "
+                    "selected as a standalone module"
                 ),
             )
 
-    return list(module_map.values())
-
-
-def serialize_plan(plan: SubscriptionPlan) -> dict:
-
-    modules = sorted(
-        plan.modules,
+    return sorted(
+        module_map.values(),
         key=lambda module: module.module_key,
     )
 
-    prices = sorted(
-        plan.prices,
-        key=lambda price: (
-            price.city_tier_id,
-            price.turnover_band_id,
-        ),
+
+def serialize_plan(
+    plan: SubscriptionPlan,
+) -> dict:
+
+    modules = (
+        plan.modules
+        if hasattr(plan, "modules")
+        else []
     )
 
     return {
@@ -215,8 +275,10 @@ def serialize_plan(plan: SubscriptionPlan) -> dict:
         "name": plan.name,
         "main_plan": plan.main_plan,
         "description": plan.description,
+        "monthly_price": plan.monthly_price,
+        "annual_price": plan.annual_price,
+        "currency": plan.currency,
         "is_active": plan.is_active,
-
         "modules": [
             {
                 "id": module.id,
@@ -225,308 +287,47 @@ def serialize_plan(plan: SubscriptionPlan) -> dict:
             }
             for module in modules
         ],
-
-        "prices": [
-            {
-                "id": price.id,
-                "city_tier_id": price.city_tier_id,
-                "turnover_band_id": price.turnover_band_id,
-                "monthly_price": price.monthly_price,
-                "annual_price": price.annual_price,
-                "currency": price.currency,
-            }
-            for price in prices
-        ],
     }
 
 
-# ============================================================
-# CITY TIERS
-# ============================================================
-
-@router.post(
-    "/city-tiers",
-    response_model=CityTierResponse,
-)
-def create_city_tier(
-    payload: CityTierCreate,
-    db: Session = Depends(get_db),
-):
-
-    existing = (
-        db.query(CityTier)
-        .filter(CityTier.name.ilike(payload.name.strip()))
-        .first()
-    )
-
-    if existing:
-        raise HTTPException(
-            status_code=400,
-            detail="City tier already exists",
-        )
-
-    tier = CityTier(
-        name=payload.name.strip(),
-        description=payload.description,
-        is_active=True,
-    )
-
-    db.add(tier)
-    db.commit()
-    db.refresh(tier)
-
-    return tier
-
-
-@router.get(
-    "/city-tiers",
-    response_model=list[CityTierResponse],
-)
-def list_city_tiers(
-    include_inactive: bool = False,
-    db: Session = Depends(get_db),
-):
-
-    query = db.query(CityTier)
-
-    if not include_inactive:
-        query = query.filter(
-            CityTier.is_active.is_(True)
-        )
-
-    return query.order_by(CityTier.id).all()
-
-
-@router.patch(
-    "/city-tiers/{city_tier_id}",
-    response_model=CityTierResponse,
-)
-def update_city_tier(
-    city_tier_id: int,
-    payload: CityTierUpdate,
-    db: Session = Depends(get_db),
-):
-
-    tier = (
-        db.query(CityTier)
-        .filter(CityTier.id == city_tier_id)
-        .first()
-    )
-
-    if not tier:
-        raise HTTPException(
-            status_code=404,
-            detail="City tier not found",
-        )
-
-    if payload.name is not None:
-
-        duplicate = (
-            db.query(CityTier)
-            .filter(
-                CityTier.name.ilike(payload.name.strip()),
-                CityTier.id != city_tier_id,
-            )
-            .first()
-        )
-
-        if duplicate:
-            raise HTTPException(
-                status_code=400,
-                detail="Another city tier already has this name",
-            )
-
-        tier.name = payload.name.strip()
-
-    if payload.description is not None:
-        tier.description = payload.description
-
-    if payload.is_active is not None:
-        tier.is_active = payload.is_active
-
-    db.commit()
-    db.refresh(tier)
-
-    return tier
-
-
-# ============================================================
-# TURNOVER BANDS
-# ============================================================
-
-@router.post(
-    "/turnover-bands",
-    response_model=TurnoverBandResponse,
-)
-def create_turnover_band(
-    payload: TurnoverBandCreate,
-    db: Session = Depends(get_db),
-):
-
-    if payload.min_turnover < 0:
-        raise HTTPException(
-            status_code=400,
-            detail="Minimum turnover cannot be negative",
-        )
-
-    if (
-        payload.max_turnover is not None
-        and payload.max_turnover <= payload.min_turnover
-    ):
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                "Maximum turnover must be greater "
-                "than minimum turnover"
-            ),
-        )
-
-    existing = (
-        db.query(TurnoverBand)
-        .filter(
-            TurnoverBand.name.ilike(
-                payload.name.strip()
-            )
-        )
-        .first()
-    )
-
-    if existing:
-        raise HTTPException(
-            status_code=400,
-            detail="Turnover band already exists",
-        )
-
-    band = TurnoverBand(
-        name=payload.name.strip(),
-        min_turnover=payload.min_turnover,
-        max_turnover=payload.max_turnover,
-        description=payload.description,
-        is_active=True,
-    )
-
-    db.add(band)
-    db.commit()
-    db.refresh(band)
-
-    return band
-
-
-@router.get(
-    "/turnover-bands",
-    response_model=list[TurnoverBandResponse],
-)
-def list_turnover_bands(
-    include_inactive: bool = False,
-    db: Session = Depends(get_db),
-):
-
-    query = db.query(TurnoverBand)
-
-    if not include_inactive:
-        query = query.filter(
-            TurnoverBand.is_active.is_(True)
-        )
+def get_plan_modules(
+    db: Session,
+    plan_id: int,
+) -> list[SubscriptionPlanModule]:
 
     return (
-        query
-        .order_by(TurnoverBand.min_turnover)
+        db.query(SubscriptionPlanModule)
+        .filter(
+            SubscriptionPlanModule.subscription_plan_id
+            == plan_id
+        )
+        .order_by(
+            SubscriptionPlanModule.id.asc()
+        )
         .all()
     )
 
+def require_subscription_admin(
+    platform_user: PlatformUser,
+) -> None:
+    """
+    Subscription administration is restricted to
+    Abhinava OWNER and ADMIN platform users.
+    """
 
-@router.patch(
-    "/turnover-bands/{turnover_band_id}",
-    response_model=TurnoverBandResponse,
-)
-def update_turnover_band(
-    turnover_band_id: int,
-    payload: TurnoverBandUpdate,
-    db: Session = Depends(get_db),
-):
-
-    band = (
-        db.query(TurnoverBand)
-        .filter(
-            TurnoverBand.id == turnover_band_id
-        )
-        .first()
-    )
-
-    if not band:
+    if platform_user.role not in {
+        "OWNER",
+        "ADMIN",
+    }:
         raise HTTPException(
-            status_code=404,
-            detail="Turnover band not found",
-        )
-
-    new_min = (
-        payload.min_turnover
-        if payload.min_turnover is not None
-        else band.min_turnover
-    )
-
-    new_max = (
-        payload.max_turnover
-        if payload.max_turnover is not None
-        else band.max_turnover
-    )
-
-    if new_min < 0:
-        raise HTTPException(
-            status_code=400,
-            detail="Minimum turnover cannot be negative",
-        )
-
-    if new_max is not None and new_max <= new_min:
-        raise HTTPException(
-            status_code=400,
+            status_code=403,
             detail=(
-                "Maximum turnover must be greater "
-                "than minimum turnover"
+                "You do not have permission "
+                "to manage subscriptions."
             ),
         )
-
-    if payload.name is not None:
-
-        duplicate = (
-            db.query(TurnoverBand)
-            .filter(
-                TurnoverBand.name.ilike(
-                    payload.name.strip()
-                ),
-                TurnoverBand.id != turnover_band_id,
-            )
-            .first()
-        )
-
-        if duplicate:
-            raise HTTPException(
-                status_code=400,
-                detail="Another turnover band already has this name",
-            )
-
-        band.name = payload.name.strip()
-
-    if payload.min_turnover is not None:
-        band.min_turnover = payload.min_turnover
-
-    if payload.max_turnover is not None:
-        band.max_turnover = payload.max_turnover
-
-    if payload.description is not None:
-        band.description = payload.description
-
-    if payload.is_active is not None:
-        band.is_active = payload.is_active
-
-    db.commit()
-    db.refresh(band)
-
-    return band
-
-
 # ============================================================
-# PLAN CREATION
+# CREATE PLAN
 # ============================================================
 
 @router.post(
@@ -536,9 +337,18 @@ def update_turnover_band(
 def create_subscription_plan(
     payload: SubscriptionPlanCreate,
     db: Session = Depends(get_db),
+    platform_user: PlatformUser = Depends(
+        get_current_platform_user
+    ),
 ):
+    require_subscription_admin(platform_user)
+    main_plan = normalize_main_plan(
+        payload.main_plan
+    )
 
-    main_plan = normalize_main_plan(payload.main_plan)
+    currency = normalize_currency(
+        payload.currency
+    )
 
     existing = (
         db.query(SubscriptionPlan)
@@ -561,84 +371,18 @@ def create_subscription_plan(
         main_plan,
     )
 
-    # --------------------------------------------------------
-    # Validate prices
-    # --------------------------------------------------------
-
-    seen_price_combinations = set()
-
-    for price in payload.prices:
-
-        key = (
-            price.city_tier_id,
-            price.turnover_band_id,
-        )
-
-        if key in seen_price_combinations:
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    "Duplicate pricing combination for "
-                    "city tier and turnover band"
-                ),
-            )
-
-        seen_price_combinations.add(key)
-
-        city_tier = (
-            db.query(CityTier)
-            .filter(
-                CityTier.id == price.city_tier_id,
-                CityTier.is_active.is_(True),
-            )
-            .first()
-        )
-
-        if not city_tier:
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    f"City tier {price.city_tier_id} "
-                    "not found or inactive"
-                ),
-            )
-
-        turnover_band = (
-            db.query(TurnoverBand)
-            .filter(
-                TurnoverBand.id == price.turnover_band_id,
-                TurnoverBand.is_active.is_(True),
-            )
-            .first()
-        )
-
-        if not turnover_band:
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    f"Turnover band "
-                    f"{price.turnover_band_id} "
-                    "not found or inactive"
-                ),
-            )
-
-    # --------------------------------------------------------
-    # Create plan
-    # --------------------------------------------------------
-
     plan = SubscriptionPlan(
         name=payload.name.strip(),
         main_plan=main_plan,
         description=payload.description,
+        monthly_price=payload.monthly_price,
+        annual_price=payload.annual_price,
+        currency=currency,
         is_active=True,
     )
 
     db.add(plan)
     db.flush()
-
-    # --------------------------------------------------------
-    # Modules
-    # --------------------------------------------------------
 
     for module in modules:
 
@@ -650,114 +394,71 @@ def create_subscription_plan(
             )
         )
 
-    # --------------------------------------------------------
-    # Pricing matrix
-    #
-    # PLAN + CITY TIER + TURNOVER BAND
-    # --------------------------------------------------------
-
-    for price in payload.prices:
-
-        db.add(
-            SubscriptionPlanPrice(
-                subscription_plan_id=plan.id,
-                city_tier_id=price.city_tier_id,
-                turnover_band_id=price.turnover_band_id,
-                monthly_price=price.monthly_price,
-                annual_price=price.annual_price,
-                currency=price.currency.upper(),
-            )
-        )
-
     db.commit()
+    db.refresh(plan)
 
-    plan = (
-        db.query(SubscriptionPlan)
-        .options(
-            selectinload(
-                SubscriptionPlan.modules
-            ),
-            selectinload(
-                SubscriptionPlan.prices
-            ),
-        )
-        .filter(SubscriptionPlan.id == plan.id)
-        .first()
+    modules = get_plan_modules(
+        db,
+        plan.id,
     )
 
-    return serialize_plan(plan)
+    return {
+        "id": plan.id,
+        "name": plan.name,
+        "main_plan": plan.main_plan,
+        "description": plan.description,
+        "monthly_price": plan.monthly_price,
+        "annual_price": plan.annual_price,
+        "currency": plan.currency,
+        "is_active": plan.is_active,
+        "modules": modules,
+    }
 
 
 # ============================================================
-# PLAN LIST
+# LIST PLANS
 # ============================================================
 
-@router.get("/plans")
+@router.get(
+    "/plans",
+    response_model=list[SubscriptionPlanResponse],
+)
 def list_subscription_plans(
     db: Session = Depends(get_db),
+    platform_user: PlatformUser = Depends(
+        get_current_platform_user
+    ),
 ):
+    require_subscription_admin(platform_user)
+
     plans = (
         db.query(SubscriptionPlan)
-        .order_by(SubscriptionPlan.id.asc())
+        .order_by(
+            SubscriptionPlan.id.asc()
+        )
         .all()
     )
 
     result = []
 
     for plan in plans:
-        modules = (
-            db.query(SubscriptionPlanModule)
-            .filter(
-                SubscriptionPlanModule.subscription_plan_id
-                == plan.id
-            )
-            .order_by(SubscriptionPlanModule.id.asc())
-            .all()
-        )
 
-        prices = (
-            db.query(SubscriptionPlanPrice)
-            .filter(
-                SubscriptionPlanPrice.subscription_plan_id
-                == plan.id
-            )
-            .order_by(
-                SubscriptionPlanPrice.city_tier_id.asc(),
-                SubscriptionPlanPrice.turnover_band_id.asc(),
-            )
-            .all()
+        modules = get_plan_modules(
+            db,
+            plan.id,
         )
 
         result.append(
             {
                 "id": plan.id,
                 "name": plan.name,
-                "description": plan.description,
                 "main_plan": plan.main_plan,
+                "description": plan.description,
+                "monthly_price": plan.monthly_price,
+                "annual_price": plan.annual_price,
+                "currency": plan.currency,
                 "is_active": plan.is_active,
-                "created_at": plan.created_at,
-                "updated_at": plan.updated_at,
-
-                "modules": [
-                    {
-                        "id": module.id,
-                        "module_key": module.module_key,
-                        "module_name": module.module_name,
-                    }
-                    for module in modules
-                ],
-
-                "prices": [
-                    {
-                        "id": price.id,
-                        "city_tier_id": price.city_tier_id,
-                        "turnover_band_id": price.turnover_band_id,
-                        "monthly_price": price.monthly_price,
-                        "annual_price": price.annual_price,
-                        "currency": price.currency,
-                    }
-                    for price in prices
-                ],
+                "modules": modules,
             }
         )
 
@@ -775,18 +476,13 @@ def list_subscription_plans(
 def get_subscription_plan(
     plan_id: int,
     db: Session = Depends(get_db),
+    platform_user: PlatformUser = Depends(
+        get_current_platform_user
+    ),
 ):
-
+    require_subscription_admin(platform_user)
     plan = (
         db.query(SubscriptionPlan)
-        .options(
-            selectinload(
-                SubscriptionPlan.modules
-            ),
-            selectinload(
-                SubscriptionPlan.prices
-            ),
-        )
         .filter(
             SubscriptionPlan.id == plan_id
         )
@@ -799,11 +495,26 @@ def get_subscription_plan(
             detail="Subscription plan not found",
         )
 
-    return serialize_plan(plan)
+    modules = get_plan_modules(
+        db,
+        plan.id,
+    )
+
+    return {
+        "id": plan.id,
+        "name": plan.name,
+        "main_plan": plan.main_plan,
+        "description": plan.description,
+        "monthly_price": plan.monthly_price,
+        "annual_price": plan.annual_price,
+        "currency": plan.currency,
+        "is_active": plan.is_active,
+        "modules": modules,
+    }
 
 
 # ============================================================
-# PLAN UPDATE
+# UPDATE PLAN
 # ============================================================
 
 @router.patch(
@@ -814,7 +525,11 @@ def update_subscription_plan(
     plan_id: int,
     payload: SubscriptionPlanUpdate,
     db: Session = Depends(get_db),
+    platform_user: PlatformUser = Depends(
+        get_current_platform_user
+    ),
 ):
+    require_subscription_admin(platform_user)
 
     plan = (
         db.query(SubscriptionPlan)
@@ -830,13 +545,19 @@ def update_subscription_plan(
             detail="Subscription plan not found",
         )
 
+    # --------------------------------------------------------
+    # Name
+    # --------------------------------------------------------
+
     if payload.name is not None:
+
+        new_name = payload.name.strip()
 
         duplicate = (
             db.query(SubscriptionPlan)
             .filter(
                 SubscriptionPlan.name.ilike(
-                    payload.name.strip()
+                    new_name
                 ),
                 SubscriptionPlan.id != plan_id,
             )
@@ -846,52 +567,158 @@ def update_subscription_plan(
         if duplicate:
             raise HTTPException(
                 status_code=400,
-                detail="Another subscription plan already has this name",
+                detail="Subscription plan already exists",
             )
 
-        plan.name = payload.name.strip()
+        plan.name = new_name
+
+    # --------------------------------------------------------
+    # Main plan
+    # --------------------------------------------------------
 
     if payload.main_plan is not None:
+
         plan.main_plan = normalize_main_plan(
             payload.main_plan
         )
 
+    # --------------------------------------------------------
+    # Validate modules against final plan type
+    # --------------------------------------------------------
+
+    existing_modules = get_plan_modules(
+        db,
+        plan.id,
+    )
+
+    requested_modules = payload.modules
+
+    if requested_modules is not None:
+
+        normalized_modules = normalize_modules(
+            requested_modules,
+            plan.main_plan,
+        )
+
+        db.query(
+            SubscriptionPlanModule
+        ).filter(
+            SubscriptionPlanModule.subscription_plan_id
+            == plan.id
+        ).delete(
+            synchronize_session=False
+        )
+
+        for module in normalized_modules:
+
+            db.add(
+                SubscriptionPlanModule(
+                    subscription_plan_id=plan.id,
+                    module_key=module.module_key,
+                    module_name=module.module_name,
+                )
+            )
+
+    else:
+
+        # Revalidate current modules if main_plan changed.
+        if payload.main_plan is not None:
+
+            current_modules = [
+                SubscriptionModuleCreate(
+                    module_key=module.module_key,
+                    module_name=module.module_name,
+                )
+                for module in existing_modules
+            ]
+
+            normalized_modules = normalize_modules(
+                current_modules,
+                plan.main_plan,
+            )
+
+            if {
+                m.module_key
+                for m in normalized_modules
+            } != {
+                m.module_key
+                for m in current_modules
+            }:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        "Changing the main plan would "
+                        "make the existing module "
+                        "configuration invalid. "
+                        "Update the modules as well."
+                    ),
+                )
+
+    # --------------------------------------------------------
+    # Description
+    # --------------------------------------------------------
+
     if payload.description is not None:
         plan.description = payload.description
+
+    # --------------------------------------------------------
+    # Prices
+    # --------------------------------------------------------
+
+    if payload.monthly_price is not None:
+        plan.monthly_price = payload.monthly_price
+
+    if payload.annual_price is not None:
+        plan.annual_price = payload.annual_price
+
+    if payload.currency is not None:
+        plan.currency = normalize_currency(
+            payload.currency
+        )
+
+    # --------------------------------------------------------
+    # Active status
+    # --------------------------------------------------------
 
     if payload.is_active is not None:
         plan.is_active = payload.is_active
 
     db.commit()
+    db.refresh(plan)
 
-    plan = (
-        db.query(SubscriptionPlan)
-        .options(
-            selectinload(
-                SubscriptionPlan.modules
-            ),
-            selectinload(
-                SubscriptionPlan.prices
-            ),
-        )
-        .filter(
-            SubscriptionPlan.id == plan_id
-        )
-        .first()
+    modules = get_plan_modules(
+        db,
+        plan.id,
     )
 
-    return serialize_plan(plan)
+    return {
+        "id": plan.id,
+        "name": plan.name,
+        "main_plan": plan.main_plan,
+        "description": plan.description,
+        "monthly_price": plan.monthly_price,
+        "annual_price": plan.annual_price,
+        "currency": plan.currency,
+        "is_active": plan.is_active,
+        "modules": modules,
+    }
 
 
 # ============================================================
-# PLAN DELETE
+# DELETE PLAN
 # ============================================================
 
-@router.delete("/plans/{plan_id}")
+@router.delete(
+    "/plans/{plan_id}"
+)
 def delete_subscription_plan(
     plan_id: int,
     db: Session = Depends(get_db),
+    platform_user: PlatformUser = Depends(
+        get_current_platform_user
+    ),
 ):
+    require_subscription_admin(platform_user)
 
     plan = (
         db.query(SubscriptionPlan)
@@ -907,13 +734,7 @@ def delete_subscription_plan(
             detail="Subscription plan not found",
         )
 
-    # --------------------------------------------------------
-    # Check whether this plan is being used
-    # --------------------------------------------------------
-
-    from models import ClientSubscription
-
-    active_usage = (
+    existing_subscription = (
         db.query(ClientSubscription)
         .filter(
             ClientSubscription.subscription_plan_id
@@ -922,82 +743,59 @@ def delete_subscription_plan(
         .first()
     )
 
-    if active_usage:
+    if existing_subscription:
         raise HTTPException(
             status_code=400,
             detail=(
-                "This subscription plan is already assigned "
-                "to a client and cannot be deleted."
+                "This subscription plan is already "
+                "assigned to a client and cannot be deleted. "
+                "Deactivate it instead."
             ),
         )
 
-    # --------------------------------------------------------
-    # Delete dependent pricing records
-    # --------------------------------------------------------
-
-    db.query(SubscriptionPlanPrice).filter(
-        SubscriptionPlanPrice.subscription_plan_id
-        == plan_id
-    ).delete(
-        synchronize_session=False
-    )
-
-    # --------------------------------------------------------
-    # Delete dependent module records
-    # --------------------------------------------------------
-
-    db.query(SubscriptionPlanModule).filter(
+    db.query(
+        SubscriptionPlanModule
+    ).filter(
         SubscriptionPlanModule.subscription_plan_id
         == plan_id
     ).delete(
         synchronize_session=False
     )
 
-    # --------------------------------------------------------
-    # Delete the plan
-    # --------------------------------------------------------
-
     db.delete(plan)
-
     db.commit()
 
     return {
-        "message": "Subscription plan deleted successfully",
+        "message": (
+            "Subscription plan deleted successfully"
+        ),
         "plan_id": plan_id,
     }
 
+
 # ============================================================
-# RESOLVE PRICING
+# RESOLVE SUBSCRIPTION PRICE
 # ============================================================
 
-@router.get("/resolve")
+@router.get(
+    "/resolve"
+)
 def resolve_subscription(
     subscription_plan_id: int,
-    city_tier_id: int,
-    turnover_band_id: int,
     billing_cycle: str,
     db: Session = Depends(get_db),
+    platform_user: PlatformUser = Depends(
+        get_current_platform_user
+    ),
 ):
+    require_subscription_admin(platform_user)
 
-    billing_cycle = billing_cycle.strip().lower()
-
-    if billing_cycle not in VALID_BILLING_CYCLES:
-        raise HTTPException(
-            status_code=400,
-            detail="billing_cycle must be monthly or annual",
-        )
-
-    # --------------------------------------------------------
-    # Plan
-    # --------------------------------------------------------
+    billing_cycle = normalize_billing_cycle(
+        billing_cycle
+    )
 
     plan = (
         db.query(SubscriptionPlan)
-        .options(
-            selectinload(
-                SubscriptionPlan.modules
-            )
-        )
         .filter(
             SubscriptionPlan.id
             == subscription_plan_id,
@@ -1009,85 +807,21 @@ def resolve_subscription(
     if not plan:
         raise HTTPException(
             status_code=404,
-            detail="Subscription plan not found or inactive",
-        )
-
-    # --------------------------------------------------------
-    # City tier
-    # --------------------------------------------------------
-
-    tier = (
-        db.query(CityTier)
-        .filter(
-            CityTier.id == city_tier_id,
-            CityTier.is_active.is_(True),
-        )
-        .first()
-    )
-
-    if not tier:
-        raise HTTPException(
-            status_code=404,
-            detail="City tier not found or inactive",
-        )
-
-    # --------------------------------------------------------
-    # Turnover band
-    # --------------------------------------------------------
-
-    turnover_band = (
-        db.query(TurnoverBand)
-        .filter(
-            TurnoverBand.id == turnover_band_id,
-            TurnoverBand.is_active.is_(True),
-        )
-        .first()
-    )
-
-    if not turnover_band:
-        raise HTTPException(
-            status_code=404,
-            detail="Turnover band not found or inactive",
-        )
-
-    # --------------------------------------------------------
-    # Pricing matrix lookup
-    # --------------------------------------------------------
-
-    price = (
-        db.query(SubscriptionPlanPrice)
-        .filter(
-            SubscriptionPlanPrice.subscription_plan_id
-            == subscription_plan_id,
-            SubscriptionPlanPrice.city_tier_id
-            == city_tier_id,
-            SubscriptionPlanPrice.turnover_band_id
-            == turnover_band_id,
-        )
-        .first()
-    )
-
-    if not price:
-        raise HTTPException(
-            status_code=404,
             detail=(
-                "No pricing configured for this "
-                "plan, city tier and turnover band"
+                "Subscription plan not found "
+                "or inactive"
             ),
         )
 
     if billing_cycle == "monthly":
-        selected_price = price.monthly_price
+        selected_price = plan.monthly_price
     else:
-        selected_price = price.annual_price
+        selected_price = plan.annual_price
 
-    modules = [
-        {
-            "key": module.module_key,
-            "name": module.module_name,
-        }
-        for module in plan.modules
-    ]
+    modules = get_plan_modules(
+        db,
+        plan.id,
+    )
 
     return {
         "subscription_plan": {
@@ -1096,27 +830,21 @@ def resolve_subscription(
             "main_plan": plan.main_plan,
         },
 
-        "city_tier": {
-            "id": tier.id,
-            "name": tier.name,
-        },
-
-        "turnover_band": {
-            "id": turnover_band.id,
-            "name": turnover_band.name,
-            "min_turnover": turnover_band.min_turnover,
-            "max_turnover": turnover_band.max_turnover,
-        },
-
         "billing_cycle": billing_cycle,
 
-        "currency": price.currency,
+        "currency": plan.currency,
 
         "price_before_tax": selected_price,
 
-        "tax_rate": Decimal("18"),
+        "tax_rate": DEFAULT_TAX_RATE,
 
-        "modules": modules,
+        "modules": [
+            {
+                "key": module.module_key,
+                "name": module.module_name,
+            }
+            for module in modules
+        ],
     }
 
 
@@ -1131,13 +859,37 @@ def resolve_subscription(
 def create_client_subscription(
     payload: ClientSubscriptionCreate,
     db: Session = Depends(get_db),
+    platform_user: PlatformUser = Depends(
+        get_current_platform_user
+    ),
 ):
+    require_subscription_admin(platform_user)
 
-    if payload.billing_cycle.lower() not in VALID_BILLING_CYCLES:
-        raise HTTPException(
-            status_code=400,
-            detail="billing_cycle must be monthly or annual",
+    billing_cycle = normalize_billing_cycle(
+        payload.billing_cycle
+    )
+
+    # --------------------------------------------------------
+    # Client
+    # --------------------------------------------------------
+
+    client = (
+        db.query(Client)
+        .filter(
+            Client.id == payload.client_id
         )
+        .first()
+    )
+
+    if not client:
+        raise HTTPException(
+            status_code=404,
+            detail="Client not found",
+        )
+
+    # --------------------------------------------------------
+    # Plan
+    # --------------------------------------------------------
 
     plan = (
         db.query(SubscriptionPlan)
@@ -1152,139 +904,852 @@ def create_client_subscription(
     if not plan:
         raise HTTPException(
             status_code=404,
-            detail="Subscription plan not found or inactive",
-        )
-
-    tier = (
-        db.query(CityTier)
-        .filter(
-            CityTier.id == payload.city_tier_id,
-            CityTier.is_active.is_(True),
-        )
-        .first()
-    )
-
-    if not tier:
-        raise HTTPException(
-            status_code=404,
-            detail="City tier not found or inactive",
-        )
-
-    turnover_band = (
-        db.query(TurnoverBand)
-        .filter(
-            TurnoverBand.id == payload.turnover_band_id,
-            TurnoverBand.is_active.is_(True),
-        )
-        .first()
-    )
-
-    if not turnover_band:
-        raise HTTPException(
-            status_code=404,
-            detail="Turnover band not found or inactive",
-        )
-
-    price = (
-        db.query(SubscriptionPlanPrice)
-        .filter(
-            SubscriptionPlanPrice.subscription_plan_id
-            == payload.subscription_plan_id,
-            SubscriptionPlanPrice.city_tier_id
-            == payload.city_tier_id,
-            SubscriptionPlanPrice.turnover_band_id
-            == payload.turnover_band_id,
-        )
-        .first()
-    )
-
-    if not price:
-        raise HTTPException(
-            status_code=404,
             detail=(
-                "No pricing configured for this "
-                "plan, city tier and turnover band"
+                "Subscription plan not found "
+                "or inactive"
             ),
         )
 
-    billing_cycle = payload.billing_cycle.lower()
+    # --------------------------------------------------------
+    # Prevent duplicate active subscriptions
+    # --------------------------------------------------------
+
+    existing_active = (
+        db.query(ClientSubscription)
+        .filter(
+            ClientSubscription.client_id
+            == payload.client_id,
+            ClientSubscription.status
+            == "ACTIVE",
+        )
+        .first()
+    )
+
+    if existing_active:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Client already has an active subscription. "
+                "Use the upgrade/change-plan flow instead."
+            ),
+        )
+
+    # --------------------------------------------------------
+    # Select price
+    # --------------------------------------------------------
 
     if billing_cycle == "monthly":
-        price_before_tax = Decimal(price.monthly_price)
-        end_date = date(
-            payload.start_date.year
-            + (
-                1
-                if payload.start_date.month == 12
-                else 0
-            ),
-            (
-                1
-                if payload.start_date.month == 12
-                else payload.start_date.month + 1
-            ),
-            payload.start_date.day,
+
+        price_before_tax = Decimal(
+            str(plan.monthly_price)
         )
+
+        if payload.start_date.month == 12:
+
+            end_date = date(
+                payload.start_date.year + 1,
+                1,
+                payload.start_date.day,
+            )
+
+        else:
+
+            # Handle month-end dates safely.
+            next_month = (
+                payload.start_date.month + 1
+            )
+
+            try:
+
+                end_date = date(
+                    payload.start_date.year,
+                    next_month,
+                    payload.start_date.day,
+                )
+
+            except ValueError:
+
+                # Example:
+                # Jan 31 -> Feb 28/29
+                if next_month == 2:
+
+                    if (
+                        payload.start_date.year % 4 == 0
+                        and (
+                            payload.start_date.year % 100 != 0
+                            or payload.start_date.year % 400 == 0
+                        )
+                    ):
+                        last_day = 29
+                    else:
+                        last_day = 28
+
+                    end_date = date(
+                        payload.start_date.year,
+                        2,
+                        last_day,
+                    )
+
+                else:
+
+                    end_date = date(
+                        payload.start_date.year,
+                        next_month,
+                        30,
+                    )
+
     else:
-        price_before_tax = Decimal(price.annual_price)
+
+        price_before_tax = Decimal(
+            str(plan.annual_price)
+        )
 
         try:
+
             end_date = date(
                 payload.start_date.year + 1,
                 payload.start_date.month,
                 payload.start_date.day,
             )
+
         except ValueError:
-            # Feb 29 subscription
+
+            # Feb 29 -> Feb 28
             end_date = date(
                 payload.start_date.year + 1,
                 2,
                 28,
             )
 
-    tax_rate = Decimal("18")
+    # --------------------------------------------------------
+    # Tax
+    # --------------------------------------------------------
+
+    tax_rate = DEFAULT_TAX_RATE
+
     tax_amount = (
-        price_before_tax * tax_rate / Decimal("100")
-    ).quantize(Decimal("0.01"))
+        price_before_tax
+        * tax_rate
+        / Decimal("100")
+    ).quantize(
+        Decimal("0.01")
+    )
 
     total_amount = (
-        price_before_tax + tax_amount
-    ).quantize(Decimal("0.01"))
+        price_before_tax
+        + tax_amount
+    ).quantize(
+        Decimal("0.01")
+    )
+
+    # --------------------------------------------------------
+    # Create subscription
+    # --------------------------------------------------------
 
     subscription = ClientSubscription(
-        client_id=payload.client_id,
-        subscription_plan_id=payload.subscription_plan_id,
-        city_tier_id=payload.city_tier_id,
-        turnover_band_id=payload.turnover_band_id,
+        client_id=client.id,
+
+        subscription_plan_id=plan.id,
+
+        main_plan=plan.main_plan,
+
+        subscription_name=plan.name,
+
         billing_cycle=billing_cycle,
+
         start_date=payload.start_date,
+
         end_date=end_date,
-        status="active",
-        currency=price.currency,
+
+        status="ACTIVE",
+
+        currency=plan.currency,
+
         price_before_tax=price_before_tax,
+
         tax_rate=tax_rate,
+
         tax_amount=tax_amount,
+
         total_amount=total_amount,
     )
 
     db.add(subscription)
+    db.flush()
+
+    # --------------------------------------------------------
+    # Snapshot modules
+    # --------------------------------------------------------
+
+    plan_modules = get_plan_modules(
+        db,
+        plan.id,
+    )
+
+    for module in plan_modules:
+
+        db.add(
+            ClientSubscriptionModule(
+                client_subscription_id=subscription.id,
+                module_key=module.module_key,
+                module_name=module.module_name,
+            )
+        )
+
     db.commit()
     db.refresh(subscription)
 
+    # --------------------------------------------------------
+    # Update legacy Client fields
+    # --------------------------------------------------------
+
+    client.plan = plan.main_plan
+    client.billing_cycle = billing_cycle
+    client.subscription_status = "ACTIVE"
+    client.start_date = str(
+        payload.start_date
+    )
+
+    client.modules = {
+        module.module_key: True
+        for module in plan_modules
+    }
+
+    db.commit()
+
     return subscription
 
+# ============================================================
+# CHANGE CLIENT SUBSCRIPTION / PLAN
+# ============================================================
 
+@router.post(
+    "/client-subscriptions/{client_id}/change-plan",
+)
+def change_client_subscription_plan(
+    client_id: int,
+    payload: ClientSubscriptionChangeRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    platform_user: PlatformUser = Depends(
+        get_current_platform_user
+    ),
+):
+    # ========================================================
+    # PLATFORM AUTHORIZATION
+    # ========================================================
+
+    if platform_user.role not in {
+        "OWNER",
+        "ADMIN",
+    }:
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "You do not have permission "
+                "to change client subscriptions."
+            ),
+        )
+
+    # ========================================================
+    # CLIENT
+    # ========================================================
+
+    client = (
+        db.query(Client)
+        .filter(
+            Client.id == client_id
+        )
+        .first()
+    )
+
+    if client is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Client not found.",
+        )
+
+    # ========================================================
+    # CURRENT ACTIVE SUBSCRIPTION
+    # ========================================================
+
+    current_subscription = (
+        db.query(ClientSubscription)
+        .filter(
+            ClientSubscription.client_id == client_id,
+            ClientSubscription.status == "ACTIVE",
+        )
+        .order_by(
+            ClientSubscription.id.desc()
+        )
+        .first()
+    )
+
+    if current_subscription is None:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Client does not have an active subscription. "
+                "Create the initial subscription first."
+            ),
+        )
+
+    # ========================================================
+    # NEW PLAN
+    # ========================================================
+
+    new_plan = (
+        db.query(SubscriptionPlan)
+        .filter(
+            SubscriptionPlan.id
+            == payload.subscription_plan_id,
+            SubscriptionPlan.is_active.is_(True),
+        )
+        .first()
+    )
+
+    if new_plan is None:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                "Subscription plan not found "
+                "or inactive."
+            ),
+        )
+
+    # ========================================================
+    # BILLING CYCLE
+    # ========================================================
+
+    billing_cycle = normalize_billing_cycle(
+        payload.billing_cycle
+    )
+
+    # ========================================================
+    # PREVENT NO-OP CHANGE
+    # ========================================================
+
+    if (
+        current_subscription.subscription_plan_id
+        == new_plan.id
+        and current_subscription.billing_cycle
+        == billing_cycle
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "The client is already subscribed "
+                "to this plan and billing cycle."
+            ),
+        )
+
+    # ========================================================
+    # EFFECTIVE DATE
+    # ========================================================
+
+    effective_date = (
+        payload.effective_date
+        or date.today()
+    )
+
+    today = date.today()
+
+    if effective_date != today:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Plan changes must be effective today. "
+                "Scheduled future plan changes are not supported yet."
+            ),
+        )
+
+    # ========================================================
+    # PRICE
+    # ========================================================
+
+    if billing_cycle == "monthly":
+        price_before_tax = Decimal(
+            str(new_plan.monthly_price)
+        )
+    else:
+        price_before_tax = Decimal(
+            str(new_plan.annual_price)
+        )
+
+    price_before_tax = money(
+        price_before_tax
+    )
+
+    # ========================================================
+    # CURRENCY
+    # ========================================================
+
+    currency = (
+        new_plan.currency
+        or "INR"
+    ).strip().upper()
+
+    if len(currency) != 3:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Subscription plan currency "
+                "must be a 3-letter code."
+            ),
+        )
+
+    # ========================================================
+    # MODULES
+    # ========================================================
+
+    modules = normalize_modules(
+        [
+            SubscriptionModuleCreate(
+                module_key=module.module_key,
+                module_name=module.module_name,
+            )
+            for module in get_plan_modules(
+                db,
+                new_plan.id,
+            )
+        ],
+        new_plan.main_plan,
+    )
+
+    module_snapshot = [
+        {
+            "module_key": module.module_key,
+            "module_name": module.module_name,
+        }
+        for module in modules
+    ]
+
+    # ========================================================
+    # TAX
+    # ========================================================
+
+    tax_rate = DEFAULT_TAX_RATE
+
+    tax_amount = money(
+        price_before_tax
+        * tax_rate
+        / Decimal("100")
+    )
+
+    total_amount = money(
+        price_before_tax
+        + tax_amount
+    )
+
+    # ========================================================
+    # NEW SUBSCRIPTION PERIOD
+    # ========================================================
+
+    end_date = calculate_subscription_dates(
+        effective_date,
+        billing_cycle,
+    )
+
+    # ========================================================
+    # CAPTURE OLD STATE BEFORE CHANGING IT
+    # ========================================================
+
+    old_modules = (
+        db.query(ClientSubscriptionModule)
+        .filter(
+            ClientSubscriptionModule.client_subscription_id
+            == current_subscription.id
+        )
+        .order_by(
+            ClientSubscriptionModule.id.asc()
+        )
+        .all()
+    )
+
+    old_module_snapshot = [
+        {
+            "module_key": module.module_key,
+            "module_name": module.module_name,
+        }
+        for module in old_modules
+    ]
+
+    old_plan_id = (
+        current_subscription.subscription_plan_id
+    )
+
+    old_plan_name = (
+        current_subscription.subscription_name
+    )
+
+    old_main_plan = (
+        current_subscription.main_plan
+    )
+
+    old_billing_cycle = (
+        current_subscription.billing_cycle
+    )
+
+    old_subscription_id = (
+        current_subscription.id
+    )
+
+    # ========================================================
+    # CREATE NEW SUBSCRIPTION VERSION
+    # ========================================================
+
+    new_subscription = ClientSubscription(
+        client_id=client.id,
+
+        subscription_plan_id=new_plan.id,
+
+        main_plan=new_plan.main_plan,
+
+        subscription_name=new_plan.name,
+
+        billing_cycle=billing_cycle,
+
+        start_date=effective_date,
+
+        end_date=end_date,
+
+        status="ACTIVE",
+
+        currency=currency,
+
+        price_before_tax=price_before_tax,
+
+        tax_rate=tax_rate,
+
+        tax_amount=tax_amount,
+
+        total_amount=total_amount,
+    )
+
+    db.add(new_subscription)
+    db.flush()
+
+    # ========================================================
+    # CREATE NEW MODULE SNAPSHOT
+    # ========================================================
+
+    for module in modules:
+
+        db.add(
+            ClientSubscriptionModule(
+                client_subscription_id=(
+                    new_subscription.id
+                ),
+                module_key=module.module_key,
+                module_name=module.module_name,
+            )
+        )
+
+    # ========================================================
+    # CREATE NEW INVOICE
+    # ========================================================
+
+    invoice_number = generate_invoice_number()
+
+    # Determine the invoice type from the price change.
+    old_total_amount = money(
+        current_subscription.total_amount
+    )
+
+    if total_amount > old_total_amount:
+        invoice_type = "UPGRADE"
+    elif total_amount < old_total_amount:
+        invoice_type = "DOWNGRADE"
+    else:
+        invoice_type = "ADJUSTMENT"
+
+    new_invoice = Invoice(
+        client_id=client.id,
+        client_subscription_id=new_subscription.id,
+
+        invoice_number=invoice_number,
+
+        invoice_date=date.today(),
+        due_date=effective_date,
+
+        period_start=new_subscription.start_date,
+        period_end=new_subscription.end_date,
+
+        invoice_type=invoice_type,
+        status="ISSUED",
+
+        currency=currency,
+
+        subtotal=price_before_tax,
+        discount_amount=Decimal("0.00"),
+
+        tax_rate=tax_rate,
+        tax_amount=tax_amount,
+
+        total_amount=total_amount,
+
+        notes=(
+            f"Subscription plan change from "
+            f"{old_plan_name} to {new_plan.name}."
+        ),
+
+        pdf_path=None,
+    )
+
+    db.add(new_invoice)
+    db.flush()
+
+
+    # ========================================================
+    # INVOICE LINE ITEM
+    # ========================================================
+
+    db.add(
+        InvoiceLineItem(
+            invoice_id=new_invoice.id,
+
+            description=(
+                f"{new_plan.name} — "
+                f"{billing_cycle.title()} "
+                f"Subscription"
+            ),
+
+            quantity=Decimal("1.00"),
+
+            unit_price=price_before_tax,
+
+            amount=price_before_tax,
+        )
+    )
+
+    # ========================================================
+    # CLOSE OLD SUBSCRIPTION
+    # ========================================================
+
+    current_subscription.status = "CANCELLED"
+
+    # ========================================================
+    # UPDATE LEGACY CLIENT SNAPSHOT
+    # ========================================================
+
+    client.plan = new_plan.main_plan
+
+    client.billing_cycle = billing_cycle
+
+    client.subscription_status = "ACTIVE"
+
+    client.start_date = str(
+        effective_date
+    )
+
+    client.modules = {
+        module["module_key"]: True
+        for module in module_snapshot
+    }
+
+    # ========================================================
+    # AUDIT EVENT
+    # ========================================================
+
+    audit_event = PlatformAuditEvent(
+        event_type="CLIENT_SUBSCRIPTION_CHANGED",
+
+        outcome="SUCCESS",
+
+        actor_platform_user_id=platform_user.id,
+
+        actor_identity=platform_user.email,
+
+        target_type="CLIENT_SUBSCRIPTION",
+
+        target_id=str(
+            new_subscription.id
+        ),
+
+        client_id=client.id,
+
+        tenant_id=client.tenant_id,
+
+        ip_address=(
+            request.client.host
+            if request.client
+            else None
+        ),
+
+        user_agent=(
+            request.headers.get(
+                "user-agent"
+            )
+        ),
+
+        event_metadata={
+            "change_type": "PLAN_CHANGE",
+
+            "reason": payload.reason,
+
+            "effective_date": str(
+                effective_date
+            ),
+
+            "old": {
+                "subscription_id": old_subscription_id,
+                "plan_id": old_plan_id,
+                "plan_name": old_plan_name,
+                "main_plan": old_main_plan,
+                "billing_cycle": old_billing_cycle,
+                "modules": old_module_snapshot,
+            },
+
+            "new": {
+                "subscription_id": new_subscription.id,
+                "plan_id": new_plan.id,
+                "plan_name": new_plan.name,
+                "main_plan": new_plan.main_plan,
+                "billing_cycle": billing_cycle,
+                "modules": module_snapshot,
+                "price_before_tax": str(
+                    price_before_tax
+                ),
+                "tax_rate": str(
+                    tax_rate
+                ),
+                "tax_amount": str(
+                    tax_amount
+                ),
+                "total_amount": str(
+                    total_amount
+                ),
+            },
+
+            "invoice": {
+                "id": new_invoice.id,
+                "invoice_number": (
+                    new_invoice.invoice_number
+                ),
+                "invoice_date": str(
+                    new_invoice.invoice_date
+                ),
+                "status": new_invoice.status,
+                "currency": new_invoice.currency,
+                "subtotal": str(
+                    new_invoice.subtotal
+                ),
+                "tax_amount": str(
+                    new_invoice.tax_amount
+                ),
+                "total_amount": str(
+                    new_invoice.total_amount
+                ),
+            },
+        },
+    )
+
+    db.add(audit_event)
+
+    # ========================================================
+    # COMMIT AS ONE TRANSACTION
+    # ========================================================
+
+    try:
+        db.commit()
+
+    except Exception as exc:
+        db.rollback()
+
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "Subscription change failed. "
+                "No subscription, invoice, module, "
+                "client, or audit changes were saved."
+            ),
+        ) from exc
+
+    # ========================================================
+    # RESPONSE
+    # ========================================================
+
+    return {
+        "message": (
+            "Client subscription changed successfully."
+        ),
+
+        "client": {
+            "id": client.id,
+            "business_name": client.business_name,
+            "plan": client.plan,
+            "billing_cycle": client.billing_cycle,
+            "subscription_status": (
+                client.subscription_status
+            ),
+        },
+
+        "previous_subscription": {
+            "id": old_subscription_id,
+            "plan_id": old_plan_id,
+            "plan_name": old_plan_name,
+            "main_plan": old_main_plan,
+            "billing_cycle": old_billing_cycle,
+            "status": "CANCELLED",
+        },
+
+        "subscription": {
+            "id": new_subscription.id,
+            "plan_id": new_plan.id,
+            "plan_name": new_plan.name,
+            "main_plan": new_plan.main_plan,
+            "billing_cycle": billing_cycle,
+            "start_date": new_subscription.start_date,
+            "end_date": new_subscription.end_date,
+            "status": new_subscription.status,
+            "currency": new_subscription.currency,
+            "price_before_tax": (
+                new_subscription.price_before_tax
+            ),
+            "tax_rate": new_subscription.tax_rate,
+            "tax_amount": new_subscription.tax_amount,
+            "total_amount": new_subscription.total_amount,
+        },
+
+        "modules": module_snapshot,
+
+        "invoice": {
+            "id": new_invoice.id,
+            "invoice_number": (
+                new_invoice.invoice_number
+            ),
+            "invoice_date": new_invoice.invoice_date,
+            "status": new_invoice.status,
+            "currency": new_invoice.currency,
+            "subtotal": new_invoice.subtotal,
+            "tax_rate": new_invoice.tax_rate,
+            "tax_amount": new_invoice.tax_amount,
+            "total_amount": new_invoice.total_amount,
+        },
+
+        "audit": {
+            "event_type": (
+                "CLIENT_SUBSCRIPTION_CHANGED"
+            ),
+            "actor": platform_user.email,
+        },
+    }
 # ============================================================
 # LIST CLIENT SUBSCRIPTIONS
 # ============================================================
 
 @router.get(
     "/client-subscriptions/{client_id}",
+    response_model=list[ClientSubscriptionResponse],
 )
 def list_client_subscriptions(
     client_id: int,
     db: Session = Depends(get_db),
+    platform_user: PlatformUser = Depends(
+        get_current_platform_user
+    ),
 ):
+    require_subscription_admin(platform_user)
 
     subscriptions = (
         db.query(ClientSubscription)

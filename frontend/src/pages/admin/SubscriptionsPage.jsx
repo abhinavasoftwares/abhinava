@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from "react";
 import {
   Plus,
   Layers,
-  MapPinned,
   Package,
   Pencil,
   Trash2,
@@ -17,6 +16,7 @@ import {
 } from "lucide-react";
 
 const API_URL = import.meta.env.VITE_API_BASE_URL;
+
 const GOLD = "#c59b27";
 
 const noScroll =
@@ -24,6 +24,7 @@ const noScroll =
 
 const card =
   "rounded-2xl border border-slate-200/70 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)]";
+
 
 // ============================================================
 // MODULE DEFINITIONS
@@ -33,60 +34,58 @@ const MODULES = [
   {
     key: "customers",
     name: "Customer Directory",
-    description: "Customer management and relationship records.",
+    description:
+      "Customer management and relationship records.",
   },
   {
     key: "stock",
     name: "Stock / Inventory",
-    description: "Inventory and stock management.",
+    description:
+      "Inventory and stock management.",
   },
   {
     key: "invoicing",
     name: "Sales & Invoicing",
-    description: "Sales transactions and invoice management.",
+    description:
+      "Sales transactions and invoice management.",
   },
   {
     key: "investments",
     name: "Investments",
-    description: "Investment and investor management.",
+    description:
+      "Investment and investor management.",
   },
   {
     key: "kareegar",
     name: "Kareegar Management",
-    description: "Kareegar and production workforce management.",
+    description:
+      "Kareegar and production workforce management.",
   },
   {
     key: "whatsapp",
     name: "WhatsApp",
-    description: "WhatsApp communication and notifications.",
+    description:
+      "WhatsApp communication and notifications.",
   },
   {
     key: "ml_analytics",
     name: "Reports & ML Analytics",
-    description: "Reports, analytics and machine-learning insights.",
+    description:
+      "Reports, analytics and machine-learning insights.",
     proOnly: true,
   },
 ];
 
-// ============================================================
-// MODULE DEPENDENCIES
-// ============================================================
-
-const MODULE_DEPENDENCIES = {
-  stock: ["customers", "invoicing"],
-  invoicing: ["customers", "stock"],
-  investments: ["customers"],
-};
 
 // ============================================================
-// NORMALIZE MODULE SELECTION
+// MODULE NORMALIZATION
 // ============================================================
 
 function normalizeModules(modules, mainPlan) {
   const selected = new Set(modules);
 
   // ----------------------------------------------------------
-  // ML ANALYTICS
+  // BASIC cannot use ML Analytics
   // ----------------------------------------------------------
 
   if (mainPlan === "BASIC") {
@@ -102,8 +101,8 @@ function normalizeModules(modules, mainPlan) {
   }
 
   // ----------------------------------------------------------
-  // STOCK AUTOMATICALLY ENABLES
-  // CUSTOMERS + INVOICING
+  // STOCK
+  // Automatically includes Customers + Invoicing
   // ----------------------------------------------------------
 
   if (selected.has("stock")) {
@@ -112,10 +111,20 @@ function normalizeModules(modules, mainPlan) {
   }
 
   // ----------------------------------------------------------
-  // INVESTMENTS AUTOMATICALLY ENABLES CUSTOMERS
+  // INVESTMENTS
+  // Automatically includes Customers
   // ----------------------------------------------------------
 
   if (selected.has("investments")) {
+    selected.add("customers");
+  }
+
+  // ----------------------------------------------------------
+  // KAREEGAR
+  // Automatically includes Customers
+  // ----------------------------------------------------------
+
+  if (selected.has("kareegar")) {
     selected.add("customers");
   }
 
@@ -151,12 +160,9 @@ function normalizeModules(modules, mainPlan) {
   return Array.from(selected);
 }
 
-function getPriceKey(cityTierId, turnoverBandId) {
-  return `${cityTierId}_${turnoverBandId}`;
-}
 
 // ============================================================
-// MODULE UI STATE
+// MODULE STATE
 // ============================================================
 
 function getModuleState(
@@ -283,6 +289,7 @@ function getModuleState(
   };
 }
 
+
 // ============================================================
 // EMPTY FORM
 // ============================================================
@@ -291,63 +298,42 @@ const EMPTY_PLAN = {
   name: "",
   description: "",
   main_plan: "BASIC",
+  monthly_price: "",
+  annual_price: "",
+  currency: "INR",
   modules: [],
-  prices: {},
 };
+
 
 // ============================================================
 // PAGE
 // ============================================================
 
 export default function SubscriptionsPage() {
-  const [activeSection, setActiveSection] =
-    useState("plans");
-
   const [activePlanType, setActivePlanType] =
     useState("BASIC");
 
-  const [cityTiers, setCityTiers] =
-    useState([]);
+  const [plans, setPlans] = useState([]);
 
-  const [plans, setPlans] =
-    useState([]);
+  const [loading, setLoading] = useState(true);
 
-  const [turnoverBands, setTurnoverBands] =
-    useState([]);
+  const [error, setError] = useState("");
 
-  const [loading, setLoading] =
-    useState(true);
-
-  const [error, setError] =
-    useState("");
-
-  const [search, setSearch] =
-    useState("");
+  const [search, setSearch] = useState("");
 
   const [showPlanModal, setShowPlanModal] =
-    useState(false);
-
-  const [showTierModal, setShowTierModal] =
     useState(false);
 
   const [editingPlan, setEditingPlan] =
     useState(null);
 
-  const [editingTier, setEditingTier] =
-    useState(null);
-
   const [planForm, setPlanForm] =
     useState(EMPTY_PLAN);
 
-  const [tierForm, setTierForm] =
-    useState({
-      name: "",
-      description: "",
-    });
 
-  // =========================================================
-  // LOAD DATA
-  // =========================================================
+  // ==========================================================
+  // LOAD PLANS
+  // ==========================================================
 
   const fetchSubscriptionData =
     async () => {
@@ -355,179 +341,33 @@ export default function SubscriptionsPage() {
       setError("");
 
       try {
-        const [
-          tiersResponse,
-          turnoverResponse,
-          plansResponse,
-        ] = await Promise.all([
-          fetch(
-            `${API_URL}/subscriptions/city-tiers`,
-            {
-              credentials: "include",
-            }
-          ),
-
-          fetch(
-            `${API_URL}/subscriptions/turnover-bands`,
-            {
-              credentials: "include",
-            }
-          ),
-
-          fetch(
-            `${API_URL}/subscriptions/plans`,
-            {
-              credentials: "include",
-            }
-          ),
-        ]);
-
-        // =====================================================
-        // CITY TIERS
-        // =====================================================
-
-        let tiersData = [];
-
-        if (tiersResponse.ok) {
-          tiersData =
-            await tiersResponse
-              .json()
-              .catch(() => []);
-        } else {
-          const data =
-            await tiersResponse
-              .json()
-              .catch(() => ({}));
-
-          console.error(
-            "City tiers API failed:",
-            tiersResponse.status,
-            data
-          );
-
-          throw new Error(
-            `City tiers: ${
-              typeof data.detail ===
-              "string"
-                ? data.detail
-                : `HTTP ${tiersResponse.status}`
-            }`
-          );
-        }
-
-        // IMPORTANT:
-        // Backend may return either:
-        //
-        // [ ... ]
-        //
-        // OR
-        //
-        // { city_tiers: [ ... ] }
-        //
-        const cityTierList =
-          Array.isArray(tiersData)
-            ? tiersData
-            : tiersData?.city_tiers ||
-              [];
-
-        setCityTiers(
-          cityTierList.filter(
-            (tier) =>
-              tier.is_active !== false
-          )
+        const response = await fetch(
+          `${API_URL}/subscriptions/plans`,
+          {
+            credentials: "include",
+          }
         );
 
-        // =====================================================
-        // TURNOVER BANDS
-        // =====================================================
-
-        let turnoverData = [];
-
-        if (turnoverResponse.ok) {
-          turnoverData =
-            await turnoverResponse
-              .json()
-              .catch(() => []);
-        } else {
+        if (!response.ok) {
           const data =
-            await turnoverResponse
+            await response
               .json()
               .catch(() => ({}));
-
-          console.error(
-            "Turnover bands API failed:",
-            turnoverResponse.status,
-            data
-          );
 
           throw new Error(
-            `Turnover bands: ${
-              typeof data.detail ===
-              "string"
-                ? data.detail
-                : `HTTP ${turnoverResponse.status}`
-            }`
+            typeof data.detail === "string"
+              ? data.detail
+              : `Unable to load subscription plans (HTTP ${response.status}).`
           );
         }
 
-        // IMPORTANT:
-        // Support both:
-        //
-        // [ ... ]
-        //
-        // OR
-        //
-        // { turnover_bands: [ ... ] }
-        //
-        const turnoverBandList =
-          Array.isArray(
-            turnoverData
-          )
-            ? turnoverData
-            : turnoverData?.turnover_bands ||
-              [];
-
-        setTurnoverBands(
-          turnoverBandList.filter(
-            (band) =>
-              band.is_active !== false
-          )
-        );
-
-        // =====================================================
-        // PLANS
-        // =====================================================
-
-        if (!plansResponse.ok) {
-          const data =
-            await plansResponse
-              .json()
-              .catch(() => ({}));
-
-          console.error(
-            "Plans API failed:",
-            plansResponse.status,
-            data
-          );
-
-          setPlans([]);
-
-          setError(
-            `Subscription plans could not be loaded (HTTP ${plansResponse.status}).`
-          );
-
-          return;
-        }
-
-        const plansData =
-          await plansResponse.json();
+        const data =
+          await response.json();
 
         setPlans(
-          Array.isArray(
-            plansData
-          )
-            ? plansData
-            : plansData?.plans || []
+          Array.isArray(data)
+            ? data
+            : data?.plans || []
         );
       } catch (err) {
         console.error(
@@ -535,22 +375,26 @@ export default function SubscriptionsPage() {
           err
         );
 
+        setPlans([]);
+
         setError(
           err?.message ||
-            "Unable to load subscription configuration."
+            "Unable to load subscription plans."
         );
       } finally {
         setLoading(false);
       }
     };
 
+
   useEffect(() => {
     fetchSubscriptionData();
   }, []);
 
-  // =========================================================
-  // PLAN FILTERING
-  // =========================================================
+
+  // ==========================================================
+  // FILTER PLANS
+  // ==========================================================
 
   const filteredPlans =
     useMemo(() => {
@@ -573,40 +417,27 @@ export default function SubscriptionsPage() {
       search,
     ]);
 
-  // =========================================================
-  // PLAN MODAL
-  // =========================================================
+
+  // ==========================================================
+  // CREATE PLAN
+  // ==========================================================
 
   const openCreatePlan = () => {
     setEditingPlan(null);
-
-    const prices = {};
-
-    cityTiers.forEach(
-      (tier) => {
-        turnoverBands.forEach(
-          (band) => {
-            prices[
-              getPriceKey(
-                tier.id,
-                band.id
-              )
-            ] = "";
-          }
-        );
-      }
-    );
 
     setPlanForm({
       ...EMPTY_PLAN,
       main_plan:
         activePlanType,
-      modules: [],
-      prices,
     });
 
     setShowPlanModal(true);
   };
+
+
+  // ==========================================================
+  // EDIT PLAN
+  // ==========================================================
 
   const openEditPlan = (plan) => {
     const moduleKeys =
@@ -617,76 +448,46 @@ export default function SubscriptionsPage() {
             : module.module_key
       ) || [];
 
-    const normalizedModules =
-      normalizeModules(
-        moduleKeys,
-        plan.main_plan
-      );
-
-    const prices = {};
-
-    // Initialize all current
-    // matrix combinations first.
-    cityTiers.forEach(
-      (tier) => {
-        turnoverBands.forEach(
-          (band) => {
-            prices[
-              getPriceKey(
-                tier.id,
-                band.id
-              )
-            ] = "";
-          }
-        );
-      }
-    );
-
-    // Then populate existing prices.
-    (plan.prices || []).forEach(
-      (price) => {
-        const key =
-          getPriceKey(
-            price.city_tier_id,
-            price.turnover_band_id
-          );
-
-        prices[key] =
-          price.monthly_price ??
-          price.price ??
-          "";
-      }
-    );
-
     setEditingPlan(plan);
 
     setPlanForm({
-      name:
-        plan.name || "",
+      name: plan.name || "",
       description:
         plan.description || "",
       main_plan:
-        plan.main_plan,
-      modules:
-        normalizedModules,
-      prices,
+        plan.main_plan || "BASIC",
+      monthly_price:
+        plan.monthly_price ?? "",
+      annual_price:
+        plan.annual_price ?? "",
+      currency:
+        plan.currency || "INR",
+      modules: normalizeModules(
+        moduleKeys,
+        plan.main_plan
+      ),
     });
 
     setShowPlanModal(true);
   };
 
+
+  // ==========================================================
+  // CLOSE PLAN MODAL
+  // ==========================================================
+
   const closePlanModal = () => {
     setShowPlanModal(false);
     setEditingPlan(null);
+    setPlanForm(EMPTY_PLAN);
   };
 
-  // =========================================================
-  // MODULE TOGGLE
-  // =========================================================
 
-  const toggleModule = (
-    moduleKey
-  ) => {
+  // ==========================================================
+  // MODULE TOGGLE
+  // ==========================================================
+
+  const toggleModule = (moduleKey) => {
     setPlanForm((current) => {
       const moduleState =
         getModuleState(
@@ -695,643 +496,314 @@ export default function SubscriptionsPage() {
           current.main_plan
         );
 
-      // Never allow an unavailable
-      // module to be toggled.
       if (moduleState.disabled) {
         return current;
       }
 
       const selected =
-        new Set(
-          current.modules
-        );
+        new Set(current.modules);
 
-      if (
-        selected.has(
-          moduleKey
-        )
-      ) {
-        selected.delete(
-          moduleKey
-        );
+      if (selected.has(moduleKey)) {
+        selected.delete(moduleKey);
       } else {
-        selected.add(
-          moduleKey
-        );
+        selected.add(moduleKey);
       }
-
-      const normalized =
-        normalizeModules(
-          Array.from(
-            selected
-          ),
-          current.main_plan
-        );
 
       return {
         ...current,
-        modules:
-          normalized,
+        modules: normalizeModules(
+          Array.from(selected),
+          current.main_plan
+        ),
       };
     });
   };
 
-  // =========================================================
+
+  // ==========================================================
   // CHANGE MAIN PLAN
-  // =========================================================
+  // ==========================================================
 
-  const changeMainPlan = (
-    mainPlan
-  ) => {
-    setPlanForm(
-      (current) => {
-        let modules =
-          current.modules;
+  const changeMainPlan = (mainPlan) => {
+    setPlanForm((current) => {
+      let modules =
+        current.modules;
 
-        if (
-          mainPlan ===
-          "BASIC"
-        ) {
-          modules =
-            modules.filter(
-              (moduleKey) =>
-                moduleKey !==
-                "ml_analytics"
-            );
-        }
-
+      if (mainPlan === "BASIC") {
         modules =
-          normalizeModules(
-            modules,
-            mainPlan
+          modules.filter(
+            (moduleKey) =>
+              moduleKey !==
+              "ml_analytics"
           );
-
-        return {
-          ...current,
-          main_plan:
-            mainPlan,
-          modules,
-        };
       }
-    );
-  };
 
-  // =========================================================
-  // PRICING
-  // =========================================================
-
-  const updateTierPrice = (
-    tierId,
-    turnoverBandId,
-    value
-  ) => {
-    const key =
-      getPriceKey(
-        tierId,
-        turnoverBandId
+      modules = normalizeModules(
+        modules,
+        mainPlan
       );
 
-    setPlanForm(
-      (current) => ({
+      return {
         ...current,
-        prices: {
-          ...current.prices,
-          [key]: value,
-        },
-      })
-    );
+        main_plan: mainPlan,
+        modules,
+      };
+    });
   };
 
-  // =========================================================
+
+  // ==========================================================
   // SAVE PLAN
-  // =========================================================
+  // ==========================================================
 
-  const savePlan =
-    async () => {
-      if (
-        !planForm.name.trim()
-      ) {
-        alert(
-          "Subscription plan name is required."
-        );
-        return;
-      }
+  const savePlan = async () => {
+    if (!planForm.name.trim()) {
+      alert(
+        "Subscription plan name is required."
+      );
+      return;
+    }
 
-      if (
-        planForm.modules.length ===
-        0
-      ) {
-        alert(
-          "Select at least one module."
-        );
-        return;
-      }
+    if (
+      planForm.modules.length === 0
+    ) {
+      alert(
+        "Select at least one module."
+      );
+      return;
+    }
 
-      if (
-        cityTiers.length ===
-        0
-      ) {
-        alert(
-          "No active city tiers are available."
-        );
-        return;
-      }
+    const monthlyPrice =
+      Number(
+        planForm.monthly_price
+      );
 
-      if (
-        turnoverBands.length ===
-        0
-      ) {
-        alert(
-          "No active turnover bands are available."
-        );
-        return;
-      }
+    const annualPrice =
+      Number(
+        planForm.annual_price
+      );
 
-      // -------------------------------------------------------
-      // VALIDATE EVERY PRICE
-      // -------------------------------------------------------
+    if (
+      planForm.monthly_price === "" ||
+      !Number.isFinite(monthlyPrice) ||
+      monthlyPrice < 0
+    ) {
+      alert(
+        "Enter a valid monthly price."
+      );
+      return;
+    }
 
-      for (
-        const tier of cityTiers
-      ) {
-        for (
-          const band of turnoverBands
-        ) {
-          const key =
-            getPriceKey(
-              tier.id,
-              band.id
-            );
+    if (
+      planForm.annual_price === "" ||
+      !Number.isFinite(annualPrice) ||
+      annualPrice < 0
+    ) {
+      alert(
+        "Enter a valid annual price."
+      );
+      return;
+    }
 
-          const value =
-            planForm.prices[
-              key
-            ];
+    try {
+      const payload = {
+        name:
+          planForm.name.trim(),
 
-          if (
-            value === "" ||
-            value === null ||
-            value === undefined
-          ) {
-            alert(
-              `Enter pricing for ${tier.name} · ${band.name}.`
-            );
-            return;
-          }
+        description:
+          planForm.description.trim() ||
+          null,
 
-          if (
-            Number(value) < 0
-          ) {
-            alert(
-              `Pricing for ${tier.name} · ${band.name} cannot be negative.`
-            );
-            return;
-          }
-        }
-      }
+        main_plan:
+          planForm.main_plan
+            .trim()
+            .toUpperCase(),
 
-      try {
-        const payload = {
-          name: planForm.name.trim(),
-          description: planForm.description.trim() || null,
-          main_plan: planForm.main_plan.trim().toUpperCase(),
-          modules: planForm.modules.map((moduleKey) => {
-            const module = MODULES.find(
-              (item) => item.key === moduleKey
-            );
+        monthly_price:
+          monthlyPrice,
 
-            return {
-              module_key: moduleKey,
-              module_name: module?.name || moduleKey,
-            };
-              }
-            ),
+        annual_price:
+          annualPrice,
 
-          prices:
-            cityTiers.flatMap(
-              (tier) =>
-                turnoverBands.map(
-                  (band) => {
-                    const key =
-                      getPriceKey(
-                        tier.id,
-                        band.id
-                      );
+        currency:
+          planForm.currency
+            .trim()
+            .toUpperCase(),
 
-                    const monthlyPrice =
-                      Number(
-                        planForm
-                          .prices[
-                          key
-                        ]
-                      );
+        modules:
+          planForm.modules.map(
+            (moduleKey) => {
+              const module =
+                MODULES.find(
+                  (item) =>
+                    item.key ===
+                    moduleKey
+                );
 
-                    return {
-                      city_tier_id:
-                        Number(
-                          tier.id
-                        ),
+              return {
+                module_key:
+                  moduleKey,
 
-                      turnover_band_id:
-                        Number(
-                          band.id
-                        ),
+                module_name:
+                  module?.name ||
+                  moduleKey,
+              };
+            }
+          ),
+      };
 
-                      monthly_price:
-                        monthlyPrice,
+      const url = editingPlan
+        ? `${API_URL}/subscriptions/plans/${editingPlan.id}`
+        : `${API_URL}/subscriptions/plans`;
 
-                      annual_price:
-                        monthlyPrice *
-                        12,
+      const response =
+        await fetch(url, {
+          method: editingPlan
+            ? "PATCH"
+            : "POST",
 
-                      currency:
-                        "INR",
-                    };
-                  }
-                )
-            ),
-        };
+          credentials: "include",
 
-        console.log(
-          "Saving subscription plan:",
-          payload
-        );
+          headers: {
+            "Content-Type":
+              "application/json",
+          },
 
-        const url =
-          editingPlan
-            ? `${API_URL}/subscriptions/plans/${editingPlan.id}`
-            : `${API_URL}/subscriptions/plans`;
-
-        const response =
-          await fetch(url, {
-            method:
-              editingPlan
-                ? "PATCH"
-                : "POST",
-
-            credentials:
-              "include",
-
-            headers: {
-              "Content-Type":
-                "application/json",
-            },
-
-            body: JSON.stringify(
+          body:
+            JSON.stringify(
               payload
             ),
-          });
+        });
 
-        if (!response.ok) {
-          const data =
-            await response
-              .json()
-              .catch(
-                () => ({})
-              );
+      if (!response.ok) {
+        const data =
+          await response
+            .json()
+            .catch(() => ({}));
 
-          let message =
-            "Unable to save subscription plan.";
+        let message =
+          "Unable to save subscription plan.";
 
-          if (
-            Array.isArray(
-              data.detail
-            )
-          ) {
-            message =
-              data.detail
-                .map(
-                  (error) => {
-                    const location =
-                      Array.isArray(
-                        error.loc
-                      )
-                        ? error.loc.join(
-                            " → "
-                          )
-                        : "";
-
-                    return `${
-                      location
-                        ? `${location}: `
-                        : ""
-                    }${
-                      error.msg ||
-                      "Invalid value"
-                    }`;
-                  }
-                )
-                .join("\n");
-          } else if (
-            typeof data.detail ===
-            "string"
-          ) {
-            message =
-              data.detail;
-          } else if (
+        if (
+          Array.isArray(
             data.detail
-          ) {
-            message =
-              JSON.stringify(
-                data.detail,
-                null,
-                2
-              );
-          }
+          )
+        ) {
+          message =
+            data.detail
+              .map(
+                (item) => {
+                  const location =
+                    Array.isArray(
+                      item.loc
+                    )
+                      ? item.loc.join(
+                          " → "
+                        )
+                      : "";
 
-          throw new Error(
-            message
-          );
+                  return `${
+                    location
+                      ? `${location}: `
+                      : ""
+                  }${
+                    item.msg ||
+                    "Invalid value"
+                  }`;
+                }
+              )
+              .join("\n");
+        } else if (
+          typeof data.detail ===
+          "string"
+        ) {
+          message =
+            data.detail;
         }
 
-        closePlanModal();
-
-        await fetchSubscriptionData();
-      } catch (err) {
-        console.error(
-          "Save plan error:",
-          err
-        );
-
-        alert(
-          err.message ||
-            "Unable to save subscription plan."
-        );
+        throw new Error(message);
       }
-    };
 
-  // =========================================================
+      closePlanModal();
+
+      await fetchSubscriptionData();
+    } catch (err) {
+      console.error(
+        "Save plan error:",
+        err
+      );
+
+      alert(
+        err.message ||
+          "Unable to save subscription plan."
+      );
+    }
+  };
+
+
+  // ==========================================================
   // DELETE PLAN
-  // =========================================================
+  // ==========================================================
 
-  const deletePlan =
-    async (plan) => {
-      const confirmed =
-        window.confirm(
-          `Delete subscription plan "${plan.name}"?`
-        );
+  const deletePlan = async (plan) => {
+    const confirmed =
+      window.confirm(
+        `Delete subscription plan "${plan.name}"?`
+      );
 
-      if (!confirmed) return;
+    if (!confirmed) {
+      return;
+    }
 
-      try {
-        const response =
-          await fetch(
-            `${API_URL}/subscriptions/plans/${plan.id}`,
-            {
-              method:
-                "DELETE",
-              credentials:
-                "include",
-            }
-          );
-
-        if (!response.ok) {
-          const data =
-            await response
-              .json()
-              .catch(
-                () => ({})
-              );
-
-          let message =
-            "Unable to delete subscription plan.";
-
-          if (
-            Array.isArray(
-              data.detail
-            )
-          ) {
-            message =
-              data.detail
-                .map(
-                  (error) => {
-                    const location =
-                      Array.isArray(
-                        error.loc
-                      )
-                        ? error.loc.join(
-                            " → "
-                          )
-                        : "";
-
-                    return `${
-                      location
-                        ? `${location}: `
-                        : ""
-                    }${
-                      error.msg ||
-                      "Invalid value"
-                    }`;
-                  }
-                )
-                .join("\n");
-          } else if (
-            typeof data.detail ===
-            "string"
-          ) {
-            message =
-              data.detail;
-          } else if (
-            data.detail
-          ) {
-            message =
-              JSON.stringify(
-                data.detail,
-                null,
-                2
-              );
+    try {
+      const response =
+        await fetch(
+          `${API_URL}/subscriptions/plans/${plan.id}`,
+          {
+            method: "DELETE",
+            credentials: "include",
           }
-
-          throw new Error(
-            message
-          );
-        }
-
-        await fetchSubscriptionData();
-      } catch (err) {
-        console.error(
-          "Delete plan error:",
-          err
         );
 
-        alert(
-          err.message ||
-            "Unable to delete subscription plan."
-        );
-      }
-    };
+      if (!response.ok) {
+        const data =
+          await response
+            .json()
+            .catch(() => ({}));
 
-  // =========================================================
-  // CITY TIER MODAL
-  // =========================================================
-
-  const openCreateTier =
-    () => {
-      setEditingTier(null);
-
-      setTierForm({
-        name: "",
-        description: "",
-      });
-
-      setShowTierModal(true);
-    };
-
-  const openEditTier =
-    (tier) => {
-      setEditingTier(tier);
-
-      setTierForm({
-        name:
-          tier.name || "",
-        description:
-          tier.description ||
-          "",
-      });
-
-      setShowTierModal(true);
-    };
-
-  const closeTierModal =
-    () => {
-      setShowTierModal(false);
-      setEditingTier(null);
-    };
-
-  // =========================================================
-  // SAVE TIER
-  // =========================================================
-
-  const saveTier =
-    async () => {
-      if (
-        !tierForm.name.trim()
-      ) {
-        alert(
-          "City tier name is required."
-        );
-        return;
-      }
-
-      try {
-        const url =
-          editingTier
-            ? `${API_URL}/subscriptions/city-tiers/${editingTier.id}`
-            : `${API_URL}/subscriptions/city-tiers`;
-
-        const response =
-          await fetch(url, {
-            method:
-              editingTier
-                ? "PATCH"
-                : "POST",
-
-            credentials:
-              "include",
-
-            headers: {
-              "Content-Type":
-                "application/json",
-            },
-
-            body: JSON.stringify({
-              name:
-                tierForm.name.trim(),
-
-              description:
-                tierForm.description.trim() ||
-                null,
-            }),
-          });
-
-        if (!response.ok) {
-          const data =
-            await response
-              .json()
-              .catch(
-                () => ({})
-              );
-
-          let message =
-            "Unable to save city tier.";
-
-          if (
-            Array.isArray(
-              data.detail
-            )
-          ) {
-            message =
-              data.detail
-                .map(
-                  (error) => {
-                    const location =
-                      Array.isArray(
-                        error.loc
-                      )
-                        ? error.loc.join(
-                            " → "
-                          )
-                        : "";
-
-                    return `${
-                      location
-                        ? `${location}: `
-                        : ""
-                    }${
-                      error.msg ||
-                      "Invalid value"
-                    }`;
-                  }
-                )
-                .join("\n");
-          } else if (
-            typeof data.detail ===
+        throw new Error(
+          typeof data.detail ===
             "string"
-          ) {
-            message =
-              data.detail;
-          } else if (
-            data.detail
-          ) {
-            message =
-              JSON.stringify(
-                data.detail,
-                null,
-                2
-              );
-          }
-
-          throw new Error(
-            message
-          );
-        }
-
-        closeTierModal();
-
-        await fetchSubscriptionData();
-      } catch (err) {
-        console.error(
-          "Save tier error:",
-          err
-        );
-
-        alert(
-          err.message ||
-            "Unable to save city tier."
+            ? data.detail
+            : "Unable to delete subscription plan."
         );
       }
-    };
 
-  // =========================================================
+      await fetchSubscriptionData();
+    } catch (err) {
+      console.error(
+        "Delete plan error:",
+        err
+      );
+
+      alert(
+        err.message ||
+          "Unable to delete subscription plan."
+      );
+    }
+  };
+
+
+  // ==========================================================
   // UI
-  // =========================================================
+  // ==========================================================
 
   return (
     <div className="flex h-full w-full flex-col overflow-hidden bg-slate-50/60">
 
-      {/* =====================================================
+      {/* ======================================================
           HEADER
-      ===================================================== */}
+      ====================================================== */}
 
       <header className="shrink-0 border-b border-slate-200/70 bg-white">
 
@@ -1357,10 +829,11 @@ export default function SubscriptionsPage() {
 
             <p className="mt-0.5 text-xs text-slate-500">
               Manage subscription plans,
-              modules and city-tier pricing.
+              modules and pricing.
             </p>
 
           </div>
+
 
           <div className="flex shrink-0 items-center gap-2">
 
@@ -1375,76 +848,50 @@ export default function SubscriptionsPage() {
               <RefreshCw size={15} />
             </button>
 
-            {activeSection ===
-              "plans" && (
-              <button
-                type="button"
-                onClick={
-                  openCreatePlan
-                }
-                className="flex items-center gap-2 rounded-lg px-3.5 py-2.5 text-xs font-semibold text-white shadow-sm transition hover:opacity-90"
-                style={{
-                  backgroundColor:
-                    GOLD,
-                }}
-              >
-                <Plus
-                  size={15}
-                  strokeWidth={2.5}
-                />
+            <button
+              type="button"
+              onClick={
+                openCreatePlan
+              }
+              className="flex items-center gap-2 rounded-lg px-3.5 py-2.5 text-xs font-semibold text-white shadow-sm transition hover:opacity-90"
+              style={{
+                backgroundColor: GOLD,
+              }}
+            >
+              <Plus
+                size={15}
+                strokeWidth={2.5}
+              />
 
-                New Plan
-              </button>
-            )}
-
-            {activeSection ===
-              "tiers" && (
-              <button
-                type="button"
-                onClick={
-                  openCreateTier
-                }
-                className="flex items-center gap-2 rounded-lg px-3.5 py-2.5 text-xs font-semibold text-white shadow-sm transition hover:opacity-90"
-                style={{
-                  backgroundColor:
-                    GOLD,
-                }}
-              >
-                <Plus
-                  size={15}
-                  strokeWidth={2.5}
-                />
-
-                New City Tier
-              </button>
-            )}
+              New Plan
+            </button>
 
           </div>
 
         </div>
 
-        {/* ===================================================
-            SECTION TABS
-        =================================================== */}
+
+        {/* PLAN TYPE TABS */}
 
         <div className="flex gap-1 overflow-x-auto px-4 sm:px-6">
 
           <button
             type="button"
-            onClick={() =>
-              setActiveSection(
-                "plans"
-              )
-            }
+            onClick={() => {
+              setActivePlanType(
+                "BASIC"
+              );
+              setSearch("");
+            }}
             className={`relative flex items-center gap-2 border-b-2 px-3 py-3 text-xs font-semibold transition ${
-              activeSection ===
-              "plans"
+              activePlanType ===
+              "BASIC"
                 ? "text-slate-900"
                 : "border-transparent text-slate-400 hover:text-slate-700"
             }`}
             style={
-              activeSection ===
-              "plans"
+              activePlanType ===
+              "BASIC"
                 ? {
                     borderColor:
                       GOLD,
@@ -1454,25 +901,39 @@ export default function SubscriptionsPage() {
           >
             <Package size={14} />
 
-            Subscription Plans
+            BASIC
+
+            <span
+              className={`text-[10px] ${
+                activePlanType ===
+                "BASIC"
+                  ? "text-slate-400"
+                  : "text-slate-300"
+              }`}
+            >
+              Standard
+            </span>
+
           </button>
+
 
           <button
             type="button"
-            onClick={() =>
-              setActiveSection(
-                "tiers"
-              )
-            }
+            onClick={() => {
+              setActivePlanType(
+                "PRO"
+              );
+              setSearch("");
+            }}
             className={`relative flex items-center gap-2 border-b-2 px-3 py-3 text-xs font-semibold transition ${
-              activeSection ===
-              "tiers"
+              activePlanType ===
+              "PRO"
                 ? "text-slate-900"
                 : "border-transparent text-slate-400 hover:text-slate-700"
             }`}
             style={
-              activeSection ===
-              "tiers"
+              activePlanType ===
+              "PRO"
                 ? {
                     borderColor:
                       GOLD,
@@ -1480,24 +941,37 @@ export default function SubscriptionsPage() {
                 : undefined
             }
           >
-            <MapPinned size={14} />
+            <Sparkles size={14} />
 
-            City Tiers
+            PRO
+
+            <span
+              className={`text-[10px] ${
+                activePlanType ===
+                "PRO"
+                  ? "text-slate-400"
+                  : "text-slate-300"
+              }`}
+            >
+              Advanced
+            </span>
+
           </button>
 
         </div>
 
       </header>
 
-      {/* =====================================================
+
+      {/* ======================================================
           BODY
-      ===================================================== */}
+      ====================================================== */}
 
       <main
         className={`min-h-0 flex-1 overflow-y-auto ${noScroll}`}
       >
 
-        <div className="mx-auto max-w-[1500px] p-4 sm:p-5 lg:p-6">
+        <div className="mx-auto max-w-[1400px] p-4 sm:p-5 lg:p-6">
 
           {error && (
             <div className="mb-5 flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3">
@@ -1523,7 +997,9 @@ export default function SubscriptionsPage() {
             </div>
           )}
 
+
           {loading ? (
+
             <div className="flex min-h-[400px] items-center justify-center">
 
               <div className="flex flex-col items-center">
@@ -1537,88 +1013,14 @@ export default function SubscriptionsPage() {
               </div>
 
             </div>
-          ) : activeSection ===
-            "plans" ? (
+
+          ) : (
 
             <>
 
-              {/* =============================================
-                  PLAN TYPE SWITCH
-              ============================================== */}
-
-              <div
-                className={`${card} mb-5 p-1.5`}
-              >
-
-                <div className="grid grid-cols-2 gap-1">
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setActivePlanType(
-                        "BASIC"
-                      );
-                      setSearch("");
-                    }}
-                    className={`rounded-xl px-4 py-3 text-sm font-semibold transition ${
-                      activePlanType ===
-                      "BASIC"
-                        ? "bg-slate-900 text-white shadow-sm"
-                        : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
-                    }`}
-                  >
-                    BASIC
-
-                    <span
-                      className={`ml-2 text-[10px] ${
-                        activePlanType ===
-                        "BASIC"
-                          ? "text-slate-300"
-                          : "text-slate-400"
-                      }`}
-                    >
-                      Standard
-                    </span>
-
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setActivePlanType(
-                        "PRO"
-                      );
-                      setSearch("");
-                    }}
-                    className={`rounded-xl px-4 py-3 text-sm font-semibold transition ${
-                      activePlanType ===
-                      "PRO"
-                        ? "bg-slate-900 text-white shadow-sm"
-                        : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
-                    }`}
-                  >
-                    PRO
-
-                    <span
-                      className={`ml-2 text-[10px] ${
-                        activePlanType ===
-                        "PRO"
-                          ? "text-slate-300"
-                          : "text-slate-400"
-                      }`}
-                    >
-                      Advanced
-                    </span>
-
-                  </button>
-
-                </div>
-
-              </div>
-
-              {/* =============================================
+              {/* =================================================
                   SEARCH
-              ============================================== */}
+              ================================================= */}
 
               <div className="mb-5 flex items-center justify-between gap-3">
 
@@ -1633,8 +1035,7 @@ export default function SubscriptionsPage() {
                     value={search}
                     onChange={(event) =>
                       setSearch(
-                        event.target
-                          .value
+                        event.target.value
                       )
                     }
                     placeholder={`Search ${activePlanType} plans...`}
@@ -1653,9 +1054,10 @@ export default function SubscriptionsPage() {
 
               </div>
 
-              {/* =============================================
+
+              {/* =================================================
                   PLAN LIST
-              ============================================== */}
+              ================================================= */}
 
               {filteredPlans.length ===
               0 ? (
@@ -1686,8 +1088,8 @@ export default function SubscriptionsPage() {
                       Create a subscription
                       plan, choose its
                       modules and set
-                      pricing independently
-                      for each city tier.
+                      monthly and annual
+                      pricing.
                     </p>
 
                     <button
@@ -1719,16 +1121,8 @@ export default function SubscriptionsPage() {
                   {filteredPlans.map(
                     (plan) => (
                       <PlanCard
-                        key={
-                          plan.id
-                        }
+                        key={plan.id}
                         plan={plan}
-                        cityTiers={
-                          cityTiers
-                        }
-                        turnoverBands={
-                          turnoverBands
-                        }
                         onEdit={() =>
                           openEditPlan(
                             plan
@@ -1749,176 +1143,19 @@ export default function SubscriptionsPage() {
 
             </>
 
-          ) : (
-
-            /* ===============================================
-               CITY TIERS
-            ================================================ */
-
-            <div className="space-y-4">
-
-              <div
-                className={`${card} overflow-hidden`}
-              >
-
-                <div className="border-b border-slate-100 px-5 py-4">
-
-                  <h2 className="text-sm font-semibold text-slate-900">
-                    City Tiers
-                  </h2>
-
-                  <p className="mt-1 text-xs text-slate-500">
-                    Pricing is determined by
-                    the client's city tier.
-                  </p>
-
-                </div>
-
-                <div className="divide-y divide-slate-100">
-
-                  {cityTiers.map(
-                    (tier) => (
-                      <div
-                        key={
-                          tier.id
-                        }
-                        className="flex items-center justify-between gap-4 px-5 py-4 transition hover:bg-slate-50/60"
-                      >
-
-                        <div className="flex min-w-0 items-center gap-3">
-
-                          <div
-                            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl"
-                            style={{
-                              backgroundColor:
-                                `${GOLD}12`,
-                              color: GOLD,
-                            }}
-                          >
-                            <MapPinned
-                              size={16}
-                            />
-                          </div>
-
-                          <div className="min-w-0">
-
-                            <p className="text-sm font-semibold text-slate-900">
-                              {tier.name}
-                            </p>
-
-                            <p className="mt-0.5 truncate text-xs text-slate-500">
-                              {tier.description ||
-                                "No description"}
-                            </p>
-
-                          </div>
-
-                        </div>
-
-                        <div className="flex items-center gap-2">
-
-                          <span
-                            className={`rounded-full px-2 py-1 text-[10px] font-semibold ${
-                              tier.is_active
-                                ? "bg-emerald-50 text-emerald-600"
-                                : "bg-slate-100 text-slate-400"
-                            }`}
-                          >
-                            {tier.is_active
-                              ? "ACTIVE"
-                              : "INACTIVE"}
-                          </span>
-
-                          <button
-                            type="button"
-                            onClick={() =>
-                              openEditTier(
-                                tier
-                              )
-                            }
-                            className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-white hover:text-slate-900"
-                          >
-                            <Pencil size={14} />
-                          </button>
-
-                        </div>
-
-                      </div>
-                    )
-                  )}
-
-                  {cityTiers.length ===
-                    0 && (
-                    <div className="px-5 py-12 text-center">
-
-                      <MapPinned
-                        size={22}
-                        className="mx-auto text-slate-300"
-                      />
-
-                      <p className="mt-3 text-xs font-semibold text-slate-500">
-                        No city tiers
-                        configured.
-                      </p>
-
-                    </div>
-                  )}
-
-                </div>
-
-              </div>
-
-              <div
-                className={`${card} p-5`}
-              >
-
-                <div className="flex gap-3">
-
-                  <div
-                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl"
-                    style={{
-                      backgroundColor:
-                        `${GOLD}12`,
-                      color: GOLD,
-                    }}
-                  >
-                    <AlertCircle
-                      size={16}
-                    />
-                  </div>
-
-                  <div>
-
-                    <h3 className="text-xs font-semibold text-slate-900">
-                      How tier pricing works
-                    </h3>
-
-                    <p className="mt-1 text-xs leading-5 text-slate-500">
-                      The same subscription
-                      plan can have completely
-                      different pricing for Tier
-                      1, Tier 2, Tier 3 and other
-                      configured city tiers.
-                    </p>
-
-                  </div>
-
-                </div>
-
-              </div>
-
-            </div>
           )}
 
         </div>
 
       </main>
 
-      {/* =====================================================
+
+      {/* ======================================================
           PLAN MODAL
-      ===================================================== */}
+      ====================================================== */}
 
       {showPlanModal && (
+
         <Modal
           title={
             editingPlan
@@ -1960,8 +1197,9 @@ export default function SubscriptionsPage() {
                       })
                     )
                   }
-                  placeholder="e.g. Abhinava_Inventory"
+                  placeholder="e.g. Abhinava Basic"
                 />
+
 
                 <div>
 
@@ -1975,8 +1213,7 @@ export default function SubscriptionsPage() {
                     }
                     onChange={(event) =>
                       changeMainPlan(
-                        event.target
-                          .value
+                        event.target.value
                       )
                     }
                     className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-xs text-slate-900 outline-none focus:border-slate-300 focus:ring-2 focus:ring-slate-100"
@@ -1994,6 +1231,7 @@ export default function SubscriptionsPage() {
 
                 </div>
 
+
                 <div className="sm:col-span-2">
 
                   <label className="mb-1.5 block text-[11px] font-semibold text-slate-600">
@@ -2009,8 +1247,7 @@ export default function SubscriptionsPage() {
                         (current) => ({
                           ...current,
                           description:
-                            event.target
-                              .value,
+                            event.target.value,
                         })
                       )
                     }
@@ -2025,6 +1262,118 @@ export default function SubscriptionsPage() {
 
             </section>
 
+
+            {/* =================================================
+                PRICING
+            ================================================= */}
+
+            <section>
+
+              <SectionLabel>
+                Subscription Pricing
+              </SectionLabel>
+
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+
+                <PriceField
+                  label="Monthly Price"
+                  value={
+                    planForm.monthly_price
+                  }
+                  onChange={(value) =>
+                    setPlanForm(
+                      (current) => ({
+                        ...current,
+                        monthly_price:
+                          value,
+                      })
+                    )
+                  }
+                />
+
+                <PriceField
+                  label="Annual Price"
+                  value={
+                    planForm.annual_price
+                  }
+                  onChange={(value) =>
+                    setPlanForm(
+                      (current) => ({
+                        ...current,
+                        annual_price:
+                          value,
+                      })
+                    )
+                  }
+                />
+
+
+                <div>
+
+                  <label className="mb-1.5 block text-[11px] font-semibold text-slate-600">
+                    Currency
+                  </label>
+
+                  <select
+                    value={
+                      planForm.currency
+                    }
+                    onChange={(event) =>
+                      setPlanForm(
+                        (current) => ({
+                          ...current,
+                          currency:
+                            event.target.value,
+                        })
+                      )
+                    }
+                    className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-xs font-medium text-slate-900 outline-none focus:border-slate-300 focus:ring-2 focus:ring-slate-100"
+                  >
+                    <option value="INR">
+                      INR — Indian Rupee
+                    </option>
+                  </select>
+
+                </div>
+
+              </div>
+
+
+              <div className="mt-3 rounded-xl border border-slate-100 bg-slate-50/60 px-3.5 py-3">
+
+                <div className="flex gap-2.5">
+
+                  <AlertCircle
+                    size={14}
+                    className="mt-0.5 shrink-0 text-slate-400"
+                  />
+
+                  <div className="text-[10px] leading-4 text-slate-500">
+
+                    <p className="font-semibold text-slate-600">
+                      Simple pricing
+                    </p>
+
+                    <p className="mt-0.5">
+                      The subscription has one
+                      standard monthly price
+                      and one standard annual
+                      price. Client-specific
+                      discounts and invoice
+                      adjustments will be
+                      handled separately during
+                      billing.
+                    </p>
+
+                  </div>
+
+                </div>
+
+              </div>
+
+            </section>
+
+
             {/* =================================================
                 MODULES
             ================================================= */}
@@ -2034,17 +1383,18 @@ export default function SubscriptionsPage() {
               <div className="mb-3 flex items-center justify-between gap-3">
 
                 <SectionLabel>
+
                   Included Modules
 
                   <span className="ml-2 font-normal text-slate-400">
                     (
                     {
-                      planForm
-                        .modules
+                      planForm.modules
                         .length
                     }{" "}
                     selected)
                   </span>
+
                 </SectionLabel>
 
                 <div className="flex items-center gap-3 text-[10px] text-slate-400">
@@ -2067,6 +1417,7 @@ export default function SubscriptionsPage() {
                 </div>
 
               </div>
+
 
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
 
@@ -2094,13 +1445,9 @@ export default function SubscriptionsPage() {
 
                   return (
                     <button
-                      key={
-                        module.key
-                      }
+                      key={module.key}
                       type="button"
-                      disabled={
-                        disabled
-                      }
+                      disabled={disabled}
                       onClick={() =>
                         toggleModule(
                           module.key
@@ -2115,8 +1462,6 @@ export default function SubscriptionsPage() {
                       }`}
                     >
 
-                      {/* CHECK / LOCK ICON */}
-
                       <span
                         className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md border ${
                           selected
@@ -2130,26 +1475,19 @@ export default function SubscriptionsPage() {
                         {selected ? (
                           <Check
                             size={12}
-                            strokeWidth={
-                              3
-                            }
+                            strokeWidth={3}
                           />
                         ) : disabled ? (
-                          <Lock
-                            size={10}
-                          />
+                          <Lock size={10} />
                         ) : (
                           <Check
                             size={12}
-                            strokeWidth={
-                              3
-                            }
+                            strokeWidth={3}
                           />
                         )}
 
                       </span>
 
-                      {/* MODULE CONTENT */}
 
                       <span className="min-w-0 flex-1">
 
@@ -2162,9 +1500,7 @@ export default function SubscriptionsPage() {
                                 : "text-slate-900"
                             }`}
                           >
-                            {
-                              module.name
-                            }
+                            {module.name}
                           </span>
 
                           {module.proOnly && (
@@ -2177,9 +1513,7 @@ export default function SubscriptionsPage() {
                               }}
                             >
                               <Sparkles
-                                size={
-                                  8
-                                }
+                                size={8}
                               />
                               PRO
                             </span>
@@ -2206,14 +1540,11 @@ export default function SubscriptionsPage() {
                               <Sparkles
                                 size={9}
                                 style={{
-                                  color:
-                                    GOLD,
+                                  color: GOLD,
                                 }}
                               />
                             ) : (
-                              <Lock
-                                size={9}
-                              />
+                              <Lock size={9} />
                             )}
 
                             {
@@ -2230,6 +1561,7 @@ export default function SubscriptionsPage() {
                 })}
 
               </div>
+
 
               <div className="mt-3 rounded-xl border border-slate-100 bg-slate-50/60 px-3.5 py-3">
 
@@ -2248,19 +1580,22 @@ export default function SubscriptionsPage() {
 
                     <p className="mt-0.5">
                       Customer Directory and
-                      WhatsApp cannot be offered
-                      independently. Stock
-                      automatically includes Customer
-                      Directory and Sales & Invoicing.
-                      Investments automatically
-                      includes Customer Directory.
+                      WhatsApp cannot be
+                      offered independently.
+                      Stock automatically
+                      includes Customer
+                      Directory and Sales &
+                      Invoicing. Investments
+                      and Kareegar automatically
+                      include Customer Directory.
                     </p>
 
                     {planForm.main_plan ===
                       "BASIC" && (
                       <p className="mt-1 font-medium text-slate-500">
-                        Reports & ML Analytics is
-                        available only with Pro.
+                        Reports & ML Analytics
+                        is available only with
+                        Pro.
                       </p>
                     )}
 
@@ -2272,272 +1607,6 @@ export default function SubscriptionsPage() {
 
             </section>
 
-            {/* =================================================
-                CITY TIER PRICING
-            ================================================= */}
-
-            <section>
-
-              <SectionLabel>
-                City Tier × Turnover Pricing
-
-                <span className="ml-2 font-normal text-slate-400">
-                  Monthly / Annual
-                </span>
-              </SectionLabel>
-
-              <div className="mb-3 flex flex-wrap gap-2">
-
-                <div className="rounded-lg bg-slate-50 px-3 py-2 text-[10px] font-medium text-slate-500">
-                  City Tiers:{" "}
-                  <span className="font-bold text-slate-700">
-                    {cityTiers.length}
-                  </span>
-                </div>
-
-                <div className="rounded-lg bg-slate-50 px-3 py-2 text-[10px] font-medium text-slate-500">
-                  Turnover Bands:{" "}
-                  <span className="font-bold text-slate-700">
-                    {
-                      turnoverBands.length
-                    }
-                  </span>
-                </div>
-
-                <div className="rounded-lg bg-slate-50 px-3 py-2 text-[10px] font-medium text-slate-500">
-                  Pricing Cells:{" "}
-                  <span className="font-bold text-slate-700">
-                    {cityTiers.length *
-                      turnoverBands.length}
-                  </span>
-                </div>
-
-              </div>
-
-              {cityTiers.length ===
-              0 ? (
-
-                <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center">
-
-                  <MapPinned
-                    size={22}
-                    className="mx-auto text-slate-300"
-                  />
-
-                  <p className="mt-3 text-xs font-semibold text-slate-500">
-                    No city tiers available.
-                  </p>
-
-                  <p className="mt-1 text-[10px] text-slate-400">
-                    Create an active city tier
-                    first.
-                  </p>
-
-                </div>
-
-              ) : turnoverBands.length ===
-                0 ? (
-
-                <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center">
-
-                  <IndianRupee
-                    size={22}
-                    className="mx-auto text-slate-300"
-                  />
-
-                  <p className="mt-3 text-xs font-semibold text-slate-500">
-                    No turnover bands available.
-                  </p>
-
-                  <p className="mt-1 text-[10px] text-slate-400">
-                    Create an active turnover
-                    band first.
-                  </p>
-
-                </div>
-
-              ) : (
-
-                <div className="overflow-hidden rounded-xl border border-slate-200">
-
-                  {/* HEADER */}
-
-                  <div className="grid grid-cols-[1.2fr_1.2fr_180px_180px] border-b border-slate-100 bg-slate-50 px-4 py-3 text-[9px] font-bold uppercase tracking-widest text-slate-400">
-
-                    <span>
-                      City Tier
-                    </span>
-
-                    <span>
-                      Turnover Band
-                    </span>
-
-                    <span>
-                      Monthly
-                    </span>
-
-                    <span>
-                      Annual
-                    </span>
-
-                  </div>
-
-                  {/* PRICING ROWS */}
-
-                  {cityTiers.map(
-                    (tier) =>
-                      turnoverBands.map(
-                        (band) => {
-
-                          const key =
-                            getPriceKey(
-                              tier.id,
-                              band.id
-                            );
-
-                          const monthly =
-                            Number(
-                              planForm
-                                .prices[
-                                key
-                              ] || 0
-                            );
-
-                          const annual =
-                            monthly * 12;
-
-                          return (
-                            <div
-                              key={
-                                key
-                              }
-                              className="grid grid-cols-[1.2fr_1.2fr_180px_180px] items-center border-b border-slate-100 px-4 py-3 last:border-0"
-                            >
-
-                              {/* CITY TIER */}
-
-                              <div>
-
-                                <p className="text-xs font-semibold text-slate-900">
-                                  {
-                                    tier.name
-                                  }
-                                </p>
-
-                                <p className="mt-0.5 text-[9px] text-slate-400">
-                                  Tier #
-                                  {
-                                    tier.id
-                                  }
-                                </p>
-
-                              </div>
-
-                              {/* TURNOVER BAND */}
-
-                              <div>
-
-                                <p className="text-xs font-semibold text-slate-700">
-                                  {
-                                    band.name
-                                  }
-                                </p>
-
-                                <p className="mt-0.5 text-[9px] text-slate-400">
-
-                                  ₹
-                                  {Number(
-                                    band.min_turnover ||
-                                      0
-                                  ).toLocaleString(
-                                    "en-IN"
-                                  )}
-
-                                  {" – "}
-
-                                  {band.max_turnover ==
-                                  null
-                                    ? "No limit"
-                                    : `₹${Number(
-                                        band.max_turnover
-                                      ).toLocaleString(
-                                        "en-IN"
-                                      )}`}
-
-                                </p>
-
-                              </div>
-
-                              {/* MONTHLY INPUT */}
-
-                              <div className="relative pr-4">
-
-                                <IndianRupee
-                                  size={12}
-                                  className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
-                                />
-
-                                <input
-                                  type="number"
-                                  min="0"
-                                  step="0.01"
-                                  value={
-                                    planForm
-                                      .prices[
-                                      key
-                                    ] ??
-                                    ""
-                                  }
-                                  onChange={(
-                                    event
-                                  ) =>
-                                    updateTierPrice(
-                                      tier.id,
-                                      band.id,
-                                      event
-                                        .target
-                                        .value
-                                    )
-                                  }
-                                  placeholder="0"
-                                  className="h-9 w-full rounded-lg border border-slate-200 bg-white pl-7 pr-2 text-xs font-medium text-slate-900 outline-none transition focus:border-slate-300 focus:ring-2 focus:ring-slate-100"
-                                />
-
-                              </div>
-
-                              {/* ANNUAL */}
-
-                              <div>
-
-                                <div className="flex h-9 items-center rounded-lg bg-slate-50 px-3 text-xs font-semibold text-slate-700">
-
-                                  ₹
-                                  {annual.toLocaleString(
-                                    "en-IN"
-                                  )}
-
-                                </div>
-
-                              </div>
-
-                            </div>
-                          );
-                        }
-                      )
-                  )}
-
-                </div>
-
-              )}
-
-              <p className="mt-2 text-[10px] text-slate-400">
-                Pricing is configured independently
-                for each city tier and turnover band.
-                Annual pricing is currently calculated
-                as 12 × monthly pricing.
-              </p>
-
-            </section>
 
             {/* =================================================
                 ACTIONS
@@ -2560,8 +1629,7 @@ export default function SubscriptionsPage() {
                 onClick={savePlan}
                 className="rounded-lg px-5 py-2.5 text-xs font-semibold text-white transition hover:opacity-90"
                 style={{
-                  backgroundColor:
-                    GOLD,
+                  backgroundColor: GOLD,
                 }}
               >
                 {editingPlan
@@ -2574,122 +1642,23 @@ export default function SubscriptionsPage() {
           </div>
 
         </Modal>
-      )}
 
-      {/* =====================================================
-          CITY TIER MODAL
-      ===================================================== */}
-
-      {showTierModal && (
-        <Modal
-          title={
-            editingTier
-              ? "Edit City Tier"
-              : "Create City Tier"
-          }
-          subtitle="Define a market pricing tier"
-          onClose={
-            closeTierModal
-          }
-        >
-
-          <div className="space-y-5">
-
-            <Field
-              label="Tier Name"
-              required
-              value={
-                tierForm.name
-              }
-              onChange={(value) =>
-                setTierForm(
-                  (current) => ({
-                    ...current,
-                    name: value,
-                  })
-                )
-              }
-              placeholder="e.g. Tier 1"
-            />
-
-            <div>
-
-              <label className="mb-1.5 block text-[11px] font-semibold text-slate-600">
-                Description
-              </label>
-
-              <textarea
-                value={
-                  tierForm.description
-                }
-                onChange={(event) =>
-                  setTierForm(
-                    (current) => ({
-                      ...current,
-                      description:
-                        event.target
-                          .value,
-                    })
-                  )
-                }
-                rows={3}
-                placeholder="Describe the cities / markets included..."
-                className="w-full resize-none rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-xs text-slate-900 outline-none focus:border-slate-300 focus:ring-2 focus:ring-slate-100"
-              />
-
-            </div>
-
-            <div className="flex justify-end gap-2 border-t border-slate-100 pt-4">
-
-              <button
-                type="button"
-                onClick={
-                  closeTierModal
-                }
-                className="rounded-lg border border-slate-200 px-4 py-2.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50"
-              >
-                Cancel
-              </button>
-
-              <button
-                type="button"
-                onClick={saveTier}
-                className="rounded-lg px-5 py-2.5 text-xs font-semibold text-white transition hover:opacity-90"
-                style={{
-                  backgroundColor:
-                    GOLD,
-                }}
-              >
-                {editingTier
-                  ? "Save Changes"
-                  : "Create Tier"}
-              </button>
-
-            </div>
-
-          </div>
-
-        </Modal>
       )}
 
     </div>
   );
 }
 
-// =============================================================
+
+// ============================================================
 // PLAN CARD
-// =============================================================
+// ============================================================
 
 function PlanCard({
   plan,
-  cityTiers,
-  turnoverBands,
   onEdit,
   onDelete,
 }) {
-  // -----------------------------------------------------------
-  // MODULES
-  // -----------------------------------------------------------
 
   const modules =
     plan.modules?.map(
@@ -2722,44 +1691,13 @@ function PlanCard({
       }
     ) || [];
 
-  // -----------------------------------------------------------
-  // PRICE HELPER
-  // -----------------------------------------------------------
-
-  const getPrice = (
-    tierId,
-    turnoverBandId
-  ) => {
-    const price =
-      plan.prices?.find(
-        (item) =>
-          Number(
-            item.city_tier_id
-          ) ===
-            Number(
-              tierId
-            ) &&
-          Number(
-            item.turnover_band_id
-          ) ===
-            Number(
-              turnoverBandId
-            )
-      );
-
-    return (
-      price?.monthly_price ??
-      price?.price ??
-      0
-    );
-  };
 
   return (
     <div className="flex h-full flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm transition-colors hover:border-slate-300">
 
-      {/* =====================================================
+      {/* ======================================================
           HEADER
-      ===================================================== */}
+      ====================================================== */}
 
       <div className="flex items-start justify-between gap-4 border-b border-slate-100 bg-slate-50/50 p-5">
 
@@ -2779,9 +1717,7 @@ function PlanCard({
                   : "border-slate-200 bg-white text-slate-600 shadow-sm"
               }`}
             >
-              {
-                plan.main_plan
-              }
+              {plan.main_plan}
             </span>
 
           </div>
@@ -2793,7 +1729,6 @@ function PlanCard({
 
         </div>
 
-        {/* ACTIONS */}
 
         <div className="flex shrink-0 items-center gap-1.5">
 
@@ -2819,11 +1754,84 @@ function PlanCard({
 
       </div>
 
-      {/* =====================================================
-          INCLUDED MODULES
-      ===================================================== */}
+
+      {/* ======================================================
+          PRICING
+      ====================================================== */}
 
       <div className="border-b border-slate-100 p-5">
+
+        <p className="mb-3 text-[9px] font-bold uppercase tracking-widest text-slate-400">
+          Subscription Pricing
+        </p>
+
+        <div className="grid grid-cols-2 gap-3">
+
+          <div className="rounded-xl border border-slate-100 bg-slate-50/70 p-3">
+
+            <p className="text-[9px] font-semibold uppercase tracking-widest text-slate-400">
+              Monthly
+            </p>
+
+            <p className="mt-1 text-lg font-black text-slate-900">
+
+              <span className="mr-0.5 text-sm">
+                ₹
+              </span>
+
+              {Number(
+                plan.monthly_price ||
+                  0
+              ).toLocaleString(
+                "en-IN"
+              )}
+
+            </p>
+
+            <p className="text-[9px] text-slate-400">
+              per month
+            </p>
+
+          </div>
+
+
+          <div className="rounded-xl border border-slate-100 bg-slate-50/70 p-3">
+
+            <p className="text-[9px] font-semibold uppercase tracking-widest text-slate-400">
+              Annual
+            </p>
+
+            <p className="mt-1 text-lg font-black text-slate-900">
+
+              <span className="mr-0.5 text-sm">
+                ₹
+              </span>
+
+              {Number(
+                plan.annual_price ||
+                  0
+              ).toLocaleString(
+                "en-IN"
+              )}
+
+            </p>
+
+            <p className="text-[9px] text-slate-400">
+              per year
+            </p>
+
+          </div>
+
+        </div>
+
+      </div>
+
+
+      {/* ======================================================
+          MODULES
+      ====================================================== */}
+
+      <div className="flex-1 bg-white p-5">
 
         <p className="mb-3 text-[9px] font-bold uppercase tracking-widest text-slate-400">
           Included Modules
@@ -2846,9 +1854,7 @@ function PlanCard({
                   className="text-slate-900"
                 />
 
-                {
-                  module.name
-                }
+                {module.name}
 
               </span>
             )
@@ -2865,173 +1871,29 @@ function PlanCard({
 
       </div>
 
-      {/* =====================================================
-          PRICING
-      ===================================================== */}
 
-      <div className="flex-1 bg-white p-5">
+      {/* ======================================================
+          FOOTER
+      ====================================================== */}
 
-        <div className="mb-3 flex items-center justify-between">
+      <div className="flex items-center justify-between border-t border-slate-100 bg-slate-50/50 px-5 py-3">
 
-          <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400">
-            City Tier × Turnover Pricing
-          </p>
+        <span className="text-[9px] font-semibold uppercase tracking-widest text-slate-400">
+          {plan.currency ||
+            "INR"}
+        </span>
 
-          <span className="text-[9px] font-medium text-slate-400">
-            Monthly
-          </span>
-
-        </div>
-
-        <div className="space-y-3">
-
-          {cityTiers.map(
-            (tier) => (
-
-              <div
-                key={
-                  tier.id
-                }
-                className="overflow-hidden rounded-lg border border-slate-100"
-              >
-
-                {/* CITY TIER HEADER */}
-
-                <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50 px-3 py-2">
-
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-slate-700">
-                    {
-                      tier.name
-                    }
-                  </p>
-
-                  <MapPinned
-                    size={11}
-                    className="text-slate-400"
-                  />
-
-                </div>
-
-                {/* TURNOVER PRICES */}
-
-                <div className="divide-y divide-slate-100">
-
-                  {turnoverBands.map(
-                    (band) => {
-
-                      const monthly =
-                        getPrice(
-                          tier.id,
-                          band.id
-                        );
-
-                      const annual =
-                        Number(
-                          monthly
-                        ) * 12;
-
-                      return (
-                        <div
-                          key={`${tier.id}_${band.id}`}
-                          className="flex items-center justify-between gap-3 px-3 py-2.5"
-                        >
-
-                          <div className="min-w-0">
-
-                            <p className="text-[10px] font-semibold text-slate-700">
-                              {
-                                band.name
-                              }
-                            </p>
-
-                            <p className="mt-0.5 text-[9px] text-slate-400">
-
-                              ₹
-                              {Number(
-                                band.min_turnover ||
-                                  0
-                              ).toLocaleString(
-                                "en-IN"
-                              )}
-
-                              {" – "}
-
-                              {band.max_turnover ==
-                              null
-                                ? "No limit"
-                                : `₹${Number(
-                                    band.max_turnover
-                                  ).toLocaleString(
-                                    "en-IN"
-                                  )}`}
-
-                            </p>
-
-                          </div>
-
-                          <div className="shrink-0 text-right">
-
-                            <p className="text-[12px] font-black text-slate-900">
-
-                              ₹
-                              {Number(
-                                monthly
-                              ).toLocaleString(
-                                "en-IN"
-                              )}
-
-                              <span className="ml-0.5 text-[8px] font-bold uppercase tracking-widest text-slate-400">
-                                /mo
-                              </span>
-
-                            </p>
-
-                            <p className="mt-0.5 text-[8px] font-medium text-slate-400">
-
-                              ₹
-                              {annual.toLocaleString(
-                                "en-IN"
-                              )}
-                              /yr
-
-                            </p>
-
-                          </div>
-
-                        </div>
-                      );
-                    }
-                  )}
-
-                </div>
-
-              </div>
-            )
-          )}
-
-        </div>
-
-        {cityTiers.length ===
-          0 && (
-          <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 p-5 text-center">
-
-            <p className="text-[10px] font-medium text-slate-400">
-              No city tiers configured.
-            </p>
-
-          </div>
-        )}
-
-        {turnoverBands.length ===
-          0 && (
-          <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 p-5 text-center">
-
-            <p className="text-[10px] font-medium text-slate-400">
-              No turnover bands configured.
-            </p>
-
-          </div>
-        )}
+        <span
+          className={`rounded-full px-2 py-1 text-[9px] font-bold ${
+            plan.is_active
+              ? "bg-emerald-50 text-emerald-600"
+              : "bg-slate-100 text-slate-400"
+          }`}
+        >
+          {plan.is_active
+            ? "ACTIVE"
+            : "INACTIVE"}
+        </span>
 
       </div>
 
@@ -3039,9 +1901,10 @@ function PlanCard({
   );
 }
 
-// =============================================================
+
+// ============================================================
 // MODAL
-// =============================================================
+// ============================================================
 
 function Modal({
   title,
@@ -3099,9 +1962,10 @@ function Modal({
   );
 }
 
-// =============================================================
+
+// ============================================================
 // SECTION LABEL
-// =============================================================
+// ============================================================
 
 function SectionLabel({
   children,
@@ -3113,9 +1977,10 @@ function SectionLabel({
   );
 }
 
-// =============================================================
+
+// ============================================================
 // FIELD
-// =============================================================
+// ============================================================
 
 function Field({
   label,
@@ -3151,6 +2016,53 @@ function Field({
         }
         className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-xs text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-300 focus:ring-2 focus:ring-slate-100"
       />
+
+    </div>
+  );
+}
+
+
+// ============================================================
+// PRICE FIELD
+// ============================================================
+
+function PriceField({
+  label,
+  value,
+  onChange,
+}) {
+  return (
+    <div>
+
+      <label className="mb-1.5 block text-[11px] font-semibold text-slate-600">
+        {label}
+        <span className="ml-1 text-red-500">
+          *
+        </span>
+      </label>
+
+      <div className="relative">
+
+        <IndianRupee
+          size={13}
+          className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+        />
+
+        <input
+          type="number"
+          min="0"
+          step="0.01"
+          value={value}
+          onChange={(event) =>
+            onChange(
+              event.target.value
+            )
+          }
+          placeholder="0.00"
+          className="h-10 w-full rounded-lg border border-slate-200 bg-white pl-8 pr-3 text-xs font-medium text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-300 focus:ring-2 focus:ring-slate-100"
+        />
+
+      </div>
 
     </div>
   );
