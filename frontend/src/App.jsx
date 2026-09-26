@@ -23,8 +23,8 @@ import LoginPage from "./pages/LoginPage";
 
 import { AuthProvider } from "./context/AuthContext";
 
-import { TenantProvider } from "./crm/context/TenantContext";
-import { CrmAuthProvider } from "./crm/context/CrmAuthContext";
+import { TenantProvider,useTenant, } from "./crm/context/TenantContext";
+import { CrmAuthProvider,useCrmAuth, } from "./crm/context/CrmAuthContext";
 
 import CrmLoginPage from "./crm/pages/CrmLoginPage";
 import CrmLayout from "./crm/layouts/CrmLayout";
@@ -48,10 +48,10 @@ import CrmKareegarDirectoryPage from "./crm/pages/CrmKareegarDirectoryPage";
 /* ============================================================
    CRM SETTINGS
 ============================================================ */
-
+import CrmSettings from "./crm/pages/settings/CrmSettings";
 import CrmSettingsPage from "./crm/pages/CrmSettingsPage";
 import CrmKareegarSettingsPage from "./crm/pages/CrmKareegarSettingsPage";
-import CrmGeneralSettingsPage from "./crm/pages/CrmGeneralSettingsPage"; 
+import CrmGeneralSettingsPage from "./crm/pages/CrmGeneralSettingsPage";
 
 /* ============================================================
    INVESTMENT
@@ -147,9 +147,7 @@ function AdminHome() {
     <div className="h-full w-full overflow-y-auto bg-[#faf8f3] p-4 pb-12 sm:p-6 lg:p-8 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
       <div className="mx-auto flex max-w-7xl flex-col gap-8">
 
-        {/* ==================================================
-            PAGE HEADER
-        ================================================== */}
+        {/* PAGE HEADER */}
 
         <div className="flex flex-col gap-3">
           <div className="inline-flex items-center gap-1.5 self-start rounded-lg bg-[#c59b27]/10 px-2.5 py-1 text-xs font-bold uppercase tracking-wider text-[#c59b27]">
@@ -175,9 +173,7 @@ function AdminHome() {
         </div>
 
 
-        {/* ==================================================
-            CLIENT METRICS
-        ================================================== */}
+        {/* CLIENT METRICS */}
 
         <section>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -231,9 +227,7 @@ function AdminHome() {
         </section>
 
 
-        {/* ==================================================
-            FINANCIAL METRICS
-        ================================================== */}
+        {/* FINANCIAL METRICS */}
 
         <section>
           <h2 className="mb-4 text-[11px] font-bold uppercase tracking-widest text-slate-400">
@@ -281,9 +275,7 @@ function AdminHome() {
         </section>
 
 
-        {/* ==================================================
-            PENDING TASKS
-        ================================================== */}
+        {/* PENDING TASKS */}
 
         <section>
           <div className="mb-4 flex items-center justify-between">
@@ -366,6 +358,60 @@ function CrmAppLayout() {
 
 
 /* ============================================================
+   CRM PROTECTED PAGE WRAPPER
+============================================================ */
+
+function CrmProtectedPage({
+  children,
+  module,
+}) {
+  return (
+    <CrmProtectedRoute>
+      <CrmAuthorizedPage module={module}>
+        <CrmLayout>
+          {children}
+        </CrmLayout>
+      </CrmAuthorizedPage>
+    </CrmProtectedRoute>
+  );
+}
+
+
+function CrmAuthorizedPage({
+  children,
+  module,
+}) {
+  const { hasModule } = useTenant();
+
+  const {
+    hasModuleAccess,
+    loading,
+  } = useCrmAuth();
+
+  if (loading) {
+    return null;
+  }
+
+  if (
+    module &&
+    (
+      !hasModule(module) ||
+      !hasModuleAccess(module, "read")
+    )
+  ) {
+    return (
+      <Navigate
+        to="dashboard"
+        replace
+      />
+    );
+  }
+
+  return children;
+}
+
+
+/* ============================================================
    APPLICATION ROUTES
 ============================================================ */
 
@@ -413,10 +459,12 @@ function App() {
           path="/admin/subscriptions"
           element={<SubscriptionsPage />}
         />
+
         <Route
           path="/admin/referrals"
           element={<ReferralCodesPage />}
         />
+
       </Route>
 
 
@@ -432,16 +480,28 @@ function App() {
 
       {/* ======================================================
           CLIENT CRM
+          
+          IMPORTANT:
+          Every CRM page is now tenant-scoped.
+
+          Example:
+
+          /crm/shridhara-jewellers
+          /crm/shridhara-jewellers/dashboard
+          /crm/shridhara-jewellers/kareegar/forms
       ====================================================== */}
 
-      <Route element={<CrmAppLayout />}>
+      <Route
+        path="/crm/:crmSlug"
+        element={<CrmAppLayout />}
+      >
 
         {/* ------------------------------------------------------
             CRM LOGIN
         ------------------------------------------------------ */}
 
         <Route
-          path="/crm"
+          index
           element={<CrmLoginPage />}
         />
 
@@ -451,13 +511,11 @@ function App() {
         ------------------------------------------------------ */}
 
         <Route
-          path="/crm/dashboard"
+          path="dashboard"
           element={
-            <CrmProtectedRoute>
-              <CrmLayout>
-                <CrmDashboardPage />
-              </CrmLayout>
-            </CrmProtectedRoute>
+            <CrmProtectedPage>
+              <CrmDashboardPage />
+            </CrmProtectedPage>
           }
         />
 
@@ -466,50 +524,38 @@ function App() {
             KAREEGAR
         ====================================================== */}
 
-        {/* ------------------------------------------------------
-            KAREEGAR FORMS
-        ------------------------------------------------------ */}
+        {/* KAREEGAR FORMS */}
 
         <Route
-          path="/crm/kareegar/forms"
+          path="kareegar/forms"
           element={
-            <CrmProtectedRoute>
-              <CrmLayout>
-                <KareegarManagementPage />
-              </CrmLayout>
-            </CrmProtectedRoute>
+            <CrmProtectedPage module="kareegar">
+              <KareegarManagementPage />
+            </CrmProtectedPage>
           }
         />
 
 
-        {/* ------------------------------------------------------
-            KAREEGAR LEDGER
-        ------------------------------------------------------ */}
+        {/* KAREEGAR LEDGER */}
 
         <Route
-          path="/crm/kareegar/ledger"
+          path="kareegar/ledger"
           element={
-            <CrmProtectedRoute>
-              <CrmLayout>
-                <KareegarLedgerPage />
-              </CrmLayout>
-            </CrmProtectedRoute>
+            <CrmProtectedPage module="kareegar">
+              <KareegarLedgerPage />
+            </CrmProtectedPage>
           }
         />
 
 
-        {/* ------------------------------------------------------
-            KAREEGAR REPORTS
-        ------------------------------------------------------ */}
+        {/* KAREEGAR REPORTS */}
 
         <Route
-          path="/crm/kareegar/reports"
+          path="kareegar/reports"
           element={
-            <CrmProtectedRoute>
-              <CrmLayout>
-                <KareegarReportsPage />
-              </CrmLayout>
-            </CrmProtectedRoute>
+            <CrmProtectedPage module="kareegar">
+              <KareegarReportsPage />
+            </CrmProtectedPage>
           }
         />
 
@@ -519,154 +565,125 @@ function App() {
         ====================================================== */}
 
         <Route
-          path="/crm/settings"
+          path="settings"
           element={
-            <CrmProtectedRoute>
-              <CrmLayout>
-                <CrmSettingsPage />
-              </CrmLayout>
-            </CrmProtectedRoute>
+            <CrmProtectedPage>
+              <CrmSettings/>
+            </CrmProtectedPage>
           }
         />
-
-
-        {/* ------------------------------------------------------
-            KAREEGAR SETTINGS
-        ------------------------------------------------------ */}
-
         <Route
-          path="/crm/settings/kareegar"
+          path="settings/general"
           element={
-            <CrmProtectedRoute>
-              <CrmLayout>
-                <CrmKareegarSettingsPage />
-              </CrmLayout>
-            </CrmProtectedRoute>
+            <CrmProtectedPage>
+              <CrmGeneralSettingsPage />
+            </CrmProtectedPage>
           }
         />
-
-
-        {/* ------------------------------------------------------
-            KAREEGAR DIRECTORY
-        ------------------------------------------------------ */}
-
         <Route
-          path="/crm/settings/kareegar/directory"
+          path="kareegar/settings/ornament-categories"
           element={
-            <CrmProtectedRoute>
-              <CrmLayout>
-                <CrmKareegarDirectoryPage />
-              </CrmLayout>
-            </CrmProtectedRoute>
-          }
-        />
-
-
-        {/* ------------------------------------------------------
-            KAREEGAR CALCULATION SETTINGS
-        ------------------------------------------------------ */}
-
-        <Route
-          path="/crm/kareegar/settings/calculations"
-          element={
-            <CrmProtectedRoute>
-              <CrmLayout>
-                <KareegarCalculationSettingsPage />
-              </CrmLayout>
-            </CrmProtectedRoute>
-          }
-        />
-
-
-        {/* ------------------------------------------------------
-            KAREEGAR ORNAMENT CATEGORIES
-        ------------------------------------------------------ */}
-
-        <Route
-          path="/crm/kareegar/settings/ornament-categories"
-          element={
-            <CrmProtectedRoute>
-              <CrmLayout>
-                <KareegarOrnamentCategoriesPage />
-              </CrmLayout>
-            </CrmProtectedRoute>
+            <CrmProtectedPage>
+              <KareegarOrnamentCategoriesPage />
+            </CrmProtectedPage>
           }
         />
 
         <Route
-          path="/crm/settings/general"
+          path="settings/kareegar"
           element={
-            <CrmProtectedRoute>
-              <CrmLayout>
-                <CrmGeneralSettingsPage />
-              </CrmLayout>
-            </CrmProtectedRoute>
+            <CrmProtectedPage>
+              <CrmKareegarSettingsPage />
+            </CrmProtectedPage>
           }
         />
+
+        <Route
+          path="settings/kareegar/directory"
+          element={
+            <CrmProtectedPage>
+              <CrmKareegarDirectoryPage />
+            </CrmProtectedPage>
+          }
+        />
+
+        <Route
+          path="kareegar/settings/calculations"
+          element={
+            <CrmProtectedPage>
+              <KareegarCalculationSettingsPage />
+            </CrmProtectedPage>
+          }
+        />
+
+        {/* KAREEGAR SETTINGS */}
+
+        
 
 
         {/* ======================================================
             INVESTMENT
         ====================================================== */}
 
-        {/* ------------------------------------------------------
-            INVESTMENT SCHEMES
-        ------------------------------------------------------ */}
+        {/* INVESTMENT SCHEMES */}
 
         <Route
-          path="/crm/investment/schemes"
+          path="investment/schemes"
           element={
-            <CrmProtectedRoute>
-              <CrmLayout>
-                <InvestmentSchemesPage />
-              </CrmLayout>
-            </CrmProtectedRoute>
+            <CrmProtectedPage module="investments">
+              <InvestmentSchemesPage />
+            </CrmProtectedPage>
           }
         />
 
-        <Route
-            path="/crm/investment/investors"
-            element={
-              <CrmProtectedRoute>
-                <CrmLayout>
-                  <InvestmentInvestorsPage />
-                </CrmLayout>
-              </CrmProtectedRoute>
-            }
-        />
+
+        {/* INVESTMENT INVESTORS */}
 
         <Route
-            path="/crm/investment/investors/:investorId"
-            element={
-              <CrmProtectedRoute>
-                <CrmLayout>
-                  <InvestmentInvestorProfilePage />
-                </CrmLayout>
-              </CrmProtectedRoute>
-            }
-        />
-
-        <Route
-          path="/crm/investment/security-test"
+          path="investment/investors"
           element={
-            <CrmProtectedRoute>
-              <CrmLayout>
-                <InvestmentSecurityTestPage />
-              </CrmLayout>
-            </CrmProtectedRoute>
+            <CrmProtectedPage module="investments">
+              <InvestmentInvestorsPage />
+            </CrmProtectedPage>
           }
         />
 
+
+        {/* INVESTOR PROFILE */}
+
         <Route
-          path="/crm/investment/load-test"
+          path="investment/investors/:investorId"
           element={
-            <CrmProtectedRoute>
-              <CrmLayout>
-                <InvestmentLoadTestPage />
-              </CrmLayout>
-            </CrmProtectedRoute>
+            <CrmProtectedPage module="investments">
+              <InvestmentInvestorProfilePage />
+            </CrmProtectedPage>
           }
         />
+
+
+        {/* INVESTMENT SECURITY TEST */}
+
+        <Route
+          path="investment/security-test"
+          element={
+            <CrmProtectedPage module="investments">
+              <InvestmentSecurityTestPage />
+            </CrmProtectedPage>
+          }
+        />
+
+
+        {/* INVESTMENT LOAD TEST */}
+
+        <Route
+          path="investment/load-test"
+          element={
+            <CrmProtectedPage module="investments">
+              <InvestmentLoadTestPage />
+            </CrmProtectedPage>
+          }
+        />
+
       </Route>
 
 

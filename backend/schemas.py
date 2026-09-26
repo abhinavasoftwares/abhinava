@@ -48,6 +48,84 @@ class ClientCreate(BaseModel):
 
     firebase_project_id: str
 
+class ClientUpdate(BaseModel):
+    business_name: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=255,
+    )
+
+    legal_business_name: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=255,
+    )
+
+    business_type: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=100,
+    )
+
+    country: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=100,
+    )
+
+    business_email: EmailStr | None = None
+    business_phone: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=30,
+    )
+
+    owner_name: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=200,
+    )
+
+    owner_email: EmailStr | None = None
+
+    owner_phone: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=30,
+    )
+
+    owner_role: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=50,
+    )
+
+    pan: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=10,
+    )
+
+    gstin: str | None = Field(
+        default=None,
+        max_length=15,
+    )
+
+    logo_url: str | None = Field(
+        default=None,
+        max_length=1000,
+    )
+
+    welcome_message: str | None = Field(
+        default=None,
+        max_length=500,
+    )
+
+    domain: str | None = Field(
+        default=None,
+        max_length=255,
+    )
+
 
 # ============================================================
 # FIREBASE
@@ -152,6 +230,17 @@ class SubscriptionPlanUpdate(BaseModel):
 
     modules: list[SubscriptionModuleCreate] | None = None
 
+class SubscriptionPlanAssignedClient(BaseModel):
+    client_id: int
+    business_name: str
+    owner_name: str | None = None
+
+    subscription_id: int
+    billing_cycle: str
+    status: str
+
+    class Config:
+        from_attributes = True
 
 class SubscriptionPlanResponse(BaseModel):
     id: int
@@ -166,6 +255,12 @@ class SubscriptionPlanResponse(BaseModel):
     is_active: bool
 
     modules: list[SubscriptionModuleResponse] = Field(
+        default_factory=list,
+    )
+
+    assigned_clients: list[
+        SubscriptionPlanAssignedClient
+    ] = Field(
         default_factory=list,
     )
 

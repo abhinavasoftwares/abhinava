@@ -1,306 +1,712 @@
 import {
   Activity,
+  ArrowUpRight,
+  BarChart3,
+  Bell,
   Boxes,
-  IndianRupee,
-  ShoppingCart,
-  Users,
-  TrendingUp,
-  Receipt,
-  PackagePlus,
+  BriefcaseBusiness,
   ChevronRight,
-  Clock,
-  AlertCircle,
-  BarChart2,
-  Building2,
-  CheckCircle2,
+  CircleDollarSign,
+  Clock3,
+  Database,
+  FileText,
+  HardDrive,
+  Mail,
+  MessageCircle,
+  PackagePlus,
+  Plus,
+  RefreshCw,
+  ShieldCheck,
+  ShoppingBag,
+  Smartphone,
+  UserPlus,
+  Users,
+  WalletCards,
 } from "lucide-react";
+
 import { useTenant } from "../context/TenantContext";
+import { useCrmAuth } from "../context/CrmAuthContext";
 
 export default function CrmDashboardPage() {
   const { tenant } = useTenant();
-  const businessName = tenant?.business_name || "Your Boutique";
+  const { authorization } = useCrmAuth();
 
+  const businessName =
+    tenant?.business_name ||
+    tenant?.businessName ||
+    "Your Business";
+
+  const currentUserName =
+    authorization?.name ||
+    authorization?.user?.name ||
+    "Administrator";
+
+  /*
+   * -------------------------------------------------------------
+   * PHASE 1
+   * -------------------------------------------------------------
+   * These are intentionally not fake business numbers.
+   * Real values will be connected module-by-module.
+   */
   const metrics = [
-    { 
-      label: "Total Customers", 
-      value: "1,240", 
-      trend: "+12 this week", 
-      icon: Users,
-      iconBg: "bg-blue-50 text-blue-700 border-blue-100",
+    {
+      label: "Sales Today",
+      value: "—",
+      note: "Awaiting live data",
+      icon: ShoppingBag,
     },
-    { 
-      label: "Stock Units", 
-      value: "482", 
-      trend: "18 inward", 
+    {
+      label: "Estimates",
+      value: "—",
+      note: "Pending attention",
+      icon: FileText,
+    },
+    {
+      label: "Receivables",
+      value: "—",
+      note: "Outstanding",
+      icon: CircleDollarSign,
+    },
+    {
+      label: "Stock Value",
+      value: "—",
+      note: "Current valuation",
       icon: Boxes,
-      iconBg: "bg-slate-50 text-slate-700 border-slate-200",
     },
-    { 
-      label: "Gross Sales Today", 
-      value: "₹3.4L", 
-      trend: "+12.4%", 
-      icon: ShoppingCart,
-      iconBg: "bg-emerald-50 text-emerald-700 border-emerald-100",
+  ];
+
+  /*
+   * Real activity engine will populate this later.
+   */
+  const activities = [
+    {
+      icon: Activity,
+      title: "Activity centre is ready",
+      description:
+        "CRM actions from every authorized employee will appear here.",
+      meta: "System",
+      time: "Waiting for activity data",
     },
-    { 
-      label: "Valuation", 
-      value: "₹1.2 Cr", 
-      trend: "Audited", 
-      icon: IndianRupee,
-      iconBg: "bg-indigo-50 text-indigo-700 border-indigo-100",
+  ];
+
+  /*
+   * Live employee presence will be connected later.
+   */
+  const activeEmployees = [];
+
+  const quickActions = [
+    {
+      label: "Sale",
+      icon: ShoppingBag,
+      module: "sales",
+    },
+    {
+      label: "Estimation",
+      icon: FileText,
+      module: "estimations",
+    },
+    {
+      label: "Customer",
+      icon: UserPlus,
+      module: "customers",
+    },
+    {
+      label: "Stock In",
+      icon: PackagePlus,
+      module: "inventory",
+    },
+    {
+      label: "Purchase",
+      icon: WalletCards,
+      module: "purchases",
+    },
+    {
+      label: "Investment",
+      icon: CircleDollarSign,
+      module: "investments",
     },
   ];
 
   return (
-    <div className="flex flex-col lg:flex-row gap-6 lg:gap-8 p-4 sm:p-6 lg:p-8 min-h-full lg:h-full lg:overflow-hidden bg-white">
-      
-      {/* ===================================================
-          LEFT COLUMN: Header, KPIs, & Analytics Graph
-      ==================================================== */}
-      <div className="flex-1 flex flex-col min-w-0 lg:overflow-hidden gap-5 lg:gap-6">
-        
-        {/* ENTERPRISE HEADER BAR */}
-        <header className="shrink-0 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-4 border-b border-slate-100">
-          <div>
-            <div className="flex items-center gap-2 mb-1">
-              <span className="inline-flex items-center gap-1 rounded bg-slate-100 px-2 py-0.5 text-[10px] font-semibold tracking-wide text-slate-700 border border-slate-200 uppercase">
-                <Building2 size={11} className="text-slate-500" />
-                Enterprise Core
-              </span>
-              <span className="text-xs font-mono text-slate-400">ORG: {tenant?.id || "HQ-701"}</span>
-            </div>
-            <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
-              Operations Control
-            </h1>
-            <p className="text-xs sm:text-sm text-slate-500 font-normal">
-              Active ledger: <span className="font-semibold text-slate-700">{businessName}</span>
-            </p>
-          </div>
+    <div className="min-h-full bg-[#f5f4f0] text-[#171717]">
+      <div className="mx-auto w-full max-w-[1700px] px-4 py-4 sm:px-6 sm:py-5 lg:px-8 lg:py-6">
 
-          <div className="flex items-center gap-2.5 rounded-lg border border-slate-200 bg-slate-50/70 px-3 py-1.5 self-start sm:self-auto">
-            <span className="flex h-2 w-2 rounded-full bg-emerald-500" />
-            <span className="text-xs font-medium text-slate-600">Database Synchronized</span>
+        {/* =========================================================
+            TOP COMMAND BAR
+        ========================================================== */}
+
+        <header className="border-b border-[#dcdad2] pb-5">
+          <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+
+            <div>
+              <div className="mb-3 flex items-center gap-2">
+                <span className="h-1.5 w-1.5 rounded-full bg-[#a68a52]" />
+
+                <span className="text-[10px] font-semibold uppercase tracking-[0.22em] text-[#8a877d]">
+                  Business Command Centre
+                </span>
+              </div>
+
+              <h1 className="font-serif text-[30px] leading-none tracking-[-0.03em] text-[#171717] sm:text-[38px]">
+                {businessName}
+              </h1>
+
+              <p className="mt-2 text-xs text-[#77746c]">
+                Good to see you,{" "}
+                <span className="font-medium text-[#44423d]">
+                  {currentUserName}
+                </span>
+                . Here's your business at a glance.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+
+              <StatusItem
+                icon={ShieldCheck}
+                label="Security"
+                value="Protected"
+              />
+
+              <StatusItem
+                icon={Database}
+                label="CRM"
+                value="Operational"
+              />
+
+              <div className="h-8 w-px bg-[#d8d5cc] hidden sm:block" />
+
+              <button
+                type="button"
+                className="inline-flex h-9 items-center gap-2 rounded-md bg-[#1d1d1b] px-4 text-[11px] font-semibold text-white transition hover:bg-[#30302d]"
+              >
+                <Plus size={14} />
+                New
+              </button>
+            </div>
           </div>
         </header>
 
-        {/* METRIC KPI TILES */}
-        <section className="shrink-0 grid grid-cols-2 gap-3.5 sm:gap-4 lg:grid-cols-4">
-          {metrics.map(({ label, value, trend, icon: Icon, iconBg }) => (
-            <div
-              key={label}
-              className="flex flex-col justify-between rounded-xl border border-slate-200 bg-[#FAFAFA] p-4 transition-all duration-150 hover:bg-white hover:border-slate-300 hover:shadow-sm"
-            >
-              <div className="flex items-center justify-between">
-                <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
-                  {label}
-                </p>
-                <div className={`flex h-7 w-7 items-center justify-center rounded-lg border text-xs ${iconBg}`}>
-                  <Icon size={14} strokeWidth={2.2} />
-                </div>
-              </div>
+        {/* =========================================================
+            KPI STRIP
+        ========================================================== */}
 
-              <div className="mt-3">
-                <span className="text-2xl font-bold tracking-tight text-slate-900 font-mono">
-                  {value}
-                </span>
-                <div className="mt-1 flex items-center gap-1 text-[11px] font-semibold text-emerald-700">
-                  <TrendingUp size={12} strokeWidth={2.4} />
-                  <span>{trend}</span>
-                </div>
-              </div>
-            </div>
+        <section className="grid grid-cols-2 border-b border-[#dcdad2] lg:grid-cols-4">
+          {metrics.map((metric, index) => (
+            <Metric
+              key={metric.label}
+              {...metric}
+              first={index === 0}
+            />
           ))}
         </section>
 
-        {/* REVENUE ANALYTICS PANEL */}
-        <section className="flex-1 flex flex-col min-h-[300px] lg:min-h-0 rounded-xl border border-slate-200 bg-[#FAFAFA] p-4 sm:p-5">
-          <div className="mb-4 flex items-center justify-between shrink-0">
-            <div className="flex items-center gap-2">
-              <div className="flex h-6 w-6 items-center justify-center rounded bg-slate-200/60 text-slate-700">
-                <BarChart2 size={14} />
-              </div>
+        {/* =========================================================
+            MAIN WORKSPACE
+        ========================================================== */}
+
+        <section className="grid border-b border-[#dcdad2] lg:grid-cols-[minmax(0,1fr)_350px]">
+
+          {/* -------------------------------------------------------
+              ACTIVITY
+          -------------------------------------------------------- */}
+
+          <div className="border-b border-[#dcdad2] lg:border-b-0 lg:border-r lg:border-[#dcdad2]">
+
+            <div className="flex items-end justify-between px-1 py-5 sm:px-0">
+
               <div>
-                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800">
-                  Revenue Trajectory
-                </h3>
-                <p className="text-[10px] text-slate-400 font-medium">Daily transaction inflow volume</p>
-              </div>
-            </div>
-
-            <select className="cursor-pointer rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 shadow-2xs outline-none hover:border-slate-300 focus:border-slate-400">
-              <option>This Accounting Period</option>
-              <option>Previous Quarter</option>
-              <option>Fiscal Year-to-Date</option>
-            </select>
-          </div>
-
-          <div className="flex-1 flex items-end justify-center rounded-lg bg-white p-4 sm:p-6 border border-slate-200/80 relative overflow-hidden">
-            {/* Subtle horizontal grid guide lines */}
-            <div className="absolute inset-0 flex flex-col justify-between p-6 pointer-events-none opacity-30">
-              <div className="border-b border-dashed border-slate-300 w-full" />
-              <div className="border-b border-dashed border-slate-300 w-full" />
-              <div className="border-b border-dashed border-slate-300 w-full" />
-            </div>
-
-            <div className="relative z-10 flex h-full w-full items-end justify-center gap-2 sm:gap-4 px-2">
-              {[32, 54, 28, 72, 46, 62, 40, 84, 58, 92, 68, 100].map((height, i) => (
-                <div
-                  key={i}
-                  className="group relative flex-1 max-w-[26px] h-full flex items-end justify-center"
-                >
-                  <div
-                    className="w-full rounded-t-sm bg-slate-300 transition-all duration-200 group-hover:bg-slate-700"
-                    style={{ height: `${height}%` }}
+                <div className="flex items-center gap-2">
+                  <Activity
+                    size={15}
+                    strokeWidth={1.8}
+                    className="text-[#8c7546]"
                   />
-                  {/* Tooltip on hover */}
-                  <div className="absolute -top-7 hidden group-hover:flex items-center rounded bg-slate-900 px-1.5 py-0.5 text-[10px] font-mono font-medium text-white shadow-sm pointer-events-none">
-                    {height}%
-                  </div>
+
+                  <h2 className="text-[11px] font-bold uppercase tracking-[0.16em] text-[#34332f]">
+                    Business Activity
+                  </h2>
                 </div>
-              ))}
-            </div>
-          </div>
-        </section>
-      </div>
 
-      {/* ===================================================
-          RIGHT COLUMN: Tools, Concurrent Sessions, Action Log
-      ==================================================== */}
-      <div className="w-full lg:w-[330px] xl:w-[370px] flex flex-col shrink-0 gap-5 lg:h-full lg:overflow-hidden">
-        
-        {/* 1. ERP ACTION BUTTONS */}
-        <section className="shrink-0 grid grid-cols-2 gap-2.5">
-          <button className="flex items-center justify-center gap-2 rounded-lg bg-slate-900 px-3.5 py-2.5 text-xs font-semibold text-white shadow-xs transition hover:bg-slate-800 active:scale-[0.99]">
-            <Receipt size={14} className="text-slate-300" />
-            <span>Issue Voucher</span>
-          </button>
-          <button className="flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3.5 py-2.5 text-xs font-semibold text-slate-700 shadow-2xs transition hover:bg-slate-50 hover:border-slate-300 active:scale-[0.99]">
-            <PackagePlus size={14} className="text-slate-500" />
-            <span>Stock Inward</span>
-          </button>
-        </section>
-
-        {/* 2. CONCURRENT USER SESSIONS */}
-        <section className="shrink-0 flex flex-col rounded-xl border border-slate-200 bg-[#FAFAFA] p-3.5">
-          <div className="mb-2.5 flex items-center justify-between pb-2 border-b border-slate-200/80">
-            <div className="flex items-center gap-2">
-              <Activity size={13} className="text-slate-600" />
-              <h3 className="text-[11px] font-bold uppercase tracking-wider text-slate-700">
-                Connected Terminals
-              </h3>
-            </div>
-            <span className="flex items-center gap-1 text-[10px] font-semibold text-emerald-700 bg-white border border-slate-200 px-2 py-0.5 rounded">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              3 Active
-            </span>
-          </div>
-
-          <div className="flex flex-col divide-y divide-slate-200/60">
-            {[
-              { name: "Sarah Jenkins", role: "POS Lead", action: "Reviewing Quote #1042" },
-              { name: "David Chen", role: "Cashier", action: "Checkout Gateway" },
-              { name: "Amelia Khan", role: "Appraiser", action: "Jewelry Valuation S-2" },
-            ].map((user, i) => (
-              <div key={i} className="flex items-center justify-between py-2 first:pt-1 last:pb-1">
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-white border border-slate-200 text-[11px] font-bold text-slate-700 font-mono">
-                    {user.name.charAt(0)}
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-xs font-semibold text-slate-900 truncate">{user.name}</p>
-                    <p className="text-[10px] text-slate-500 truncate">{user.action}</p>
-                  </div>
-                </div>
-                <span className="text-[10px] font-mono text-slate-400">SYNC</span>
+                <p className="mt-1 text-[11px] text-[#8b887f]">
+                  Everything important happening across your CRM
+                </p>
               </div>
-            ))}
+
+              <button
+                type="button"
+                className="hidden items-center gap-1 text-[10px] font-semibold text-[#6e6a61] hover:text-[#171717] sm:flex"
+              >
+                Activity centre
+                <ArrowUpRight size={12} />
+              </button>
+            </div>
+
+            <div className="overflow-hidden border-t border-[#e1dfd8]">
+
+              {activities.map((activity, index) => {
+                const Icon = activity.icon;
+
+                return (
+                  <div
+                    key={`${activity.title}-${index}`}
+                    className="group grid grid-cols-[34px_minmax(0,1fr)_auto] gap-3 border-b border-[#e8e6df] px-1 py-4 last:border-b-0 sm:px-0"
+                  >
+                    <div className="flex h-7 w-7 items-center justify-center border border-[#dedbd2] bg-[#faf9f6] text-[#81704e]">
+                      <Icon size={13} strokeWidth={1.7} />
+                    </div>
+
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                        <p className="text-xs font-semibold text-[#272622]">
+                          {activity.title}
+                        </p>
+
+                        <span className="text-[9px] uppercase tracking-wider text-[#9a978e]">
+                          {activity.meta}
+                        </span>
+                      </div>
+
+                      <p className="mt-1 max-w-2xl text-[11px] leading-relaxed text-[#77746c]">
+                        {activity.description}
+                      </p>
+                    </div>
+
+                    <span className="whitespace-nowrap pt-0.5 text-[9px] text-[#a09d94]">
+                      {activity.time}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* -------------------------------------------------------
+              TEAM
+          -------------------------------------------------------- */}
+
+          <div className="px-1 sm:px-0 lg:px-6">
+
+            <div className="flex items-end justify-between py-5">
+              <div>
+                <div className="flex items-center gap-2">
+                  <Users
+                    size={15}
+                    strokeWidth={1.8}
+                    className="text-[#8c7546]"
+                  />
+
+                  <h2 className="text-[11px] font-bold uppercase tracking-[0.16em] text-[#34332f]">
+                    Team
+                  </h2>
+                </div>
+
+                <p className="mt-1 text-[11px] text-[#8b887f]">
+                  Employees active right now
+                </p>
+              </div>
+
+              <div className="flex items-center gap-1.5">
+                <span className="h-1.5 w-1.5 rounded-full bg-[#5f8a61]" />
+
+                <span className="text-[9px] font-semibold uppercase tracking-wider text-[#6d756d]">
+                  Live
+                </span>
+              </div>
+            </div>
+
+            <div className="border-t border-[#e1dfd8]">
+
+              {activeEmployees.length === 0 ? (
+                <div className="flex min-h-[215px] flex-col items-center justify-center text-center">
+
+                  <div className="flex h-10 w-10 items-center justify-center border border-[#dedbd2] bg-[#faf9f6] text-[#aaa69d]">
+                    <Users size={17} strokeWidth={1.5} />
+                  </div>
+
+                  <p className="mt-4 text-xs font-semibold text-[#59564f]">
+                    Live presence coming next
+                  </p>
+
+                  <p className="mt-1 max-w-[220px] text-[10px] leading-relaxed text-[#99968d]">
+                    Online employees, current activity and last active time
+                    will appear here.
+                  </p>
+
+                </div>
+              ) : (
+                <div>
+                  {activeEmployees.map((employee) => (
+                    <EmployeeRow
+                      key={employee.id}
+                      employee={employee}
+                    />
+                  ))}
+                </div>
+              )}
+
+            </div>
+
+            <button
+              type="button"
+              className="mt-4 flex w-full items-center justify-between border-t border-[#e1dfd8] py-3 text-[10px] font-semibold uppercase tracking-wider text-[#77736a] transition hover:text-[#1d1d1b]"
+            >
+              Employee access
+              <ChevronRight size={13} />
+            </button>
+          </div>
+
+        </section>
+
+        {/* =========================================================
+            QUICK ACTIONS
+        ========================================================== */}
+
+        <section className="border-b border-[#dcdad2]">
+
+          <div className="flex items-center justify-between py-4">
+
+            <div className="flex items-center gap-2">
+              <BriefcaseBusiness
+                size={15}
+                strokeWidth={1.8}
+                className="text-[#8c7546]"
+              />
+
+              <div>
+                <h2 className="text-[11px] font-bold uppercase tracking-[0.16em] text-[#34332f]">
+                  Quick Actions
+                </h2>
+
+                <p className="mt-0.5 text-[10px] text-[#8b887f]">
+                  Frequently used operations
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              className="text-[10px] font-semibold text-[#77736a] hover:text-[#171717]"
+            >
+              View all
+            </button>
+          </div>
+
+          <div className="grid grid-cols-2 border-t border-[#e1dfd8] sm:grid-cols-3 lg:grid-cols-6">
+
+            {quickActions.map((action) => {
+              const Icon = action.icon;
+
+              return (
+                <button
+                  key={action.label}
+                  type="button"
+                  className="group flex items-center gap-3 border-b border-[#e1dfd8] px-3 py-4 text-left transition hover:bg-[#efede7] sm:border-r last:sm:border-r-0 lg:border-b-0"
+                >
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center border border-[#d9d5ca] bg-[#faf9f6] text-[#716044] transition group-hover:border-[#b8aa8b] group-hover:bg-white">
+                    <Icon size={14} strokeWidth={1.7} />
+                  </div>
+
+                  <div className="min-w-0">
+                    <p className="truncate text-[11px] font-semibold text-[#3c3a35]">
+                      {action.label}
+                    </p>
+
+                    <p className="mt-0.5 text-[9px] text-[#9a968c]">
+                      Open
+                    </p>
+                  </div>
+
+                  <ChevronRight
+                    size={12}
+                    className="ml-auto shrink-0 text-[#bbb7ae] transition group-hover:translate-x-0.5 group-hover:text-[#716044]"
+                  />
+                </button>
+              );
+            })}
+
           </div>
         </section>
 
-        {/* 3. WORKFLOW ACTIONS REQUIRED (Scrolls internally on Desktop) */}
-        <section className="flex-1 flex flex-col min-h-[300px] lg:min-h-0 rounded-xl border border-slate-200 bg-[#FAFAFA] p-3.5">
-          <div className="mb-2.5 flex items-center justify-between shrink-0 pb-2 border-b border-slate-200/80">
+        {/* =========================================================
+            BOTTOM UTILITIES
+        ========================================================== */}
+
+        <section className="grid border-b border-[#dcdad2] lg:grid-cols-[1fr_1fr]">
+
+          {/* SYSTEM */}
+
+          <div className="border-b border-[#dcdad2] py-5 lg:border-b-0 lg:border-r lg:pr-6">
+
             <div className="flex items-center gap-2">
-              <AlertCircle size={13} className="text-slate-600" />
-              <h3 className="text-[11px] font-bold uppercase tracking-wider text-slate-700">
-                Action Queue
-              </h3>
+              <ShieldCheck
+                size={15}
+                strokeWidth={1.8}
+                className="text-[#8c7546]"
+              />
+
+              <h2 className="text-[11px] font-bold uppercase tracking-[0.16em] text-[#34332f]">
+                System
+              </h2>
             </div>
-            <span className="text-[10px] font-bold uppercase tracking-wide text-amber-800 bg-amber-50 border border-amber-200/80 px-2 py-0.5 rounded">
-              4 Pending
+
+            <div className="mt-4 grid grid-cols-3 border-t border-[#e1dfd8]">
+
+              <SystemItem
+                label="CRM"
+                value="Operational"
+                healthy
+              />
+
+              <SystemItem
+                label="Security"
+                value="Protected"
+                healthy
+              />
+
+              <SystemItem
+                label="Backup"
+                value="Not configured"
+              />
+
+            </div>
+
+            <div className="mt-4 flex items-center justify-between border-t border-[#e1dfd8] pt-3">
+
+              <div className="flex items-center gap-2">
+                <HardDrive
+                  size={13}
+                  className="text-[#8b887f]"
+                />
+
+                <span className="text-[10px] text-[#77746c]">
+                  Backup monitoring
+                </span>
+              </div>
+
+              <span className="text-[9px] font-semibold uppercase tracking-wider text-[#9b978d]">
+                Coming soon
+              </span>
+
+            </div>
+          </div>
+
+          {/* TOOLS */}
+
+          <div className="py-5 lg:pl-6">
+
+            <div className="flex items-center gap-2">
+              <BarChart3
+                size={15}
+                strokeWidth={1.8}
+                className="text-[#8c7546]"
+              />
+
+              <h2 className="text-[11px] font-bold uppercase tracking-[0.16em] text-[#34332f]">
+                Tools & Communication
+              </h2>
+            </div>
+
+            <div className="mt-4 grid grid-cols-2 border-t border-[#e1dfd8] sm:grid-cols-4">
+
+              <ToolItem
+                icon={Users}
+                label="HRMS Portal"
+              />
+
+              <ToolItem
+                icon={MessageCircle}
+                label="WhatsApp"
+              />
+
+              <ToolItem
+                icon={Mail}
+                label="Email"
+              />
+
+              <ToolItem
+                icon={Bell}
+                label="Notifications"
+              />
+
+            </div>
+
+          </div>
+
+        </section>
+
+        {/* =========================================================
+            FOOTER STATUS
+        ========================================================== */}
+
+        <footer className="flex flex-col gap-2 pt-1 sm:flex-row sm:items-center sm:justify-between">
+
+          <div className="flex items-center gap-2">
+            <span className="h-1.5 w-1.5 rounded-full bg-[#5f8a61]" />
+
+            <span className="text-[9px] font-medium uppercase tracking-[0.12em] text-[#8b887f]">
+              Abhinava CRM
             </span>
           </div>
 
-          <div className="flex-1 lg:overflow-y-auto pr-1 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] flex flex-col gap-2 pb-2">
-            <ActionCard
-              title="Estimate Approval"
-              desc="Review requested estimate #1042 for Elena Gilbert."
-              time="Due in 2h"
-              urgent
-            />
-            <ActionCard
-              title="Karigar Bullion Issue"
-              desc="15g fine gold pending transfer to workshop 02."
-              time="Due today"
-            />
-            <ActionCard
-              title="Outstanding Balance"
-              desc="Receivable of ₹45,000 for order #899."
-              time="Overdue"
-              urgent
-            />
-            <ActionCard
-              title="Inventory Audit"
-              desc="Monthly stock count ledger discrepancy check."
-              time="Due tomorrow"
-            />
+          <div className="flex items-center gap-4 text-[9px] uppercase tracking-wider text-[#aaa69d]">
+            <span>Secure tenant</span>
+            <span>•</span>
+            <span>{tenant?.crmSlug || "Tenant"}</span>
           </div>
-        </section>
+
+        </footer>
 
       </div>
     </div>
   );
 }
 
-// Enterprise Action Card
-function ActionCard({ title, desc, time, urgent }) {
+/* ================================================================
+   COMPONENTS
+================================================================ */
+
+function StatusItem({
+  icon: Icon,
+  label,
+  value,
+}) {
   return (
-    <div
-      className={`group relative flex flex-col rounded-lg border p-3 transition-all cursor-pointer bg-white ${
-        urgent
-          ? "border-amber-200/90 hover:border-amber-300"
-          : "border-slate-200/90 hover:border-slate-300 hover:shadow-2xs"
-      }`}
-    >
-      <div className="flex items-start justify-between gap-2">
-        <div className="flex items-center gap-1.5 min-w-0">
-          <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${urgent ? "bg-amber-500" : "bg-slate-300"}`} />
-          <p className="text-xs font-semibold text-slate-800 truncate">
-            {title}
-          </p>
-        </div>
-        <span
-          className={`flex items-center gap-1 shrink-0 text-[10px] font-mono font-medium rounded px-1.5 py-0.5 ${
-            urgent
-              ? "bg-amber-50 text-amber-800 border border-amber-200/60"
-              : "bg-slate-100 text-slate-500"
-          }`}
-        >
-          <Clock size={10} />
-          {time}
-        </span>
+    <div className="flex items-center gap-2 rounded-md border border-[#dedbd2] bg-[#faf9f6] px-3 py-2">
+      <Icon
+        size={13}
+        strokeWidth={1.7}
+        className="text-[#7b6a4b]"
+      />
+
+      <div>
+        <p className="text-[8px] font-semibold uppercase tracking-wider text-[#aaa69d]">
+          {label}
+        </p>
+
+        <p className="mt-0.5 text-[10px] font-semibold text-[#4b4943]">
+          {value}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function Metric({
+  icon: Icon,
+  label,
+  value,
+  note,
+}) {
+  return (
+    <div className="border-r border-[#dcdad2] px-3 py-5 first:pl-0 last:border-r-0 sm:px-5 lg:px-6">
+
+      <div className="flex items-center justify-between">
+        <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-[#908d84]">
+          {label}
+        </p>
+
+        <Icon
+          size={14}
+          strokeWidth={1.6}
+          className="text-[#a08a5d]"
+        />
       </div>
 
-      <p className="mt-1 text-[11px] leading-relaxed text-slate-500 line-clamp-2 pl-3">
-        {desc}
-      </p>
+      <div className="mt-3 flex items-end justify-between gap-2">
+        <span className="font-serif text-[27px] leading-none tracking-[-0.02em] text-[#252421]">
+          {value}
+        </span>
 
-      <div className="mt-2.5 flex items-center justify-between pt-1.5 border-t border-slate-100 pl-3">
-        <span className="text-[10px] text-slate-400 font-mono">CODE: ERP-TASK</span>
-        <span className="flex items-center gap-0.5 text-[11px] font-semibold text-slate-700 transition-transform group-hover:translate-x-0.5">
-          Execute <ChevronRight size={12} strokeWidth={2.4} />
+        <span className="hidden text-[9px] text-[#a09c93] sm:block">
+          {note}
         </span>
       </div>
     </div>
+  );
+}
+
+function EmployeeRow({ employee }) {
+  return (
+    <div className="flex items-center gap-3 border-b border-[#e5e2da] py-3 last:border-b-0">
+
+      <div className="relative">
+        <div className="flex h-8 w-8 items-center justify-center bg-[#eeece6] text-[10px] font-bold text-[#625a4c]">
+          {employee.name?.charAt(0)?.toUpperCase() || "U"}
+        </div>
+
+        <span className="absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full border border-[#f5f4f0] bg-[#5f8a61]" />
+      </div>
+
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-[11px] font-semibold text-[#383631]">
+          {employee.name}
+        </p>
+
+        <p className="truncate text-[9px] text-[#97938a]">
+          {employee.currentAction || employee.role || "Active"}
+        </p>
+      </div>
+
+      <span className="text-[9px] text-[#66806a]">
+        Active
+      </span>
+    </div>
+  );
+}
+
+function SystemItem({
+  label,
+  value,
+  healthy = false,
+}) {
+  return (
+    <div className="border-r border-[#e1dfd8] px-3 py-3 first:pl-0 last:border-r-0 sm:px-4">
+
+      <p className="text-[9px] font-semibold uppercase tracking-wider text-[#aaa69d]">
+        {label}
+      </p>
+
+      <div className="mt-2 flex items-center gap-1.5">
+        <span
+          className={`h-1.5 w-1.5 rounded-full ${
+            healthy
+              ? "bg-[#5f8a61]"
+              : "bg-[#b8b3a8]"
+          }`}
+        />
+
+        <span className="text-[10px] font-semibold text-[#55524b]">
+          {value}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function ToolItem({
+  icon: Icon,
+  label,
+}) {
+  return (
+    <button
+      type="button"
+      className="group flex items-center gap-2.5 border-r border-b border-[#e1dfd8] px-3 py-3 text-left transition hover:bg-[#efede7] sm:px-4 sm:border-b-0 last:border-r-0"
+    >
+      <Icon
+        size={14}
+        strokeWidth={1.6}
+        className="text-[#806d4a]"
+      />
+
+      <span className="truncate text-[10px] font-semibold text-[#5a5750]">
+        {label}
+      </span>
+
+      <ArrowUpRight
+        size={11}
+        className="ml-auto shrink-0 text-[#b0aca2] transition group-hover:text-[#706043]"
+      />
+    </button>
   );
 }

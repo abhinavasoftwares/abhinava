@@ -12,11 +12,13 @@ from fastapi import (
     Depends,
     HTTPException,
     Request,
+    Body,
 )
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 from sqlalchemy import text
 from sqlalchemy.orm import Session
+from firebase_admin import auth as firebase_auth
 
 from routers.platform_auth import router as platform_auth_router
 from routers.subscriptions import router as subscriptions_router
@@ -46,14 +48,25 @@ from models import (
 
 from schemas import (
     ClientCreate,
+    ClientUpdate,
     FirebaseConnectionRequest,
 )
 
 from services.crm_tenant import (
     resolve_crm_client,
     generate_unique_crm_slug,
+    require_crm_access,
 )
 
+from services.firebase_crm_auth import (
+    authorize_crm_firebase_user,
+    _get_firebase_admin_app,
+    _get_tenant_firestore,
+)
+
+from services.employee_email import (
+    send_employee_welcome_email,
+)
 from services.tenant_connection import (
     verify_existing_firebase_project,
     _get_connection_session,
@@ -67,6 +80,7 @@ from services.tenant_provisioning import (
     provision_tenant,
     _get_google_session,
     _get_firebase_web_app_config,
+    _configure_project_access,
 )
 
 
@@ -125,73 +139,60 @@ def get_db():
 # ============================================================
 
 
+
 @app.get("/crm/{crm_slug}/tenant")
 def get_crm_tenant(
     crm_slug: str,
     db: Session = Depends(get_db),
 ):
-    """
-    Return the public CRM tenant configuration.
-
-    Tenant is identified by:
-
-        /crm/{crm_slug}/tenant
-
-    Example:
-
-        /crm/shri-ram-jewels/tenant
-
-    This endpoint intentionally returns only tenant
-    configuration required to bootstrap the CRM.
-    """
-
     client = resolve_crm_client(
         crm_slug=crm_slug,
         db=db,
     )
 
-    if client.account_status != "ACTIVE":
-        raise HTTPException(
-            status_code=403,
-            detail="This CRM account is currently disabled.",
-        )
-
-    if not client.firebase_project_id:
-        raise HTTPException(
-            status_code=409,
-            detail=(
-                "CRM tenant Firebase project "
-                "is not connected."
-            ),
-        )
-
-    if (
-        str(
-            client.firebase_provisioning_status
-            or ""
-        ).upper()
-        != "READY"
-    ):
-        raise HTTPException(
-            status_code=409,
-            detail="CRM tenant is not ready.",
-        )
+    entitlement = require_crm_access(
+        db=db,
+        client=client,
+    )
 
     return {
         "client_id": client.id,
         "tenant_id": client.tenant_id,
         "crm_slug": client.crm_slug,
+
         "business_name": client.business_name,
         "logo_url": client.logo_url,
+
         "welcome_message": (
             client.welcome_message
             or f"Welcome to {client.business_name}"
         ),
+
         "firebase_project_id": (
             client.firebase_project_id
         ),
+
         "firebase_web_app_id": (
             client.firebase_web_app_id
+        ),
+
+        "subscription": {
+            "id": entitlement.subscription_id,
+            "status": entitlement.subscription_status,
+            "start_date": (
+                entitlement.subscription_start_date
+            ),
+            "end_date": (
+                entitlement.subscription_end_date
+            ),
+        },
+
+        "billing": {
+            "status": entitlement.billing_status,
+        },
+
+        "modules": list(
+            entitlement.modules
         ),
     }
 
@@ -1800,6 +1801,15 @@ def connect_existing_firebase(
         web_app["app_id"]
     )
 
+    # Cache the public Firebase Web App configuration
+    # in PostgreSQL for CRM startup.
+    client.firebase_web_app_config = (
+        web_app["config"]
+    )
+    client.firebase_web_app_config = (
+        web_app.get("config")
+    )
+
     client.firebase_provisioning_status = (
         "READY"
     )
@@ -1853,6 +1863,10 @@ def provision_existing_client(
             ),
         )
 
+    # ---------------------------------------------------------
+    # FIND CLIENT
+    # ---------------------------------------------------------
+
     client = (
         db.query(Client)
         .filter(Client.id == client_id)
@@ -1865,12 +1879,73 @@ def provision_existing_client(
             detail="Client not found.",
         )
 
-    if client.firebase_provisioning_status == "READY":
-        return {
-            "message": "Client is already provisioned.",
-            "client_id": client.id,
-            "status": client.firebase_provisioning_status,
-        }
+    if not client.firebase_project_id:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Client does not have a Firebase "
+                "project configured."
+            ),
+        )
+
+    # ---------------------------------------------------------
+    # EXISTING READY CLIENT
+    #
+    # Re-apply IAM configuration.
+    #
+    # This is intentionally done even when the project is
+    # already READY because IAM configuration is idempotent.
+    # ---------------------------------------------------------
+
+    if (
+        client.firebase_provisioning_status
+        == "READY"
+    ):
+
+        try:
+
+            session = _get_connection_session()
+
+            _configure_project_access(
+                session=session,
+                project_id=(
+                    client.firebase_project_id
+                ),
+                client=client,
+            )
+
+            return {
+                "message": (
+                    "Client Firebase access "
+                    "configuration repaired successfully."
+                ),
+                "client_id": client.id,
+                "tenant_id": client.tenant_id,
+                "firebase_project_id": (
+                    client.firebase_project_id
+                ),
+                "firebase_web_app_id": (
+                    client.firebase_web_app_id
+                ),
+                "status": (
+                    client.firebase_provisioning_status
+                ),
+            }
+
+        except Exception as exc:
+
+            raise HTTPException(
+                status_code=500,
+                detail=(
+                    "Unable to configure Firebase "
+                    "project access: "
+                    f"{str(exc)}"
+                ),
+            ) from exc
+
+    # ---------------------------------------------------------
+    # NORMAL PROVISIONING
+    # ---------------------------------------------------------
 
     provisioned_client = provision_tenant(
         db=db,
@@ -1890,9 +1965,15 @@ def provision_existing_client(
         )
 
     return {
-        "message": "Client provisioned successfully.",
-        "client_id": provisioned_client.id,
-        "tenant_id": provisioned_client.tenant_id,
+        "message": (
+            "Client provisioned successfully."
+        ),
+        "client_id": (
+            provisioned_client.id
+        ),
+        "tenant_id": (
+            provisioned_client.tenant_id
+        ),
         "firebase_project_id": (
             provisioned_client.firebase_project_id
         ),
@@ -1904,6 +1985,8 @@ def provision_existing_client(
         ),
     }
 
+
+# main.py — replace GET /clients with this
 
 @app.get("/clients")
 def get_clients(
@@ -1932,24 +2015,58 @@ def get_clients(
             {
                 "id": client.id,
                 "tenant_id": client.tenant_id,
+
                 "business_name": client.business_name,
                 "legal_business_name": client.legal_business_name,
                 "business_type": client.business_type,
                 "country": client.country,
+
                 "business_email": client.business_email,
                 "business_phone": client.business_phone,
+
                 "owner_name": client.owner_name,
                 "owner_email": client.owner_email,
                 "owner_phone": client.owner_phone,
                 "owner_role": client.owner_role,
+
                 "pan": client.pan,
                 "gstin": client.gstin,
+
+                "logo_url": client.logo_url,
+
+                "welcome_message": (
+                    client.welcome_message
+                    or f"Welcome to {client.business_name}"
+                ),
+
+                "crm_slug": client.crm_slug,
+
+                "account_status": client.account_status,
+                "disabled_at": client.disabled_at,
+                "disabled_by": client.disabled_by,
+                "disabled_reason": client.disabled_reason,
+
                 "plan": client.plan,
                 "billing_cycle": client.billing_cycle,
                 "subscription_status": client.subscription_status,
                 "start_date": client.start_date,
+
                 "domain": client.domain,
-                "modules": client.modules,
+
+                "modules": client.modules or [],
+
+                "firebase_project_id": (
+                    client.firebase_project_id
+                ),
+
+                "firebase_web_app_id": (
+                    client.firebase_web_app_id
+                ),
+
+                "firebase_provisioning_status": (
+                    client.firebase_provisioning_status
+                ),
+
                 "created_at": client.created_at,
                 "updated_at": client.updated_at,
             }
@@ -1957,6 +2074,7 @@ def get_clients(
         ]
     }
 
+# main.py — replace GET /clients/{client_id} with this
 
 @app.get("/clients/{client_id}")
 def get_client(
@@ -1984,48 +2102,78 @@ def get_client(
     if client is None:
         raise HTTPException(
             status_code=404,
-            detail="Client not found",
+            detail="Client not found.",
         )
 
     return {
         "client": {
             "id": client.id,
             "tenant_id": client.tenant_id,
+
             "business_name": client.business_name,
             "legal_business_name": client.legal_business_name,
             "business_type": client.business_type,
             "country": client.country,
+
             "business_email": client.business_email,
             "business_phone": client.business_phone,
+
             "owner_name": client.owner_name,
             "owner_email": client.owner_email,
             "owner_phone": client.owner_phone,
             "owner_role": client.owner_role,
+
             "pan": client.pan,
             "gstin": client.gstin,
-            "plan": client.plan,
-            "billing_cycle": client.billing_cycle,
-            "subscription_status": client.subscription_status,
-            "start_date": client.start_date,
-            "domain": client.domain,
-            # Phase 1 CRM tenant identity
-            "crm_slug": client.crm_slug,
+
+            "logo_url": client.logo_url,
+
             "welcome_message": (
                 client.welcome_message
                 or f"Welcome to {client.business_name}"
             ),
 
-            # Phase 1 account lifecycle
+            "domain": client.domain,
+            "crm_domain": client.crm_domain,
+            "crm_slug": client.crm_slug,
+
             "account_status": client.account_status,
             "disabled_at": client.disabled_at,
             "disabled_by": client.disabled_by,
             "disabled_reason": client.disabled_reason,
 
-            "modules": client.modules,
+            "plan": client.plan,
+            "billing_cycle": client.billing_cycle,
+            "subscription_status": client.subscription_status,
+            "start_date": client.start_date,
+
+            "modules": client.modules or [],
+
+            "firebase_project_id": (
+                client.firebase_project_id
+            ),
+
+            "firebase_web_app_id": (
+                client.firebase_web_app_id
+            ),
+
+            "firebase_provisioning_status": (
+                client.firebase_provisioning_status
+            ),
+
+            "firebase_provisioning_error": (
+                client.firebase_provisioning_error
+            ),
+
+            "firebase_provisioned_at": (
+                client.firebase_provisioned_at
+            ),
+
             "created_at": client.created_at,
             "updated_at": client.updated_at,
         }
     }
+
 
 @app.get("/clients/{client_id}/firebase-status")
 def get_client_firebase_status(
@@ -2192,10 +2340,502 @@ def get_client_firebase_config(
             detail=str(exc),
         )
 
+@app.patch("/clients/{client_id}")
+def update_client(
+    client_id: int,
+    payload: ClientUpdate,
+    request: Request,
+    db: Session = Depends(get_db),
+    platform_user: PlatformUser = Depends(
+        get_current_platform_user
+    ),
+):
+    # ========================================================
+    # AUTHORIZATION
+    # ========================================================
+
+    if platform_user.role not in {
+        "OWNER",
+        "ADMIN",
+    }:
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "You do not have permission "
+                "to update clients."
+            ),
+        )
+
+    # ========================================================
+    # LOAD CLIENT
+    # ========================================================
+
+    client = (
+        db.query(Client)
+        .filter(
+            Client.id == client_id
+        )
+        .first()
+    )
+
+    if client is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Client not found.",
+        )
+
+    # ========================================================
+    # CAPTURE CHANGES
+    # ========================================================
+
+    update_data = payload.model_dump(
+        exclude_unset=True
+    )
+
+    if not update_data:
+        raise HTTPException(
+            status_code=400,
+            detail="No client fields were provided for update.",
+        )
+
+    changes = {}
+
+    for field, new_value in update_data.items():
+
+        if field == "welcome_message":
+            new_value = (
+                new_value.strip()
+                if new_value is not None
+                else None
+            )
+
+            if new_value == "":
+                new_value = None
+
+        elif isinstance(new_value, str):
+            new_value = new_value.strip()
+
+        old_value = getattr(
+            client,
+            field,
+        )
+
+        if old_value != new_value:
+
+            changes[field] = {
+                "old": old_value,
+                "new": new_value,
+            }
+
+            setattr(
+                client,
+                field,
+                new_value,
+            )
+
+    # ========================================================
+    # NOTHING ACTUALLY CHANGED
+    # ========================================================
+
+    if not changes:
+        return {
+            "message": "No changes were made.",
+            "client_id": client.id,
+        }
+
+    # ========================================================
+    # AUDIT
+    # ========================================================
+
+    audit_event = PlatformAuditEvent(
+        event_type="CLIENT_PROFILE_UPDATED",
+
+        outcome="SUCCESS",
+
+        actor_platform_user_id=platform_user.id,
+
+        actor_identity=platform_user.email,
+
+        target_type="CLIENT",
+
+        target_id=str(client.id),
+
+        client_id=client.id,
+
+        tenant_id=client.tenant_id,
+
+        ip_address=(
+            request.client.host
+            if request.client
+            else None
+        ),
+
+        user_agent=(
+            request.headers.get("user-agent")
+        ),
+
+        event_metadata={
+            "changed_fields": list(
+                changes.keys()
+            ),
+        },
+    )
+
+    db.add(audit_event)
+
+    # ========================================================
+    # COMMIT
+    # ========================================================
+
+    try:
+        db.commit()
+        db.refresh(client)
+
+    except Exception as exc:
+        db.rollback()
+
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "Client update failed."
+            ),
+        ) from exc
+
+    # ========================================================
+    # RESPONSE
+    # ========================================================
+
+    return {
+        "message": "Client updated successfully.",
+
+        "client": {
+            "id": client.id,
+            "tenant_id": client.tenant_id,
+
+            "business_name": (
+                client.business_name
+            ),
+
+            "legal_business_name": (
+                client.legal_business_name
+            ),
+
+            "business_type": (
+                client.business_type
+            ),
+
+            "country": client.country,
+
+            "business_email": (
+                client.business_email
+            ),
+
+            "business_phone": (
+                client.business_phone
+            ),
+
+            "owner_name": client.owner_name,
+
+            "owner_email": (
+                client.owner_email
+            ),
+
+            "owner_phone": (
+                client.owner_phone
+            ),
+
+            "owner_role": (
+                client.owner_role
+            ),
+
+            "pan": client.pan,
+            "gstin": client.gstin,
+
+            "logo_url": client.logo_url,
+
+            "welcome_message": (
+                client.welcome_message
+                or f"Welcome to {client.business_name}"
+            ),
+
+            "domain": client.domain,
+
+            "crm_slug": client.crm_slug,
+
+            "account_status": (
+                client.account_status
+            ),
+
+            "firebase_provisioning_status": (
+                client.firebase_provisioning_status
+            ),
+
+            "created_at": client.created_at,
+            "updated_at": client.updated_at,
+        },
+
+        "audit": {
+            "event_type": (
+                "CLIENT_PROFILE_UPDATED"
+            ),
+            "changed_fields": list(
+                changes.keys()
+            ),
+            "actor": platform_user.email,
+        },
+    }
+# ============================================================
+# CLIENT FIREBASE WEB APP CONFIGURATION
+# ============================================================
+
+
+@app.post("/clients/{client_id}/firebase-config")
+def save_client_firebase_config(
+    client_id: int,
+    firebase_config: dict[str, Any] = Body(...),
+    db: Session = Depends(get_db),
+    platform_user: PlatformUser = Depends(
+        get_current_platform_user
+    ),
+):
+    """
+    Save the public Firebase Web App configuration
+    for a client.
+
+    This is an ADMIN/OWNER operation performed once
+    during client onboarding or Firebase connection.
+
+    IMPORTANT:
+    This configuration contains public Firebase
+    client-side configuration only.
+
+    No service-account credentials or private keys
+    must ever be submitted here.
+    """
+
+    # --------------------------------------------------------
+    # PLATFORM AUTHORIZATION
+    # --------------------------------------------------------
+
+    if platform_user.role not in {
+        "OWNER",
+        "ADMIN",
+    }:
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "You do not have permission "
+                "to configure client Firebase."
+            ),
+        )
+
+    # --------------------------------------------------------
+    # LOAD CLIENT
+    # --------------------------------------------------------
+
+    client = (
+        db.query(Client)
+        .filter(Client.id == client_id)
+        .first()
+    )
+
+    if client is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Client not found.",
+        )
+
+    # --------------------------------------------------------
+    # REQUIRED FIREBASE CONFIG FIELDS
+    # --------------------------------------------------------
+
+    required_fields = {
+        "apiKey",
+        "authDomain",
+        "projectId",
+        "storageBucket",
+        "messagingSenderId",
+        "appId",
+    }
+
+    missing_fields = [
+        field
+        for field in required_fields
+        if not firebase_config.get(field)
+    ]
+
+    if missing_fields:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Firebase configuration is missing "
+                "required fields: "
+                + ", ".join(missing_fields)
+            ),
+        )
+
+    # --------------------------------------------------------
+    # PROJECT ID VALIDATION
+    # --------------------------------------------------------
+
+    config_project_id = str(
+        firebase_config.get("projectId")
+    ).strip()
+
+    if (
+        client.firebase_project_id
+        and config_project_id
+        != client.firebase_project_id
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Firebase configuration projectId "
+                "does not match the client's connected "
+                "Firebase project."
+            ),
+        )
+
+    # --------------------------------------------------------
+    # APP ID VALIDATION
+    # --------------------------------------------------------
+
+    config_app_id = str(
+        firebase_config.get("appId")
+    ).strip()
+
+    if (
+        client.firebase_web_app_id
+        and config_app_id
+        != client.firebase_web_app_id
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Firebase configuration appId "
+                "does not match the client's connected "
+                "Firebase Web App."
+            ),
+        )
+
+    # --------------------------------------------------------
+    # NORMALIZE CONFIG
+    #
+    # Store only the Firebase Web App client configuration.
+    # --------------------------------------------------------
+
+    normalized_config = {
+        "apiKey": str(
+            firebase_config["apiKey"]
+        ).strip(),
+
+        "authDomain": str(
+            firebase_config["authDomain"]
+        ).strip(),
+
+        "projectId": config_project_id,
+
+        "storageBucket": str(
+            firebase_config["storageBucket"]
+        ).strip(),
+
+        "messagingSenderId": str(
+            firebase_config["messagingSenderId"]
+        ).strip(),
+
+        "appId": config_app_id,
+    }
+
+    # Optional Firebase configuration fields
+    # are preserved if provided.
+
+    optional_fields = {
+        "measurementId",
+    }
+
+    for field in optional_fields:
+        value = firebase_config.get(field)
+
+        if value:
+            normalized_config[field] = str(
+                value
+            ).strip()
+
+    # --------------------------------------------------------
+    # SAVE
+    # --------------------------------------------------------
+
+    client.firebase_web_app_config = (
+        normalized_config
+    )
+
+    client.firebase_provisioning_error = None
+
+    if client.firebase_provisioning_status != "READY":
+        client.firebase_provisioning_status = "READY"
+
+    client.firebase_provisioned_at = (
+        client.firebase_provisioned_at
+        or datetime.utcnow()
+    )
+
+    try:
+        db.commit()
+        db.refresh(client)
+
+    except Exception as exc:
+        db.rollback()
+
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "Failed to save Firebase "
+                "configuration."
+            ),
+        ) from exc
+
+    # --------------------------------------------------------
+    # RESPONSE
+    # --------------------------------------------------------
+
+    return {
+        "message": (
+            "Firebase Web App configuration "
+            "saved successfully."
+        ),
+
+        "client_id": client.id,
+
+        "tenant_id": client.tenant_id,
+
+        "firebase_project_id": (
+            client.firebase_project_id
+        ),
+
+        "firebase_web_app_id": (
+            client.firebase_web_app_id
+        ),
+
+        "status": (
+            client.firebase_provisioning_status
+        ),
+
+        "configured": True,
+    }
+
+
 # ============================================================
 # CRM FIREBASE CONFIGURATION
 # ============================================================
 
+
+# ============================================================
+# CRM FIREBASE CONFIGURATION
+# ============================================================
+
+# ============================================================
+# CRM FIREBASE CONFIGURATION
+# ============================================================
 
 @app.get("/crm/{crm_slug}/firebase-config")
 def get_crm_firebase_config(
@@ -2203,12 +2843,12 @@ def get_crm_firebase_config(
     db: Session = Depends(get_db),
 ):
     """
-    Return Firebase Web App configuration for
-    the CRM tenant identified by crm_slug.
+    Return the tenant Firebase Web App configuration.
 
-    Example:
+    CRM startup reads the cached public Firebase configuration
+    from PostgreSQL.
 
-        /crm/shri-ram-jewels/firebase-config
+    No Firebase Management API call is made here.
     """
 
     client = resolve_crm_client(
@@ -2216,26 +2856,10 @@ def get_crm_firebase_config(
         db=db,
     )
 
-    if client.account_status != "ACTIVE":
-        raise HTTPException(
-            status_code=403,
-            detail="This CRM account is currently disabled.",
-        )
-
-    if (
-        str(
-            client.firebase_provisioning_status
-            or ""
-        ).upper()
-        != "READY"
-    ):
-        raise HTTPException(
-            status_code=409,
-            detail=(
-                "CRM tenant Firebase connection "
-                "is not ready."
-            ),
-        )
+    entitlement = require_crm_access(
+        db=db,
+        client=client,
+    )
 
     if not client.firebase_project_id:
         raise HTTPException(
@@ -2255,39 +2879,738 @@ def get_crm_firebase_config(
             ),
         )
 
-    try:
-        session = _get_connection_session()
+    config = client.firebase_web_app_config
 
-        web_app_name = (
-            f"projects/{client.firebase_project_id}"
-            f"/webApps/{client.firebase_web_app_id}"
+    if not config:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "CRM tenant Firebase web configuration "
+                "is not stored."
+            ),
         )
 
-        config = _get_firebase_web_app_config(
-            session=session,
-            web_app_name=web_app_name,
-        )
+    # --------------------------------------------------------
+    # Validate that the cached configuration belongs to
+    # this exact Firebase project and Web App.
+    # --------------------------------------------------------
 
-        return {
-            "tenantId": client.tenant_id,
-            "clientId": client.id,
-            "crmSlug": client.crm_slug,
-            "businessName": client.business_name,
-            "firebase": config,
-        }
-
-    except HTTPException:
-        raise
-
-    except Exception as exc:
+    if config.get("projectId") != client.firebase_project_id:
         raise HTTPException(
             status_code=500,
             detail=(
-                "Unable to retrieve CRM Firebase "
-                "configuration."
+                "Stored Firebase configuration does not "
+                "match the tenant Firebase project."
+            ),
+        )
+
+    if config.get("appId") != client.firebase_web_app_id:
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "Stored Firebase configuration does not "
+                "match the tenant Firebase Web App."
+            ),
+        )
+
+    return {
+        "tenantId": client.tenant_id,
+        "clientId": client.id,
+        "crmSlug": client.crm_slug,
+        "businessName": client.business_name,
+
+        "modules": list(
+            entitlement.modules
+        ),
+
+        "firebase": config,
+    }
+
+# ============================================================
+# CRM ADMIN ACTION AUTHORIZATION
+# ============================================================
+
+def authorize_crm_admin_action(
+    *,
+    id_token: str,
+    project_id: str,
+    tenant_id: str,
+    crm_slug: str,
+):
+    """
+    Authorize an authenticated CRM administrator for an
+    admin-only CRM action.
+
+    This is intentionally separate from normal employee
+    CRM authorization because the employee receiving the
+    onboarding email does NOT have a Firebase UID yet.
+    """
+
+    # ========================================================
+    # 1. REQUIRE FIREBASE ID TOKEN
+    # ========================================================
+
+    if not id_token:
+        raise PermissionError(
+            "Firebase authentication is required."
+        )
+
+    # ========================================================
+    # 2. VERIFY FIREBASE TOKEN
+    # ========================================================
+
+    app = _get_firebase_admin_app(project_id)
+
+    try:
+        decoded_token = firebase_auth.verify_id_token(
+            id_token,
+            app=app,
+            check_revoked=True,
+        )
+    except Exception as exc:
+        raise PermissionError(
+            "Invalid or expired Firebase authentication."
+        ) from exc
+
+    uid = decoded_token.get("uid")
+
+    if not uid:
+        raise PermissionError(
+            "Authenticated Firebase UID was not found."
+        )
+
+    # ========================================================
+    # 3. LOAD THE ADMIN USER DOCUMENT
+    # ========================================================
+    #
+    # IMPORTANT:
+    #
+    # We intentionally read:
+    #
+    #     users/{uid}
+    #
+    # Therefore the Firestore document ID itself already
+    # identifies the authenticated Firebase user.
+    #
+    # The `uid` field inside the document is NOT required.
+    #
+    # The target employee's UID is also NOT required.
+    #
+    # ========================================================
+
+    db = _get_tenant_firestore(project_id)
+
+    user_ref = db.collection("users").document(uid)
+    user_snapshot = user_ref.get()
+
+    if not user_snapshot.exists:
+        raise PermissionError(
+            "CRM administrator authorization was not found."
+        )
+
+    user = user_snapshot.to_dict() or {}
+
+    # ========================================================
+    # 4. VERIFY ADMIN STATUS
+    # ========================================================
+
+    status = str(
+        user.get("status") or ""
+    ).strip().upper()
+
+    if status != "ACTIVE":
+        raise PermissionError(
+            "CRM administrator account is inactive."
+        )
+
+    # ========================================================
+    # 5. VERIFY ADMIN ROLE
+    # ========================================================
+
+    role = str(
+        user.get("role") or ""
+    ).strip().upper()
+
+    if role != "ADMIN_OWNER":
+        raise PermissionError(
+            "Only the CRM administrator can send employee onboarding emails."
+        )
+
+    # ========================================================
+    # 6. VERIFY TENANT WHEN PRESENT
+    # ========================================================
+    #
+    # Your current manually-created owner record has:
+    #
+    #     tenantId = None
+    #     crmSlug  = None
+    #
+    # Therefore these are optional for this legacy owner.
+    #
+    # If they are present in the future, they MUST match.
+    #
+    # ========================================================
+
+    stored_tenant_id = user.get("tenantId")
+
+    if stored_tenant_id is not None:
+        if str(stored_tenant_id) != str(tenant_id):
+            raise PermissionError(
+                "CRM administrator tenant mismatch."
+            )
+
+    # ========================================================
+    # 7. VERIFY CRM SLUG WHEN PRESENT
+    # ========================================================
+
+    stored_crm_slug = user.get("crmSlug")
+
+    if stored_crm_slug is not None:
+        if (
+            str(stored_crm_slug).strip().lower()
+            != str(crm_slug).strip().lower()
+        ):
+            raise PermissionError(
+                "CRM administrator CRM mismatch."
+            )
+
+    # ========================================================
+    # 8. DEBUG
+    # ========================================================
+
+    print(
+        "CRM ADMIN ACTION AUTHORIZED:",
+        {
+            "uid": uid,
+            "role": role,
+            "status": status,
+            "tenantId": stored_tenant_id,
+            "crmSlug": stored_crm_slug,
+            "requestTenantId": tenant_id,
+            "requestCrmSlug": crm_slug,
+        },
+    )
+
+    # ========================================================
+    # 9. SUCCESS
+    # ========================================================
+
+    return {
+        "uid": uid,
+        "user": user,
+    }
+# ============================================================
+# CRM FIREBASE AUTHORIZATION / EMPLOYEE BINDING
+# ============================================================
+
+
+@app.post("/crm/{crm_slug}/auth/authorize")
+def authorize_crm_user(
+    crm_slug: str,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """
+    Trusted Firebase authentication bridge.
+
+    The backend verifies the Firebase identity and
+    determines whether the identity belongs to an
+    ACTIVE employee.
+
+    IMPORTANT:
+    The backend does NOT write tenant Firestore data.
+
+    On first login it returns a signed/verified
+    authorization bootstrap which the authenticated
+    browser can provision into users/{uid}.
+
+    On subsequent logins this endpoint normally isn't
+    called because the frontend already has users/{uid}.
+    """
+
+    # --------------------------------------------------------
+    # RESOLVE TENANT
+    # --------------------------------------------------------
+
+    client = resolve_crm_client(
+        crm_slug=crm_slug,
+        db=db,
+    )
+
+    entitlement = require_crm_access(
+        db=db,
+        client=client,
+    )
+
+    # --------------------------------------------------------
+    # FIREBASE PROJECT
+    # --------------------------------------------------------
+
+    if not client.firebase_project_id:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "CRM tenant Firebase project "
+                "is not configured."
+            ),
+        )
+
+    # --------------------------------------------------------
+    # AUTHORIZATION HEADER
+    # --------------------------------------------------------
+
+    authorization_header = (
+        request.headers.get(
+            "Authorization"
+        )
+    )
+
+    if not authorization_header:
+        raise HTTPException(
+            status_code=401,
+            detail=(
+                "Firebase authentication token "
+                "is required."
+            ),
+        )
+
+    if not authorization_header.startswith(
+        "Bearer "
+    ):
+        raise HTTPException(
+            status_code=401,
+            detail=(
+                "Invalid Firebase authorization "
+                "header."
+            ),
+        )
+
+    id_token = (
+        authorization_header[
+            len("Bearer "):
+        ]
+        .strip()
+    )
+
+    if not id_token:
+        raise HTTPException(
+            status_code=401,
+            detail=(
+                "Firebase authentication token "
+                "is required."
+            ),
+        )
+
+    # --------------------------------------------------------
+    # TRUSTED AUTHORIZATION
+    # --------------------------------------------------------
+
+    try:
+
+        result = (
+            authorize_crm_firebase_user(
+                id_token=id_token,
+                project_id=(
+                    client.firebase_project_id
+                ),
+                tenant_id=(
+                    client.tenant_id
+                ),
+                crm_slug=(
+                    client.crm_slug
+                ),
+            )
+        )
+
+        return {
+            "status": "authorized",
+
+            "firstLogin": (
+                result["firstLogin"]
+            ),
+
+            "tenantId": (
+                client.tenant_id
+            ),
+
+            "clientId": client.id,
+
+            "crmSlug": (
+                client.crm_slug
+            ),
+
+            "employeeId": (
+                result["employeeId"]
+            ),
+
+            "uid": result["uid"],
+
+            "role": result["role"],
+
+            "loginMethod": (
+                result["loginMethod"]
+            ),
+
+            "authorization": (
+                result["authorization"]
+            ),
+        }
+
+    except PermissionError as exc:
+
+        raise HTTPException(
+            status_code=403,
+            detail=str(exc),
+        ) from exc
+
+    except ValueError as exc:
+
+        raise HTTPException(
+            status_code=400,
+            detail=str(exc),
+        ) from exc
+
+    except Exception as exc:
+
+        import traceback
+
+        print(
+            "CRM Firebase authorization error:",
+            repr(exc),
+        )
+
+        traceback.print_exc()
+
+        raise HTTPException(
+            status_code=500,
+            detail=f"CRM authorization failed: {str(exc)}",
+        ) from exc
+    
+
+# ============================================================
+# CRM EMPLOYEE ONBOARDING EMAIL
+# ============================================================
+
+@app.post(
+    "/crm/{crm_slug}/employees/{employee_id}/welcome-email"
+)
+def send_crm_employee_welcome_email(
+    crm_slug: str,
+    employee_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """
+    Send or resend an employee onboarding email.
+
+    IMPORTANT:
+    - Only an authenticated ADMIN_OWNER can perform this action.
+    - The target employee does NOT need a Firebase UID.
+    - The employee UID is created only after the employee
+      completes their first login.
+    """
+
+    # ========================================================
+    # 1. RESOLVE CRM TENANT
+    # ========================================================
+
+    client = resolve_crm_client(
+        crm_slug=crm_slug,
+        db=db,
+    )
+
+    require_crm_access(
+        db=db,
+        client=client,
+    )
+
+    # ========================================================
+    # 2. VERIFY FIREBASE PROJECT
+    # ========================================================
+
+    if not client.firebase_project_id:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "CRM tenant Firebase project "
+                "is not configured."
+            ),
+        )
+
+    # ========================================================
+    # 3. READ AUTHORIZATION HEADER
+    # ========================================================
+
+    authorization_header = request.headers.get(
+        "Authorization"
+    )
+
+    if not authorization_header:
+        raise HTTPException(
+            status_code=401,
+            detail=(
+                "Firebase authentication token "
+                "is required."
+            ),
+        )
+
+    if not authorization_header.startswith(
+        "Bearer "
+    ):
+        raise HTTPException(
+            status_code=401,
+            detail=(
+                "Invalid Firebase authorization "
+                "header."
+            ),
+        )
+
+    id_token = (
+        authorization_header[
+            len("Bearer "):
+        ]
+        .strip()
+    )
+
+    if not id_token:
+        raise HTTPException(
+            status_code=401,
+            detail=(
+                "Firebase authentication token "
+                "is required."
+            ),
+        )
+
+    # ========================================================
+    # 4. AUTHORIZE CURRENT ADMIN
+    # ========================================================
+    #
+    # IMPORTANT:
+    #
+    # DO NOT call authorize_crm_firebase_user() here.
+    #
+    # That function is for normal employee CRM login and
+    # expects the employee to be part of the employee
+    # authorization flow.
+    #
+    # This endpoint is an ADMIN action.
+    #
+    # The target employee may have:
+    #
+    #     uid = null
+    #
+    # because they have not logged in yet.
+    #
+    # ========================================================
+
+    try:
+
+        authorize_crm_admin_action(
+            id_token=id_token,
+            project_id=client.firebase_project_id,
+            tenant_id=client.tenant_id,
+            crm_slug=client.crm_slug,
+        )
+
+    except PermissionError as exc:
+
+        raise HTTPException(
+            status_code=403,
+            detail=str(exc),
+        ) from exc
+
+    except ValueError as exc:
+
+        raise HTTPException(
+            status_code=400,
+            detail=str(exc),
+        ) from exc
+
+    except Exception as exc:
+
+        print(
+            "CRM admin authorization error:",
+            repr(exc),
+        )
+
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "Unable to authorize the CRM administrator."
             ),
         ) from exc
 
+    # ========================================================
+    # 5. LOAD TARGET EMPLOYEE
+    # ========================================================
+
+    try:
+
+        tenant_firestore = _get_tenant_firestore(
+            client.firebase_project_id
+        )
+
+        employee_ref = (
+            tenant_firestore
+            .collection("employees")
+            .document(employee_id)
+        )
+
+        employee_snapshot = employee_ref.get()
+
+    except Exception as exc:
+
+        print(
+            "Employee lookup failed:",
+            repr(exc),
+        )
+
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "Unable to load the employee record."
+            ),
+        ) from exc
+
+    # ========================================================
+    # 6. VERIFY EMPLOYEE EXISTS
+    # ========================================================
+
+    if not employee_snapshot.exists:
+        raise HTTPException(
+            status_code=404,
+            detail="Employee record was not found.",
+        )
+
+    employee = (
+        employee_snapshot.to_dict()
+        or {}
+    )
+
+    # ========================================================
+    # 7. VERIFY EMPLOYEE STATUS
+    # ========================================================
+
+    employee_status = str(
+        employee.get("status") or ""
+    ).strip().upper()
+
+    if employee_status != "ACTIVE":
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Welcome email cannot be sent to "
+                "a disabled employee."
+            ),
+        )
+
+    # ========================================================
+    # 8. VERIFY EMPLOYEE EMAIL
+    # ========================================================
+
+    employee_email = str(
+        employee.get("email") or ""
+    ).strip().lower()
+
+    if not employee_email:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Employee does not have an email address."
+            ),
+        )
+
+    # ========================================================
+    # 9. SEND EMAIL
+    # ========================================================
+
+    try:
+
+        from services.employee_email import (
+            send_employee_welcome_email,
+        )
+
+        # --------------------------------------------------------
+        # MAP EMPLOYEE LOGIN METHODS TO EMAIL TEMPLATE FORMAT
+        # --------------------------------------------------------
+        #
+        # Firestore employee record:
+        #
+        # loginMethods:
+        #   google: true/false
+        #   otp: true/false
+        #
+        # Email service expects:
+        #
+        # auth:
+        #   google: true/false
+        #   phone: true/false
+        #
+        # --------------------------------------------------------
+
+        login_methods = employee.get(
+            "loginMethods"
+        ) or {}
+
+        email_employee = {
+            **employee,
+
+            "auth": {
+                "google": bool(
+                    login_methods.get("google")
+                ),
+                "phone": bool(
+                    login_methods.get("otp")
+                ),
+            },
+
+            "permissions": (
+                employee.get("permissions")
+                or {}
+            ),
+
+            "enforce24HourLogout": bool(
+                employee.get(
+                    "enforce24HourLogout"
+                )
+            ),
+        }
+
+        send_employee_welcome_email(
+            employee=email_employee,
+            business_name=client.business_name,
+            crm_slug=client.crm_slug,
+        )
+
+    except Exception as exc:
+
+        print(
+            "Employee welcome email failed:",
+            repr(exc),
+        )
+
+        raise HTTPException(
+            status_code=502,
+            detail=(
+                f"Unable to send employee welcome email: "
+                f"{str(exc)}"
+            ),
+        ) from exc
+
+    # ========================================================
+    # 10. SUCCESS
+    # ========================================================
+
+    return {
+        "success": True,
+        "status": "SENT",
+        "employeeId": employee_id,
+        "email": employee_email,
+        "message": (
+            f"Welcome email sent successfully to "
+            f"{employee_email}."
+        ),
+    }
 # ============================================================
 # TEMPORARY RESEND TEST
 # ============================================================

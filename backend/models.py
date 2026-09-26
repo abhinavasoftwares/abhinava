@@ -46,8 +46,14 @@ class Client(Base):
         nullable=True,
     )
 
+
     firebase_web_app_id: Mapped[str | None] = mapped_column(
         String(150),
+        nullable=True,
+    )
+    
+    firebase_web_app_config: Mapped[dict | None] = mapped_column(
+        JSONB,
         nullable=True,
     )
 

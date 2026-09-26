@@ -31,7 +31,6 @@
   }
 }
 
-/* Add this to your global.css or index.css */
 
 .no-scrollbar::-webkit-scrollbar {
   display: none;

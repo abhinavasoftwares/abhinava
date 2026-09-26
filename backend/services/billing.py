@@ -259,14 +259,6 @@ def create_renewal_invoice(
         )
     )
 
-    # --------------------------------------------------------
-    # EXTEND SUBSCRIPTION PERIOD
-    # --------------------------------------------------------
-
-    subscription.end_date = period_end
-
-    db.flush()
-
     return invoice
 
 
@@ -298,15 +290,127 @@ def get_invoice_payment_summary(
     )
 
     outstanding_amount = money(
-        total_amount - paid_amount
+        max(
+            total_amount - paid_amount,
+            Decimal("0.00"),
+        )
     )
+
+    if outstanding_amount == Decimal("0.00"):
+
+        effective_status = "PAID"
+
+    elif (
+        invoice.due_date
+        and date.today() > invoice.due_date
+        and invoice.status not in {
+            "PAID",
+            "VOID",
+        }
+    ):
+
+        effective_status = "OVERDUE"
+
+    elif paid_amount > Decimal("0.00"):
+
+        effective_status = "PARTIALLY_PAID"
+
+    else:
+
+        effective_status = invoice.status
 
     return {
         "invoice_total": total_amount,
+
         "paid_amount": paid_amount,
+
         "outstanding_amount": outstanding_amount,
+
         "fully_paid": (
             outstanding_amount
             == Decimal("0.00")
         ),
+
+        "status": effective_status,
     }
+
+def activate_paid_renewal(
+    db: Session,
+    invoice: Invoice,
+) -> bool:
+    """
+    Activate a renewal only after the invoice has been
+    completely paid.
+
+    Returns True when a renewal subscription period
+    was extended.
+    """
+
+    if invoice.invoice_type != "RENEWAL":
+        return False
+
+    if invoice.status != "PAID":
+        return False
+
+    if not invoice.client_subscription_id:
+        return False
+
+    if invoice.period_start is None:
+        return False
+
+    if invoice.period_end is None:
+        return False
+
+    subscription = (
+        db.query(ClientSubscription)
+        .filter(
+            ClientSubscription.id
+            == invoice.client_subscription_id
+        )
+        .with_for_update()
+        .first()
+    )
+
+    if subscription is None:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Renewal invoice is linked to "
+                "a missing subscription."
+            ),
+        )
+
+    # --------------------------------------------------------
+    # IDEMPOTENCY
+    # --------------------------------------------------------
+    #
+    # If this renewal period has already been activated,
+    # do not extend it again.
+    #
+
+    if subscription.end_date >= invoice.period_end:
+        return False
+
+    # --------------------------------------------------------
+    # VALIDATE RENEWAL PERIOD
+    # --------------------------------------------------------
+
+    if subscription.end_date != invoice.period_start:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Renewal invoice period does not match "
+                "the current subscription period."
+            ),
+        )
+
+    # --------------------------------------------------------
+    # ACTIVATE RENEWAL
+    # --------------------------------------------------------
+
+    subscription.end_date = invoice.period_end
+    subscription.status = "ACTIVE"
+
+    db.flush()
+
+    return True

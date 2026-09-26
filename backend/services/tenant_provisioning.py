@@ -300,21 +300,38 @@ def _set_project_iam_policy(
 def _grant_project_role(
     session: AuthorizedSession,
     project_id: str,
-    email: str,
-    role: str,
+    email: str = None,
+    role: str = "roles/editor",
+    member: str = None,
 ) -> None:
     """
-    Grant a project-level IAM role to a user.
+    Grant a project-level IAM role.
 
-    Idempotent:
-    - If the user already has the role, nothing changes.
-    - If the role is missing, it is added.
+    Supports both:
+        user:someone@example.com
+        serviceAccount:someone@project.iam.gserviceaccount.com
+
+    The function is idempotent.
     """
 
-    if not email:
+    # ---------------------------------------------------------
+    # BUILD IAM MEMBER
+    # ---------------------------------------------------------
+
+    if member:
+        iam_member = member
+
+    elif email:
+        iam_member = f"user:{email}"
+
+    else:
         raise RuntimeError(
-            f"Cannot grant {role}: email is empty."
+            f"Cannot grant {role}: IAM member is empty."
         )
+
+    # ---------------------------------------------------------
+    # GET CURRENT IAM POLICY
+    # ---------------------------------------------------------
 
     policy = _get_project_iam_policy(
         session=session,
@@ -326,10 +343,8 @@ def _grant_project_role(
         [],
     )
 
-    member = f"user:{email}"
-
     # ---------------------------------------------------------
-    # Find existing role binding
+    # FIND ROLE
     # ---------------------------------------------------------
 
     existing_binding = None
@@ -337,11 +352,12 @@ def _grant_project_role(
     for binding in bindings:
 
         if binding.get("role") == role:
+
             existing_binding = binding
             break
 
     # ---------------------------------------------------------
-    # Role already exists
+    # ADD MEMBER
     # ---------------------------------------------------------
 
     if existing_binding:
@@ -351,14 +367,11 @@ def _grant_project_role(
             [],
         )
 
-        if member in members:
-            return
+        if iam_member not in members:
 
-        members.append(member)
-
-    # ---------------------------------------------------------
-    # Role does not exist
-    # ---------------------------------------------------------
+            members.append(
+                iam_member
+            )
 
     else:
 
@@ -366,19 +379,23 @@ def _grant_project_role(
             {
                 "role": role,
                 "members": [
-                    member,
+                    iam_member,
                 ],
             }
         )
 
     # ---------------------------------------------------------
-    # Preserve IAM policy version
+    # PRESERVE POLICY VERSION
     # ---------------------------------------------------------
 
     policy["version"] = max(
         policy.get("version", 1),
         3,
     )
+
+    # ---------------------------------------------------------
+    # SAVE POLICY
+    # ---------------------------------------------------------
 
     _set_project_iam_policy(
         session=session,
@@ -393,20 +410,22 @@ def _configure_project_access(
     client: Client,
 ) -> None:
     """
-    Configure tenant project access.
+    Configure access for the tenant Firebase project.
 
     Client:
-        Owner
+        Owns the tenant business environment.
 
     Abhinava:
-        Editor
+        Platform administrator access.
 
-    This function is idempotent and safe to run
-    during provisioning retries.
+    Abhinava Provisioner:
+        Trusted backend access to tenant Firestore.
+
+    This function is idempotent.
     """
 
     # ---------------------------------------------------------
-    # ABHINAVA — EDITOR
+    # ABHINAVA ADMIN USER
     # ---------------------------------------------------------
 
     _grant_project_role(
@@ -414,6 +433,31 @@ def _configure_project_access(
         project_id=project_id,
         email=ABHINAVA_ADMIN_EMAIL,
         role="roles/editor",
+    )
+
+    # ---------------------------------------------------------
+    # ABHINAVA BACKEND PROVISIONER
+    # ---------------------------------------------------------
+    #
+    # This is the service account used by:
+    #
+    #   firebase_crm_auth.py
+    #
+    # to access the tenant Firestore from the backend.
+    #
+    # IMPORTANT:
+    # Do NOT give the browser this permission.
+    #
+
+    _grant_project_role(
+        session=session,
+        project_id=project_id,
+        role="roles/datastore.user",
+        member=(
+            "serviceAccount:"
+            "abhinava-provisioner@"
+            "abhinava-origin.iam.gserviceaccount.com"
+        ),
     )
 # ============================================================
 # FIREBASE OPERATION
@@ -1229,19 +1273,9 @@ def provision_tenant(
             db.refresh(client)
 
         # -------------------------------------------------
-        # STEP 6 — Project ID already persisted
-        #
-        # For new clients it was saved above.
-        # For retrying clients it already existed.
-        # -------------------------------------------------
-
-        # -------------------------------------------------
         # STEP 7 — Add Firebase
         # -------------------------------------------------
 
-        # -------------------------------------------------
-# STEP 7 — Add Firebase
-# -------------------------------------------------
 
         _enable_firebase(
             session=session,
@@ -1269,6 +1303,30 @@ def provision_tenant(
             )
 
         client.firebase_web_app_id = web_app_id
+
+        # -------------------------------------------------
+        # STEP 7B — Cache Firebase Web App Configuration
+        # -------------------------------------------------
+
+        web_app_name = (
+            f"projects/{project_id}"
+            f"/webApps/{web_app_id}"
+        )
+
+        firebase_web_app_config = _get_firebase_web_app_config(
+            session=session,
+            web_app_name=web_app_name,
+        )
+
+        if not firebase_web_app_config:
+            raise RuntimeError(
+                "Firebase Web App configuration "
+                "could not be retrieved."
+            )
+
+        client.firebase_web_app_config = (
+            firebase_web_app_config
+        )
 
         db.commit()
         db.refresh(client)

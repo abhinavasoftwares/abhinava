@@ -23,7 +23,9 @@ from schemas import (
 from services.platform_dependencies import (
     get_current_platform_user,
 )
-
+from services.billing import (
+    activate_paid_renewal,
+)
 
 router = APIRouter(
     prefix="/payments",
@@ -321,9 +323,19 @@ def record_payment(
         total_amount - new_paid_amount
     )
 
+    renewal_activated = False
+
     if new_outstanding_amount == Decimal("0.00"):
+
         invoice.status = "PAID"
+
+        renewal_activated = activate_paid_renewal(
+            db=db,
+            invoice=invoice,
+        )
+
     else:
+
         invoice.status = "PARTIALLY_PAID"
 
     # ========================================================
@@ -361,7 +373,7 @@ def record_payment(
             "payment_id": payment.id,
             "invoice_id": invoice.id,
             "invoice_number": invoice.invoice_number,
-
+            "renewal_activated": renewal_activated,
             "payment_amount": str(
                 payment_amount
             ),
@@ -391,7 +403,56 @@ def record_payment(
     )
 
     db.add(audit_event)
+    if renewal_activated:
 
+        renewal_audit_event = PlatformAuditEvent(
+            event_type="SUBSCRIPTION_RENEWAL_ACTIVATED",
+
+            outcome="SUCCESS",
+
+            actor_platform_user_id=platform_user.id,
+
+            actor_identity=platform_user.email,
+
+            target_type="CLIENT_SUBSCRIPTION",
+
+            target_id=str(
+                invoice.client_subscription_id
+            ),
+
+            client_id=client.id,
+
+            tenant_id=client.tenant_id,
+
+            ip_address=(
+                request.client.host
+                if request.client
+                else None
+            ),
+
+            user_agent=(
+                request.headers.get("user-agent")
+            ),
+
+            event_metadata={
+                "invoice_id": invoice.id,
+                "invoice_number": invoice.invoice_number,
+                "period_start": (
+                    str(invoice.period_start)
+                    if invoice.period_start
+                    else None
+                ),
+                "period_end": (
+                    str(invoice.period_end)
+                    if invoice.period_end
+                    else None
+                ),
+            },
+        )
+
+        db.add(
+            renewal_audit_event
+        )
     # ========================================================
     # COMMIT
     # ========================================================

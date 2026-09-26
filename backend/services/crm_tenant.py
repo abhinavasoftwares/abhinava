@@ -4,6 +4,7 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from models import Client
+from services.entitlements import calculate_client_entitlement
 
 
 CRM_SLUG_PATTERN = re.compile(
@@ -173,3 +174,49 @@ def resolve_crm_client(
         )
 
     return client
+
+def require_crm_access(
+    db: Session,
+    client: Client,
+):
+    entitlement = calculate_client_entitlement(
+        db=db,
+        client=client,
+    )
+
+    if not entitlement.access_allowed:
+        reason_messages = {
+            "ACCOUNT_DISABLED": (
+                "This CRM account is currently disabled."
+            ),
+            "FIREBASE_NOT_READY": (
+                "This CRM tenant is not ready."
+            ),
+            "NO_ACTIVE_SUBSCRIPTION": (
+                "This CRM account does not have an active subscription."
+            ),
+            "SUBSCRIPTION_NOT_STARTED": (
+                "This CRM subscription has not started yet."
+            ),
+            "SUBSCRIPTION_EXPIRED": (
+                "This CRM subscription has expired."
+            ),
+        }
+
+        detail = reason_messages.get(
+            entitlement.access_reason,
+            "CRM access is currently unavailable.",
+        )
+
+        raise HTTPException(
+            status_code=403,
+            detail=detail,
+        )
+
+    if not entitlement.firebase_ready:
+        raise HTTPException(
+            status_code=409,
+            detail="CRM tenant Firebase connection is not ready.",
+        )
+
+    return entitlement

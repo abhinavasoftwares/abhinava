@@ -133,14 +133,19 @@ def _check_firebase(
 # FIREBASE WEB APP
 # ============================================================
 
+# ============================================================
+# FIREBASE WEB APP
+# ============================================================
+
 def _check_web_app(
     session: AuthorizedSession,
     project_id: str,
 ) -> dict:
     """
-    Discover an existing Firebase Web App.
+    Discover an existing Firebase Web App
+    and retrieve its public Web App configuration.
 
-    Does not create one.
+    Does not create or modify the Web App.
     """
 
     apps = _get_firebase_web_apps(
@@ -166,16 +171,49 @@ def _check_web_app(
         else apps[0]
     )
 
+    app_id = app.get("appId")
+
+    if not app_id:
+        raise RuntimeError(
+            "Firebase Web App exists but no appId "
+            f"was returned for project {project_id}."
+        )
+
+    # --------------------------------------------------------
+    # Retrieve the public Firebase Web App configuration
+    # --------------------------------------------------------
+
+    web_app_name = (
+        f"projects/{project_id}"
+        f"/webApps/{app_id}"
+    )
+
+    config_url = (
+        f"{FIREBASE_URL}/"
+        f"{web_app_name}/config"
+    )
+
+    response = session.get(config_url)
+
+    if response.status_code != 200:
+        raise RuntimeError(
+            "Failed to retrieve Firebase Web App "
+            "configuration for project "
+            f"{project_id}: "
+            f"{response.status_code} "
+            f"{response.text}"
+        )
+
+    firebase_config = response.json()
+
     return {
         "status": "READY",
-        "app_id": app.get("appId"),
+        "app_id": app_id,
         "name": app.get("name"),
-        "display_name": app.get(
-            "displayName"
-        ),
+        "display_name": app.get("displayName"),
         "state": app.get("state"),
+        "config": firebase_config,
     }
-
 
 # ============================================================
 # FIRESTORE

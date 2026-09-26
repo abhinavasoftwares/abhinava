@@ -13,8 +13,9 @@ from models import (
 
 from services.billing import (
     create_renewal_invoice,
+    create_renewal_invoice,
+    get_invoice_payment_summary,
 )
-
 from services.platform_dependencies import (
     get_current_platform_user,
 )
@@ -222,28 +223,38 @@ def get_client_billing_summary(
         .all()
     )
 
-    outstanding = sum(
-        (
-            invoice.total_amount
-            for invoice in invoices
-            if invoice.status
-            in {
-                "ISSUED",
-                "PARTIALLY_PAID",
-                "OVERDUE",
-            }
-        ),
-        0,
-    )
+    outstanding = 0
+    paid = 0
 
-    paid = sum(
-        (
-            invoice.total_amount
-            for invoice in invoices
-            if invoice.status == "PAID"
-        ),
-        0,
-    )
+    invoice_summaries = []
+
+    for invoice in invoices:
+
+        summary = get_invoice_payment_summary(
+            db=db,
+            invoice=invoice,
+        )
+
+        invoice_summaries.append(
+            {
+                "invoice_id": invoice.id,
+                "invoice_number": invoice.invoice_number,
+                "status": summary["status"],
+                "invoice_total": summary["invoice_total"],
+                "paid_amount": summary["paid_amount"],
+                "outstanding_amount": (
+                    summary["outstanding_amount"]
+                ),
+            }
+        )
+
+        outstanding += summary[
+            "outstanding_amount"
+        ]
+
+        paid += summary[
+            "paid_amount"
+        ]
 
     return {
         "client_id": client_id,
@@ -263,15 +274,15 @@ def get_client_billing_summary(
 
         "paid_invoice_count": sum(
             1
-            for invoice in invoices
-            if invoice.status == "PAID"
+            for summary in invoice_summaries
+            if summary["status"] == "PAID"
         ),
 
         "outstanding_amount": outstanding,
 
         "paid_invoice_total": paid,
 
-        "invoices": invoices,
+        "invoices": invoice_summaries,
     }
 
 @router.get(

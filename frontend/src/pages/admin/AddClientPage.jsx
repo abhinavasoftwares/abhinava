@@ -1,2717 +1,692 @@
-import React, { useEffect, useMemo, useState, useCallback } from "react";
+import React, { useEffect, useMemo, useState } from "react";
+import axios from "axios";
 import {
   ArrowLeft,
+  ArrowRight,
   Building2,
-  CreditCard,
-  FileText,
-  Upload,
-  UserRound,
-  ChevronRight,
-  ChevronLeft,
   Check,
-  Package,
-  Users,
-  Receipt,
-  Wallet,
-  BarChart3,
-  MessageCircle,
-  Hammer,
-  Sparkles,
-  MapPinned,
-  Tag,
-  Smartphone,
-  Monitor,
-  Tablet,
-  Globe,
+  CheckCircle2,
+  ChevronDown,
+  CircleAlert,
+  CreditCard,
   Database,
-  Mail,
+  FileCheck2,
+  FileText,
+  Globe2,
+  Loader2,
+  ReceiptText,
   ShieldCheck,
-  AlertCircle,
-  RefreshCw,
+  Upload,
+  User,
+  Users,
   X,
+  Sparkles,
 } from "lucide-react";
-import { Link, useNavigate } from "react-router-dom";
-import { useForm, useWatch } from "react-hook-form";
+import { useNavigate } from "react-router-dom";
 
-const API_URL = import.meta.env.VITE_API_BASE_URL;
+const API_BASE_URL = (
+  import.meta.env.VITE_API_BASE_URL || "http://localhost:8000"
+).replace(/\/$/, "");
 
-/* ============================================================================
-   ABHINAVA ENTERPRISE THEME
-   ========================================================================== */
-
-const THEMES = {
-  light: {
-    mode: "light",
-    background: "#F8F9FA",
-    surface: "#FFFFFF",
-    surfaceAlt: "#F3F4F6",
-    surfaceHover: "#EBECEF",
-
-    border: "#E4E7EB",
-    borderStrong: "#CBD0D7",
-
-    text: "#0F1117",
-    textSoft: "#363B45",
-    textMuted: "#6B7280",
-    textLight: "#9CA3AF",
-
-    primary: "#0F1117",
-    primaryText: "#FFFFFF",
-    primaryHover: "#1F2430",
-    primarySoft: "#F0F2F5",
-
-    success: "#047857",
-    successSoft: "#ECFDF5",
-    warning: "#B45309",
-    warningSoft: "#FFFBEB",
-    danger: "#B91C1C",
-    dangerSoft: "#FEF2F2",
-  },
-
-  dark: {
-    mode: "dark",
-    background: "#090A0D",
-    surface: "#111318",
-    surfaceAlt: "#181B22",
-    surfaceHover: "#20242D",
-
-    border: "#20242D",
-    borderStrong: "#2E3442",
-
-    text: "#F9FAFB",
-    textSoft: "#D1D5DB",
-    textMuted: "#88909F",
-    textLight: "#545B6B",
-
-    primary: "#FFFFFF",
-    primaryText: "#090A0D",
-    primaryHover: "#E5E7EB",
-    primarySoft: "#1C2029",
-
-    success: "#34D399",
-    successSoft: "rgba(52, 211, 153, 0.12)",
-    warning: "#FBBF24",
-    warningSoft: "rgba(251, 191, 36, 0.12)",
-    danger: "#F87171",
-    dangerSoft: "rgba(248, 113, 113, 0.12)",
-  },
-};
-
-function getInitialTheme() {
-  try {
-    const stored = localStorage.getItem("abhinava-admin-theme");
-
-    if (stored === "dark" || stored === "light") {
-      return stored;
-    }
-  } catch {
-    // Ignore storage errors
-  }
-
-  return "light";
-}
-
-/* ============================================================================
-   STEPS CONFIGURATION
-   ========================================================================== */
-
-const STEPS = [
-  {
-    id: 0,
-    title: "Business",
-    subtitle: "Identity & Legal",
-    icon: Building2,
-    fields: [
-      "businessName",
-      "legalBusinessName",
-      "businessType",
-      "country",
-      "businessEmail",
-      "businessPhone",
-    ],
-  },
-
-  {
-    id: 1,
-    title: "Primary Contact",
-    subtitle: "Authorized User",
-    icon: UserRound,
-    fields: [
-      "ownerName",
-      "ownerEmail",
-      "ownerPhone",
-      "ownerRole",
-    ],
-  },
-
-  {
-    id: 2,
-    title: "Verification",
-    subtitle: "Statutory Docs",
-    icon: FileText,
-    fields: [
-      "pan",
-      "gstin",
-      "aadhaar",
-    ],
-  },
-
-  {
-    id: 3,
-    title: "Subscription",
-    subtitle: "Plan & Modules",
-    icon: CreditCard,
-    fields: [
-      "subscriptionPlanId",
-      "",
-      "",
-      "billingCycle",
-      "subscriptionStatus",
-      "startDate",
-    ],
-  },
-
-  {
-    id: 4,
-    title: "Workspace",
-    subtitle: "Database Isolation",
-    icon: Database,
-    fields: [
-      "firebaseProjectId",
-      "domain",
-    ],
-  },
-
-  {
-    id: 5,
-    title: "Review",
-    subtitle: "Audit & Provision",
-    icon: ShieldCheck,
-    fields: [],
-  },
+const STAGES = [
+  { id: 1, title: "Identity & Operations", subtitle: "Entity structure, owner & tax identifiers", icon: Building2 },
+  { id: 2, title: "Licensing & Billing", subtitle: "Subscription tier, term & cycle", icon: CreditCard },
+  { id: 3, title: "Database Tenant", subtitle: "Isolated Firestore container allocation", icon: Database },
+  { id: 4, title: "Dossier Verification", subtitle: "Audit configuration parameters", icon: FileCheck2 },
+  { id: 5, title: "Service Agreement", subtitle: "Stage executed contracts & records", icon: FileText },
 ];
 
-/* ============================================================================
-   HELPERS
-   ========================================================================== */
+const DEFAULT_FORM = {
+  businessName: "",
+  legalBusinessName: "",
+  businessType: "Jewellery",
+  country: "India",
+  businessEmail: "",
+  businessPhone: "",
+  ownerName: "",
+  ownerEmail: "",
+  ownerPhone: "",
+  ownerRole: "Owner",
+  pan: "",
+  gstin: "",
+  logoUrl: "",
+  welcomeMessage: "",
 
-function money(value) {
-  const amount = Number(value || 0);
+  subscriptionPlanId: "",
+  billingCycle: "MONTHLY",
+  subscriptionStatus: "ACTIVE",
+  startDate: new Date().toISOString().split("T")[0],
 
-  return `₹${amount.toLocaleString("en-IN", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}`;
-}
+  referralCode: "",
+  domain: "",
+
+  firebaseProjectId: "",
+};
 
 function clean(value) {
-  return String(value ?? "").trim();
+  if (value === null || value === undefined) return "";
+  return String(value).trim();
 }
 
-function getModuleName(module) {
-  if (typeof module === "string") {
-    return module;
-  }
-
-  return (
-    module?.module_name ||
-    module?.name ||
-    module?.module_key ||
-    module?.key ||
-    "Module"
-  );
+function formatCurrency(value, currency = "INR") {
+  const amount = Number(value || 0);
+  return new Intl.NumberFormat("en-IN", {
+    style: "currency",
+    currency,
+    maximumFractionDigits: 2,
+  }).format(amount);
 }
 
-function getModuleKey(module) {
-  if (typeof module === "string") {
-    return module;
-  }
-
-  return module?.module_key || module?.key || "";
+function formatDate(value) {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
 }
 
-function formatBusinessType(value) {
-  const map = {
-    proprietorship: "Proprietorship",
-    partnership: "Partnership",
-    llp: "LLP",
-    private_limited: "Private Limited",
-  };
-
-  return map[value] || value || "—";
+function getPlanId(plan) {
+  return plan?.id ?? plan?.plan_id ?? plan?.subscription_plan_id ?? plan?.value ?? "";
 }
 
-function formatBillingCycle(value) {
-  if (value === "annual") {
-    return "Annual";
-  }
-
-  if (value === "monthly") {
-    return "Monthly";
-  }
-
-  return value || "—";
+function getPlanName(plan) {
+  return plan?.name || plan?.plan_name || plan?.title || "Standard Tier";
 }
 
-function ModuleIcon({ moduleKey, size = 14 }) {
-  const key = String(moduleKey || "").toLowerCase();
-
-  if (key.includes("customer")) {
-    return <Users size={size} />;
-  }
-
-  if (key.includes("stock") || key.includes("inventory")) {
-    return <Package size={size} />;
-  }
-
-  if (key.includes("invoice") || key.includes("sales")) {
-    return <Receipt size={size} />;
-  }
-
-  if (key.includes("investment")) {
-    return <Wallet size={size} />;
-  }
-
-  if (key.includes("kareegar")) {
-    return <Hammer size={size} />;
-  }
-
-  if (key.includes("whatsapp") || key.includes("message")) {
-    return <MessageCircle size={size} />;
-  }
-
-  if (key.includes("report") || key.includes("analytic")) {
-    return <BarChart3 size={size} />;
-  }
-
-  return <Sparkles size={size} />;
+function getPlanDescription(plan) {
+  return plan?.description || plan?.short_description || "Enterprise tenant licensing package.";
 }
 
-/* ============================================================================
-   TOAST NOTIFICATION CONTAINER
-   ========================================================================== */
-
-function ToastContainer({ toasts, removeToast, theme }) {
-  return (
-    <div className="fixed top-5 right-5 z-50 flex w-full max-w-sm flex-col gap-2.5 pointer-events-none">
-      {toasts.map((toast) => (
-        <div
-          key={toast.id}
-          className="pointer-events-auto flex items-start justify-between gap-3 rounded-xl border p-3.5 shadow-lg backdrop-blur-md transition-all duration-200"
-          style={{
-            backgroundColor: theme.surface,
-            borderColor:
-              toast.type === "error"
-                ? theme.danger
-                : toast.type === "success"
-                ? theme.success
-                : theme.border,
-          }}
-        >
-          <div className="flex items-start gap-2.5">
-            {toast.type === "error" && (
-              <AlertCircle
-                size={16}
-                className="mt-0.5 shrink-0"
-                style={{ color: theme.danger }}
-              />
-            )}
-
-            {toast.type === "success" && (
-              <Check
-                size={16}
-                className="mt-0.5 shrink-0"
-                style={{ color: theme.success }}
-              />
-            )}
-
-            {toast.type === "warning" && (
-              <AlertCircle
-                size={16}
-                className="mt-0.5 shrink-0"
-                style={{ color: theme.warning }}
-              />
-            )}
-
-            {toast.type === "info" && (
-              <Sparkles
-                size={16}
-                className="mt-0.5 shrink-0"
-                style={{ color: theme.textSoft }}
-              />
-            )}
-
-            <div>
-              <p
-                className="text-[12px] font-bold"
-                style={{ color: theme.text }}
-              >
-                {toast.title}
-              </p>
-
-              <p
-                className="mt-0.5 text-[11px] leading-relaxed"
-                style={{ color: theme.textMuted }}
-              >
-                {toast.message}
-              </p>
-            </div>
-          </div>
-
-          <button
-            type="button"
-            onClick={() => removeToast(toast.id)}
-            className="rounded p-1 transition opacity-60 hover:opacity-100"
-            style={{ color: theme.textMuted }}
-          >
-            <X size={14} />
-          </button>
-        </div>
-      ))}
-    </div>
-  );
+function getPlanModules(plan) {
+  if (Array.isArray(plan?.modules)) return plan.modules;
+  if (Array.isArray(plan?.module_keys)) return plan.module_keys;
+  if (Array.isArray(plan?.included_modules)) return plan.included_modules;
+  return [];
 }
 
-/* ============================================================================
-   MAIN COMPONENT
-   ========================================================================== */
+function getPlanPrice(plan, billingCycle) {
+  const cycle = String(billingCycle || "MONTHLY").toUpperCase();
+  if (cycle === "ANNUAL" || cycle === "YEARLY") {
+    return Number(plan?.annual_price ?? plan?.yearly_price ?? plan?.price_annual ?? 0);
+  }
+  return Number(plan?.monthly_price ?? plan?.price_monthly ?? plan?.price ?? 0);
+}
 
-function AddClientPage() {
+function normalizeModule(module) {
+  if (typeof module === "string") return module;
+  return module?.key || module?.module_key || module?.name || module?.slug || "";
+}
+
+function getModuleLabel(module) {
+  const key = normalizeModule(module);
+  if (!key) return "Module";
+  return key.replace(/[_-]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function getApiError(error, fallback = "Unable to process request.") {
+  const detail = error?.response?.data?.detail;
+  if (Array.isArray(detail)) {
+    return detail.map((i) => i?.msg || i?.message || String(i)).join(", ");
+  }
+  if (typeof detail === "string") return detail;
+  if (error?.response?.data?.message) return error.response.data.message;
+  return error?.message || fallback;
+}
+
+export default function AddClientPage() {
   const navigate = useNavigate();
 
-  const [themeMode, setThemeMode] = useState(getInitialTheme);
-  const theme = THEMES[themeMode] || THEMES.light;
-
-  /* --------------------------------------------------------------------------
-     THEME SYNC
-     -------------------------------------------------------------------------- */
-
-  useEffect(() => {
-    const handleCustomChange = (e) => {
-      if (
-        e.detail &&
-        (e.detail === "dark" || e.detail === "light")
-      ) {
-        setThemeMode(e.detail);
-      }
-    };
-
-    const handleStorageChange = (e) => {
-      if (
-        e.key === "abhinava-admin-theme" &&
-        (e.newValue === "dark" || e.newValue === "light")
-      ) {
-        setThemeMode(e.newValue);
-      }
-    };
-
-    window.addEventListener(
-      "abhinava-theme-change",
-      handleCustomChange
-    );
-
-    window.addEventListener(
-      "storage",
-      handleStorageChange
-    );
-
-    return () => {
-      window.removeEventListener(
-        "abhinava-theme-change",
-        handleCustomChange
-      );
-
-      window.removeEventListener(
-        "storage",
-        handleStorageChange
-      );
-    };
-  }, []);
-
-  /* --------------------------------------------------------------------------
-     TOASTS
-     -------------------------------------------------------------------------- */
-
-  const [toasts, setToasts] = useState([]);
-
-  const addToast = useCallback(
-    (title, message, type = "info") => {
-      const id = Date.now() + Math.random();
-
-      setToasts((prev) => [
-        ...prev,
-        {
-          id,
-          title,
-          message,
-          type,
-        },
-      ]);
-
-      setTimeout(() => {
-        setToasts((prev) =>
-          prev.filter((toast) => toast.id !== id)
-        );
-      }, 4500);
-    },
-    []
-  );
-
-  const removeToast = useCallback((id) => {
-    setToasts((prev) =>
-      prev.filter((toast) => toast.id !== id)
-    );
-  }, []);
-
-  /* --------------------------------------------------------------------------
-     GENERAL STATE
-     -------------------------------------------------------------------------- */
-
-  const [currentStep, setCurrentStep] = useState(0);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-
-  /* --------------------------------------------------------------------------
-     SUBSCRIPTION STATE
-     -------------------------------------------------------------------------- */
+  const [currentStep, setCurrentStep] = useState(1);
+  const [form, setForm] = useState(DEFAULT_FORM);
 
   const [plans, setPlans] = useState([]);
+  const [plansLoading, setPlansLoading] = useState(true);
+  const [plansError, setPlansError] = useState("");
 
-  const [subscriptionLoading, setSubscriptionLoading] =
-    useState(true);
+  const [resolveLoading, setResolveLoading] = useState(false);
+  const [resolvedSubscription, setResolvedSubscription] = useState(null);
 
-  const [subscriptionError, setSubscriptionError] =
-    useState("");
-
-  const [resolvedSubscription, setResolvedSubscription] =
-    useState(null);
-
-  const [resolvingSubscription, setResolvingSubscription] =
-    useState(false);
-
-  /* --------------------------------------------------------------------------
-     REFERRAL STATE
-     -------------------------------------------------------------------------- */
-
-  const [referralCode, setReferralCode] = useState("");
   const [referralLoading, setReferralLoading] = useState(false);
   const [referralResult, setReferralResult] = useState(null);
-  const [referralError, setReferralError] = useState("");
-
-  /* --------------------------------------------------------------------------
-     DOCUMENT STATE
-     -------------------------------------------------------------------------- */
 
   const [agreementFile, setAgreementFile] = useState(null);
+  const [errors, setErrors] = useState({});
+  const [submitError, setSubmitError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
-  /* --------------------------------------------------------------------------
-     REACT HOOK FORM
-     -------------------------------------------------------------------------- */
+  const selectedPlan = useMemo(() => {
+    return plans.find((p) => String(getPlanId(p)) === String(form.subscriptionPlanId));
+  }, [plans, form.subscriptionPlanId]);
 
-  const {
-    control,
-    register,
-    handleSubmit,
-    trigger,
-    watch,
-    setValue,
-    getValues,
-    formState: { errors },
-  } = useForm({
-    mode: "onChange",
+  const selectedModules = useMemo(() => getPlanModules(selectedPlan), [selectedPlan]);
+  const displayedPrice = useMemo(() => getPlanPrice(selectedPlan, form.billingCycle), [selectedPlan, form.billingCycle]);
 
-    defaultValues: {
-      domain: "jewelry",
+  const resolvedPrice = useMemo(() => {
+    if (!resolvedSubscription) return null;
+    return Number(resolvedSubscription?.total ?? resolvedSubscription?.amount ?? 0);
+  }, [resolvedSubscription]);
 
-      /*
-       * IMPORTANT:
-       * Nothing is automatically selected for:
-       * - Plan
-       * - City Tier
-       * - Turnover Band
-       */
-      subscriptionPlanId: "",
-
-      billingCycle: "monthly",
-      subscriptionStatus: "active",
-
-      startDate: new Date()
-        .toISOString()
-        .slice(0, 10),
-    },
-  });
-
-  /* --------------------------------------------------------------------------
-     SUBSCRIPTION WATCHERS
-     -------------------------------------------------------------------------- */
-
-  const selectedPlanId = useWatch({
-    control,
-    name: "subscriptionPlanId",
-  });
-
-  const selectedBillingCycle = useWatch({
-    control,
-    name: "billingCycle",
-  });
-
-  /* --------------------------------------------------------------------------
-     SELECTED OBJECTS
-     -------------------------------------------------------------------------- */
-
-  const selectedPlan = useMemo(
-    () =>
-      plans.find(
-        (plan) =>
-          Number(plan.id) === Number(selectedPlanId)
-      ),
-    [plans, selectedPlanId]
-  );
-
-  /* --------------------------------------------------------------------------
-     LOAD SUBSCRIPTION CONFIGURATION
-     -------------------------------------------------------------------------- */
-
-  const loadSubscriptionConfiguration = async () => {
-    try {
-      setSubscriptionLoading(true);
-      setSubscriptionError("");
-
-      const response = await fetch(
-        `${API_URL}/subscriptions/plans`,
-        { credentials: "include" }
-      );
-
-      const data = await response.json().catch(() => ({}));
-
-      if (!response.ok) {
-        throw new Error(
-          typeof data.detail === "string"
-            ? data.detail
-            : "Unable to load subscription plans."
-        );
-      }
-
-      const activePlans = (
-        Array.isArray(data) ? data : data.plans || []
-      ).filter((plan) => plan.is_active !== false);
-
-      setPlans(activePlans);
-    } catch (error) {
-      console.error("Subscription configuration error:", error);
-      setSubscriptionError(
-        error instanceof Error
-          ? error.message
-          : "Unable to load subscription plans."
-      );
-      addToast(
-        "Configuration Error",
-        "Could not load subscription plans from server.",
-        "error"
-      );
-    } finally {
-      setSubscriptionLoading(false);
-    }
+  const updateField = (name, value) => {
+    setForm((prev) => ({ ...prev, [name]: value }));
+    setErrors((prev) => {
+      if (!prev[name]) return prev;
+      const next = { ...prev };
+      delete next[name];
+      return next;
+    });
+    setSubmitError("");
   };
 
   useEffect(() => {
-    loadSubscriptionConfiguration();
+    let active = true;
+    async function fetchPlans() {
+      setPlansLoading(true);
+      try {
+        const response = await axios.get(`${API_BASE_URL}/subscriptions/plans`, { withCredentials: true });
+        if (!active) return;
+        const payload = response?.data;
+        const loadedPlans = Array.isArray(payload) ? payload : payload?.plans || payload?.items || [];
+        setPlans(loadedPlans);
+        if (loadedPlans.length > 0) {
+          setForm((prev) => ({
+            ...prev,
+            subscriptionPlanId: prev.subscriptionPlanId || String(getPlanId(loadedPlans[0])),
+          }));
+        }
+      } catch (err) {
+        if (active) setPlansError(getApiError(err, "Unable to load subscription catalogue."));
+      } finally {
+        if (active) setPlansLoading(false);
+      }
+    }
+    fetchPlans();
+    return () => { active = false; };
   }, []);
 
-  /* --------------------------------------------------------------------------
-     RESOLVE SUBSCRIPTION PRICE
-     -------------------------------------------------------------------------- */
-
-  useEffect(() => {
-    const planId = Number(selectedPlanId);
-
-    if (!planId || !selectedBillingCycle) {
-      setResolvedSubscription(null);
-      setResolvingSubscription(false);
-      return;
-    }
-
-    let cancelled = false;
-
-    const resolve = async () => {
-      try {
-        setResolvingSubscription(true);
-
-        const params = new URLSearchParams({
-          subscription_plan_id: String(selectedPlanId),
-          billing_cycle: selectedBillingCycle,
-        });
-
-        const response = await fetch(
-          `${API_URL}/subscriptions/resolve?${params.toString()}`,
-          { credentials: "include" }
-        );
-
-        const data = await response.json().catch(() => ({}));
-
-        if (!response.ok) {
-          throw new Error(
-            typeof data.detail === "string"
-              ? data.detail
-              : "Unable to resolve subscription."
-          );
-        }
-
-        if (!cancelled) {
-          setResolvedSubscription(data);
-          setReferralResult(null);
-          setReferralError("");
-        }
-      } catch (error) {
-        console.error("Subscription resolution error:", error);
-        if (!cancelled) setResolvedSubscription(null);
-      } finally {
-        if (!cancelled) setResolvingSubscription(false);
+  const validateStep = (step) => {
+    const errs = {};
+    if (step === 1) {
+      if (!clean(form.businessName)) errs.businessName = "Business name is required.";
+      if (!clean(form.businessEmail) || !/^\S+@\S+\.\S+$/.test(form.businessEmail)) {
+        errs.businessEmail = "Valid commercial email required.";
       }
-    };
-
-    resolve();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [selectedPlanId, selectedBillingCycle]);
-
-  /* --------------------------------------------------------------------------
-     REFERRAL CODE
-     -------------------------------------------------------------------------- */
-
-  const applyReferralCode = async () => {
-    const code = clean(referralCode);
-
-    if (!code) {
-      setReferralError("Enter a promo code.");
-      setReferralResult(null);
-      return;
-    }
-
-    if (!selectedPlanId || !selectedBillingCycle) {
-      addToast(
-        "Parameters Incomplete",
-        "Select a subscription plan and billing cycle first.",
-        "warning"
-      );
-      return;
-    }
-
-    try {
-      setReferralLoading(true);
-      setReferralError("");
-      setReferralResult(null);
-
-      const params = new URLSearchParams({
-        code,
-        subscription_plan_id: String(selectedPlanId),
-        billing_cycle: selectedBillingCycle,
-      });
-
-      const response = await fetch(
-        `${API_URL}/referrals/validate?${params.toString()}`,
-        {
-          credentials: "include",
-        }
-      );
-
-      const data =
-        await response
-          .json()
-          .catch(() => ({}));
-
-      if (!response.ok) {
-        throw new Error(
-          typeof data.detail === "string"
-            ? data.detail
-            : "Invalid referral code."
-        );
+      if (!clean(form.ownerName)) errs.ownerName = "Owner authority name required.";
+      if (!clean(form.ownerEmail) || !/^\S+@\S+\.\S+$/.test(form.ownerEmail)) {
+        errs.ownerEmail = "Valid owner email required.";
       }
-
-      setReferralResult(data);
-
-      addToast(
-        "Discount Applied",
-        `Applied ${data.code} successfully!`,
-        "success"
-      );
-    } catch (error) {
-      console.error(
-        "Referral validation error:",
-        error
-      );
-
-      const msg =
-        error instanceof Error
-          ? error.message
-          : "Invalid promo code.";
-
-      setReferralError(msg);
-
-      addToast(
-        "Validation Failed",
-        msg,
-        "error"
-      );
-    } finally {
-      setReferralLoading(false);
+      if (!clean(form.pan)) errs.pan = "PAN identifier is mandatory.";
     }
+    if (step === 2) {
+      if (!form.subscriptionPlanId) errs.subscriptionPlanId = "Select a plan tier.";
+      if (!form.billingCycle) errs.billingCycle = "Billing frequency required.";
+    }
+    if (step === 3) {
+      if (!clean(form.firebaseProjectId)) errs.firebaseProjectId = "Firebase container ID required.";
+    }
+    setErrors(errs);
+    return Object.keys(errs).length === 0;
   };
 
-  /* --------------------------------------------------------------------------
-     PRICING
-     -------------------------------------------------------------------------- */
-
-  const pricing = useMemo(() => {
-    const basePrice = Number(
-      resolvedSubscription?.price_before_tax || 0
-    );
-
-    const taxRate = Number(
-      resolvedSubscription?.tax_rate ?? 18
-    );
-
-    const discountAmount = Number(
-      referralResult?.discount_amount || 0
-    );
-
-    const taxableAmount = Math.max(
-      0,
-      basePrice - discountAmount
-    );
-
-    const taxAmount =
-      taxableAmount * (taxRate / 100);
-
-    const total =
-      taxableAmount + taxAmount;
-
-    return {
-      basePrice,
-      taxRate,
-      discountAmount,
-      taxableAmount,
-      taxAmount,
-      total,
-    };
-  }, [
-    resolvedSubscription,
-    referralResult,
-  ]);
-
-  /* --------------------------------------------------------------------------
-     MODULES
-     -------------------------------------------------------------------------- */
-
-  const resolvedModules =
-    resolvedSubscription?.modules ||
-    selectedPlan?.modules ||
-    [];
-
-  /* --------------------------------------------------------------------------
-     AGREEMENT FILE
-     -------------------------------------------------------------------------- */
-
-  const handleAgreementChange = (event) => {
-    const file =
-      event.target.files?.[0] || null;
-
-    setAgreementFile(file);
-
-    if (file) {
-      addToast(
-        "Document Staged",
-        `Selected: ${file.name}`,
-        "info"
-      );
-    }
+  const isStepCompleted = (stepId) => {
+    if (stepId === 1) return Boolean(clean(form.businessName) && clean(form.businessEmail) && clean(form.pan));
+    if (stepId === 2) return Boolean(form.subscriptionPlanId && form.billingCycle);
+    if (stepId === 3) return Boolean(clean(form.firebaseProjectId));
+    return false;
   };
 
-  /* --------------------------------------------------------------------------
-     SUBMIT
-     -------------------------------------------------------------------------- */
+  const goNext = () => {
+    if (!validateStep(currentStep)) return;
+    if (currentStep < 5) setCurrentStep((prev) => prev + 1);
+  };
 
-  const onSubmit = async (data) => {
-    if (!resolvedSubscription) {
-      addToast(
-        "Pricing Missing",
-        "Please wait for subscription pricing to finish loading.",
-        "error"
-      );
+  const goBack = () => {
+    if (currentStep > 1) setCurrentStep((prev) => prev - 1);
+    else navigate("/admin/clients");
+  };
 
-      return;
+  const handleCreateClient = async () => {
+    for (let step = 1; step <= 3; step++) {
+      if (!validateStep(step)) {
+        setCurrentStep(step);
+        return;
+      }
     }
 
-    if (referralCode && !referralResult) {
-      addToast(
-        "Unverified Referral",
-        "Apply the referral code before proceeding.",
-        "warning"
-      );
-
-      return;
-    }
-
-    setIsSubmitting(true);
+    setSubmitting(true);
+    setSubmitError("");
 
     try {
-      const modules = {};
+      const payload = {
+        business_name: clean(form.businessName),
+        legal_business_name: clean(form.legalBusinessName),
+        business_type: clean(form.businessType),
+        country: clean(form.country),
+        business_email: clean(form.businessEmail),
+        business_phone: clean(form.businessPhone),
+        owner_name: clean(form.ownerName),
+        owner_email: clean(form.ownerEmail),
+        owner_phone: clean(form.ownerPhone),
+        owner_role: clean(form.ownerRole),
+        pan: clean(form.pan).toUpperCase(),
+        gstin: clean(form.gstin).toUpperCase() || null,
+        logo_url: clean(form.logoUrl) || null,
+        welcome_message: clean(form.welcomeMessage) || null,
 
-      resolvedModules.forEach((module) => {
-        const key = getModuleKey(module);
+        plan: selectedPlan ? getPlanName(selectedPlan) : "",
+        billing_cycle: form.billingCycle,
+        subscription_status: form.subscriptionStatus,
+        start_date: form.startDate,
 
-        if (key) {
-          modules[key] = true;
-        }
-      });
+        subscription_plan_id: Number(form.subscriptionPlanId),
 
-      const clientData = {
-        business_name:
-          data.businessName,
-
-        legal_business_name:
-          data.legalBusinessName,
-
-        business_type:
-          data.businessType,
-
-        country:
-          data.country,
-
-        business_email:
-          data.businessEmail,
-
-        business_phone:
-          data.businessPhone,
-
-        owner_name:
-          data.ownerName,
-
-        owner_email:
-          data.ownerEmail,
-
-        owner_phone:
-          data.ownerPhone,
-
-        owner_role:
-          data.ownerRole,
-
-        pan:
-          data.pan,
-
-        gstin:
-          data.gstin || null,
-
-        plan:
-          selectedPlan?.name ||
-          data.plan ||
-          "",
-
-        billing_cycle:
-          data.billingCycle,
-
-        subscription_status:
-          data.subscriptionStatus,
-
-        start_date:
-          data.startDate,
-
-        subscription_plan_id:
-          Number(data.subscriptionPlanId),
-
-
-        referral_code:
-          referralResult?.code || null,
-
-        domain:
-          data.domain || null,
-
-        firebase_project_id:
-          data.firebaseProjectId,
-
-        modules,
+        firebase_project_id: clean(form.firebaseProjectId),
       };
 
-      const response = await fetch(
-        `${API_URL}/clients`,
-        {
-          method: "POST",
+      const response = await axios.post(`${API_BASE_URL}/clients`, payload, {
+        withCredentials: true,
+        headers: { "Content-Type": "application/json" },
+      });
 
-          credentials: "include",
-
-          headers: {
-            "Content-Type":
-              "application/json",
-          },
-
-          body: JSON.stringify(
-            clientData
-          ),
-        }
-      );
-
-      const result =
-        await response.json();
-
-      if (!response.ok) {
-        let message =
-          "Unable to create client.";
-
-        if (
-          Array.isArray(
-            result?.detail
-          )
-        ) {
-          message = result.detail
-            .map((item) => {
-              const location =
-                Array.isArray(item.loc)
-                  ? item.loc.join(" → ")
-                  : "";
-
-              return `${
-                location
-                  ? `${location}: `
-                  : ""
-              }${
-                item.msg ||
-                "Invalid value"
-              }`;
-            })
-            .join("\n");
-        } else if (
-          typeof result?.detail ===
-          "string"
-        ) {
-          message =
-            result.detail;
-        }
-
-        throw new Error(
-          message
-        );
-      }
-
-      addToast(
-        "Client Created",
-        `${data.businessName} has been initialized successfully.`,
-        "success"
-      );
-
-      setTimeout(() => {
-        navigate(
-          "/admin/clients",
-          {
-            state: {
-              successMessage:
-                `${data.businessName} created successfully.`,
-            },
-          }
-        );
-      }, 900);
-    } catch (error) {
-      console.error(
-        "Client creation failed:",
-        error
-      );
-
-      const msg =
-        error instanceof Error
-          ? error.message
-          : "An error occurred while creating client.";
-
-      addToast(
-        "Provisioning Failed",
-        msg,
-        "error"
-      );
+      const resId = response?.data?.client?.id ?? response?.data?.id;
+      navigate(resId ? `/admin/clients/${resId}` : "/admin/clients", {
+        state: { successMessage: `${form.businessName} initialized successfully.` },
+      });
+    } catch (err) {
+      setSubmitError(getApiError(err, "Provisioning pipeline rejected payload."));
     } finally {
-      setIsSubmitting(false);
+      setSubmitting(false);
     }
   };
-
-  /* --------------------------------------------------------------------------
-     NAVIGATION
-     -------------------------------------------------------------------------- */
-
-  const handleNext = async () => {
-    /*
-     * Subscription step requires an actual
-     * resolved subscription.
-     */
-    if (
-      currentStep === 3 &&
-      !resolvedSubscription
-    ) {
-      addToast(
-        "Subscription Incomplete",
-        "Please select a subscription plan and billing cycle with valid pricing.",
-        "error"
-      );
-
-      return;
-    }
-
-    if (currentStep === 5) {
-      return;
-    }
-
-    const fields =
-      STEPS[currentStep].fields;
-
-    const valid =
-      fields.length === 0
-        ? true
-        : await trigger(fields);
-
-    if (!valid) {
-      addToast(
-        "Validation Warning",
-        "Please fill all mandatory fields properly.",
-        "warning"
-      );
-
-      return;
-    }
-
-    setCurrentStep(
-      (prev) =>
-        Math.min(
-          prev + 1,
-          STEPS.length - 1
-        )
-    );
-  };
-
-  const handlePrev = () => {
-    setCurrentStep(
-      (prev) =>
-        Math.max(prev - 1, 0)
-    );
-  };
-
-  /* --------------------------------------------------------------------------
-     GENERAL FORM WATCH
-     -------------------------------------------------------------------------- */
-
-  const watchedData = watch();
-
-  const submittedDocuments = [
-    watchedData.pan
-      ? "PAN"
-      : null,
-
-    watchedData.gstin
-      ? "GSTIN"
-      : null,
-
-    watchedData.aadhaar
-      ? "Aadhaar Card"
-      : null,
-
-    agreementFile
-      ? "Client Agreement"
-      : null,
-  ].filter(Boolean);
-
-  const pendingDocuments = [
-    !watchedData.gstin
-      ? "GSTIN"
-      : null,
-
-    !watchedData.aadhaar
-      ? "Aadhaar Card"
-      : null,
-
-    !agreementFile
-      ? "Client Agreement"
-      : null,
-  ].filter(Boolean);
-
-  /* ==========================================================================
-     RENDER
-     ======================================================================== */
 
   return (
-    <div
-      className="abhinava-scroll relative flex h-full w-full flex-col gap-4 overflow-y-auto p-4 sm:p-6 lg:p-8"
-      style={{
-        backgroundColor:
-          theme.background,
-        color: theme.text,
-      }}
-    >
-      <ToastContainer
-        toasts={toasts}
-        removeToast={removeToast}
-        theme={theme}
-      />
+    <div className="h-[calc(100vh-4rem)] w-full flex flex-col bg-[#F8FAFC] font-sans text-slate-900 antialiased overflow-hidden select-none">
+      {/* -------------------------------------------------------------
+          MAIN SPLIT CONSOLE: Strictly locks remaining height
+      ------------------------------------------------------------- */}
+      <div className="flex-1 min-h-0 w-full flex flex-col lg:flex-row overflow-hidden">
+        
+        {/* LEFT 30%: MASTER STAGE DECK */}
+        <aside className="shrink-0 w-full lg:w-80 border-b lg:border-b-0 lg:border-r border-slate-200/80 bg-white p-4 sm:p-6 flex flex-col justify-between overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+          <div className="space-y-6">
+            <div>
+              <p className="text-[10px] font-mono font-bold tracking-widest text-slate-400 uppercase">
+                Step Sequence
+              </p>
+              <h2 className="text-base font-bold text-slate-900 mt-0.5">
+                Onboarding Steps
+              </h2>
+            </div>
 
-      {/* HEADER SECTION */}
+            {/* Vertical Phase List */}
+            <div className="space-y-1.5">
+              {STAGES.map((stage) => {
+                const Icon = stage.icon;
+                const active = currentStep === stage.id;
+                const completed = isStepCompleted(stage.id);
 
-      <div className="flex shrink-0 items-center justify-between">
-        <div className="text-right">
-          <p
-            className="text-[10px] font-bold uppercase tracking-wider"
-            style={{
-              color: theme.textMuted,
-            }}
-          >
-            Step {currentStep + 1} of{" "}
-            {STEPS.length}
-          </p>
-
-          <p
-            className="text-xs font-bold"
-            style={{
-              color: theme.text,
-            }}
-          >
-            {STEPS[currentStep].title}
-          </p>
-        </div>
-      </div>
-
-      {/* STEPPER PROGRESS */}
-
-      <div className="hidden shrink-0 sm:block">
-        <div
-          className="flex items-center justify-between rounded-xl border p-1.5 shadow-sm"
-          style={{
-            backgroundColor:
-              theme.surface,
-            borderColor:
-              theme.border,
-          }}
-        >
-          {STEPS.map(
-            (step, index) => {
-              const Icon = step.icon;
-
-              const isActive =
-                currentStep === index;
-
-              const isCompleted =
-                currentStep > index;
-
-              return (
-                <div
-                  key={step.id}
-                  className="flex flex-1 items-center justify-center gap-2.5 rounded-lg px-3 py-2 transition"
-                  style={{
-                    backgroundColor:
-                      isActive
-                        ? theme.surfaceAlt
-                        : "transparent",
-
-                    color: isActive
-                      ? theme.text
-                      : isCompleted
-                      ? theme.success
-                      : theme.textLight,
-                  }}
-                >
-                  <div
-                    className="flex h-6 w-6 items-center justify-center rounded-md text-[11px] font-bold transition-all"
-                    style={{
-                      backgroundColor:
-                        isActive
-                          ? theme.primary
-                          : isCompleted
-                          ? theme.successSoft
-                          : theme.surfaceAlt,
-
-                      color: isActive
-                        ? theme.primaryText
-                        : isCompleted
-                        ? theme.success
-                        : theme.textMuted,
+                return (
+                  <button
+                    key={stage.id}
+                    type="button"
+                    onClick={() => {
+                      if (stage.id <= currentStep || isStepCompleted(stage.id - 1)) {
+                        setCurrentStep(stage.id);
+                      }
                     }}
+                    className={`w-full flex items-center justify-between p-3 rounded-xl border text-left transition-all duration-150 ${
+                      active
+                        ? "border-slate-900 bg-slate-900 text-white shadow-2xs"
+                        : "border-slate-200/70 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50"
+                    }`}
                   >
-                    {isCompleted ? (
-                      <Check
-                        size={13}
-                        strokeWidth={2.5}
-                      />
-                    ) : (
-                      <Icon size={13} />
-                    )}
-                  </div>
-
-                  <div className="hidden text-left lg:block">
-                    <p
-                      className="text-[11px] font-bold"
-                      style={{
-                        color: isActive
-                          ? theme.text
-                          : theme.textMuted,
-                      }}
-                    >
-                      {step.title}
-                    </p>
-
-                    <p
-                      className="text-[9px] uppercase tracking-wider"
-                      style={{
-                        color:
-                          theme.textLight,
-                      }}
-                    >
-                      {step.subtitle}
-                    </p>
-                  </div>
-                </div>
-              );
-            }
-          )}
-        </div>
-      </div>
-
-      {/* FORM WORKSPACE */}
-
-      <div
-        className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border shadow-sm"
-        style={{
-          backgroundColor:
-            theme.surface,
-          borderColor:
-            theme.border,
-        }}
-      >
-        <form
-          onSubmit={handleSubmit(
-            onSubmit
-          )}
-          onKeyDown={(event) => {
-            if (
-              event.key === "Enter" &&
-              currentStep !==
-                STEPS.length - 1
-            ) {
-              event.preventDefault();
-            }
-          }}
-          className="abhinava-scroll flex h-full flex-col overflow-y-auto p-4 sm:p-6"
-        >
-          {/* STEP CONTROLS */}
-
-          <div
-            className="mb-5 flex shrink-0 items-center justify-between border-b pb-4"
-            style={{
-              borderColor:
-                theme.border,
-            }}
-          >
-            <button
-              type="button"
-              onClick={handlePrev}
-              disabled={
-                currentStep === 0 ||
-                isSubmitting
-              }
-              className={`flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-xs font-semibold transition ${
-                currentStep === 0
-                  ? "invisible"
-                  : "border"
-              }`}
-              style={{
-                backgroundColor:
-                  theme.surfaceAlt,
-                borderColor:
-                  theme.border,
-                color:
-                  theme.textSoft,
-              }}
-            >
-              <ChevronLeft size={14} />
-              Back
-            </button>
-
-            {currentStep <
-            STEPS.length - 1 ? (
-              <button
-                type="button"
-                onClick={handleNext}
-                className="flex items-center gap-1.5 rounded-lg px-4 py-1.5 text-xs font-bold shadow-sm transition hover:opacity-90 active:scale-[0.99]"
-                style={{
-                  backgroundColor:
-                    theme.primary,
-                  color:
-                    theme.primaryText,
-                }}
-              >
-                Continue
-                <ChevronRight
-                  size={14}
-                />
-              </button>
-            ) : (
-              <button
-                type="submit"
-                disabled={
-                  isSubmitting ||
-                  !resolvedSubscription
-                }
-                className="flex items-center gap-2 rounded-lg px-5 py-2 text-xs font-bold shadow-sm transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-                style={{
-                  backgroundColor:
-                    theme.primary,
-                  color:
-                    theme.primaryText,
-                }}
-              >
-                {isSubmitting ? (
-                  <>
-                    <RefreshCw
-                      size={13}
-                      className="animate-spin"
-                    />
-                    Provisioning...
-                  </>
-                ) : (
-                  <>
-                    Register &
-                    Initialize
-                    <Check
-                      size={14}
-                      strokeWidth={2.5}
-                    />
-                  </>
-                )}
-              </button>
-            )}
-          </div>
-
-          {/* ==================================================================
-              STEP 0: BUSINESS DETAILS
-              ================================================================== */}
-
-          {currentStep === 0 && (
-            <Section
-              title="Business Identification"
-              description="Establish the legal entity identity and corporate contact channels."
-              theme={theme}
-            >
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <InputField
-                  label="Display Business Name"
-                  placeholder="e.g. Acme Jewels"
-                  required
-                  theme={theme}
-                  {...register(
-                    "businessName",
-                    {
-                      required:
-                        "Business name is required.",
-                    }
-                  )}
-                  error={
-                    errors.businessName
-                  }
-                />
-
-                <InputField
-                  label="Registered Corporate Name"
-                  placeholder="e.g. Acme Jewels Private Limited"
-                  required
-                  theme={theme}
-                  {...register(
-                    "legalBusinessName",
-                    {
-                      required:
-                        "Legal business name is required.",
-                    }
-                  )}
-                  error={
-                    errors.legalBusinessName
-                  }
-                />
-
-                <SelectField
-                  label="Entity Legal Structure"
-                  required
-                  theme={theme}
-                  {...register(
-                    "businessType",
-                    {
-                      required:
-                        "Business type is required.",
-                    }
-                  )}
-                  error={
-                    errors.businessType
-                  }
-                >
-                  <option value="">
-                    Select structure
-                  </option>
-
-                  <option value="proprietorship">
-                    Sole Proprietorship
-                  </option>
-
-                  <option value="partnership">
-                    Partnership Firm
-                  </option>
-
-                  <option value="llp">
-                    Limited Liability Partnership
-                    (LLP)
-                  </option>
-
-                  <option value="private_limited">
-                    Private Limited Company
-                  </option>
-                </SelectField>
-
-                <SelectField
-                  label="Operating Jurisdiction"
-                  required
-                  theme={theme}
-                  {...register(
-                    "country",
-                    {
-                      required:
-                        "Country is required.",
-                    }
-                  )}
-                  error={
-                    errors.country
-                  }
-                >
-                  <option value="India">
-                    India (IN)
-                  </option>
-
-                  <option value="US">
-                    United States (US)
-                  </option>
-                </SelectField>
-
-                <InputField
-                  label="Primary Billing Email"
-                  type="email"
-                  placeholder="accounts@acme.com"
-                  required
-                  theme={theme}
-                  {...register(
-                    "businessEmail",
-                    {
-                      required:
-                        "Business email is required.",
-
-                      pattern: {
-                        value:
-                          /^\S+@\S+$/i,
-                        message:
-                          "Invalid email syntax.",
-                      },
-                    }
-                  )}
-                  error={
-                    errors.businessEmail
-                  }
-                />
-
-                <InputField
-                  label="Business Contact Number"
-                  type="tel"
-                  placeholder="+91 98765 43210"
-                  required
-                  theme={theme}
-                  {...register(
-                    "businessPhone",
-                    {
-                      required:
-                        "Business phone is required.",
-                    }
-                  )}
-                  error={
-                    errors.businessPhone
-                  }
-                />
-              </div>
-            </Section>
-          )}
-
-          {/* ==================================================================
-              STEP 1: PRIMARY CONTACT
-              ================================================================== */}
-
-          {currentStep === 1 && (
-            <Section
-              title="Authorizing Authority"
-              description="Primary contact credentials for tenant administrative ownership."
-              theme={theme}
-            >
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <InputField
-                  label="Full Legal Name"
-                  placeholder="Contact legal name"
-                  required
-                  theme={theme}
-                  {...register(
-                    "ownerName",
-                    {
-                      required:
-                        "Owner name is required.",
-                    }
-                  )}
-                  error={
-                    errors.ownerName
-                  }
-                />
-
-                <InputField
-                  label="Direct Work Email"
-                  type="email"
-                  placeholder="admin@acme.com"
-                  required
-                  theme={theme}
-                  {...register(
-                    "ownerEmail",
-                    {
-                      required:
-                        "Owner email is required.",
-
-                      pattern: {
-                        value:
-                          /^\S+@\S+$/i,
-                        message:
-                          "Invalid email syntax.",
-                      },
-                    }
-                  )}
-                  error={
-                    errors.ownerEmail
-                  }
-                />
-
-                <InputField
-                  label="Direct Contact Number"
-                  type="tel"
-                  placeholder="+91 98765 43210"
-                  required
-                  theme={theme}
-                  {...register(
-                    "ownerPhone",
-                    {
-                      required:
-                        "Owner phone is required.",
-                    }
-                  )}
-                  error={
-                    errors.ownerPhone
-                  }
-                />
-
-                <SelectField
-                  label="Account Authorization"
-                  theme={theme}
-                  {...register(
-                    "ownerRole"
-                  )}
-                >
-                  <option value="owner">
-                    Primary Owner / Director
-                  </option>
-
-                  <option value="admin">
-                    System Administrator
-                  </option>
-                </SelectField>
-              </div>
-            </Section>
-          )}
-
-          {/* ==================================================================
-              STEP 2: DOCUMENTS
-              ================================================================== */}
-
-          {currentStep === 2 && (
-            <Section
-              title="Statutory Verification"
-              description="Record official verification identifiers for fiscal audit compliance."
-              theme={theme}
-            >
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <InputField
-                  label="Permanent Account Number (PAN)"
-                  placeholder="ABCDE1234F"
-                  required
-                  theme={theme}
-                  {...register(
-                    "pan",
-                    {
-                      required:
-                        "PAN is mandatory.",
-
-                      pattern: {
-                        value:
-                          /^[A-Z]{5}[0-9]{4}[A-Z]$/,
-
-                        message:
-                          "Invalid PAN structure (Format: ABCDE1234F).",
-                      },
-                    }
-                  )}
-                  error={
-                    errors.pan
-                  }
-                  className="uppercase font-mono"
-                />
-
-                <InputField
-                  label="Goods & Services Tax Identifier (GSTIN)"
-                  placeholder="22AAAAA0000A1Z5"
-                  theme={theme}
-                  {...register("gstin")}
-                  className="uppercase font-mono"
-                />
-
-                <InputField
-                  label="National Identity (Aadhaar / Passport)"
-                  placeholder="12-digit number"
-                  theme={theme}
-                  {...register(
-                    "aadhaar"
-                  )}
-                  className="font-mono"
-                />
-
-                <div>
-                  <FieldLabel theme={theme}>
-                    Client Agreement
-                    Documentation
-                  </FieldLabel>
-
-                  <label
-                    className="mt-1 flex min-h-[42px] cursor-pointer items-center justify-between gap-3 rounded-lg border border-dashed px-3.5 py-2.5 transition"
-                    style={{
-                      backgroundColor:
-                        theme.surfaceAlt,
-
-                      borderColor:
-                        theme.border,
-                    }}
-                  >
-                    <div className="flex min-w-0 items-center gap-2.5">
-                      <Upload
-                        size={14}
-                        style={{
-                          color:
-                            theme.textMuted,
-                        }}
-                      />
-
-                      <span
-                        className="truncate text-xs font-semibold"
-                        style={{
-                          color:
-                            theme.text,
-                        }}
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div
+                        className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${
+                          active
+                            ? "bg-slate-800 text-white"
+                            : completed
+                            ? "bg-emerald-50 text-emerald-700 border border-emerald-200/60"
+                            : "bg-slate-100 text-slate-400"
+                        }`}
                       >
-                        {agreementFile
-                          ? agreementFile.name
-                          : "Attach signed agreement"}
-                      </span>
+                        {completed && !active ? (
+                          <Check size={13} strokeWidth={2.5} />
+                        ) : (
+                          <Icon size={14} />
+                        )}
+                      </div>
+
+                      <div className="min-w-0">
+                        <p className={`text-xs font-bold truncate ${active ? "text-white" : "text-slate-900"}`}>
+                          {stage.title}
+                        </p>
+                        <p className={`text-[10.5px] truncate font-mono ${active ? "text-slate-300" : "text-slate-400"}`}>
+                          {stage.subtitle}
+                        </p>
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </aside>
+
+        {/* RIGHT 70%: DEDICATED STAGE VIEWPORT (INTERNAL SCROLL ONLY) */}
+        <main className="flex-1 min-h-0 flex flex-col justify-between overflow-hidden bg-[#F8FAFC]">
+          
+          {/* Scrollable Stage Content with Invisible Scrollbars */}
+          <div className="flex-1 min-h-0 overflow-y-auto p-4 sm:p-8 lg:p-10 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+            <div className="max-w-2xl mx-auto space-y-6">
+              
+              {/* Context Banner */}
+              <div className="flex items-center justify-between border-b border-slate-200/80 pb-4">
+                <div>
+                  <span className="text-[10.5px] font-mono font-bold tracking-widest text-slate-400 uppercase">
+                    Phase {currentStep} of {STAGES.length}
+                  </span>
+                  <h3 className="text-xl font-bold tracking-tight text-slate-900 mt-0.5">
+                    {STAGES[currentStep - 1].title}
+                  </h3>
+                </div>
+
+                <div className="flex items-center gap-1.5 text-xs font-mono font-semibold text-slate-500 bg-white border border-slate-200 px-2.5 py-1 rounded-md">
+                  <span>STAGE STATUS:</span>
+                  <span className={isStepCompleted(currentStep) ? "text-emerald-700" : "text-amber-700"}>
+                    {isStepCompleted(currentStep) ? "COMPLETE" : "INPUT REQUIRED"}
+                  </span>
+                </div>
+              </div>
+
+              {/* Submission Error Prompt */}
+              {submitError && (
+                <div className="rounded-xl border border-rose-200 bg-rose-50/70 p-3.5 flex items-start gap-2.5 text-xs text-rose-800 font-mono">
+                  <CircleAlert size={16} className="text-rose-600 shrink-0 mt-0.5" />
+                  <p>{submitError}</p>
+                </div>
+              )}
+
+              {/* -------------------------------------------------------------
+                  STEP 1: IDENTITY & OPERATIONS
+              ------------------------------------------------------------- */}
+              {currentStep === 1 && (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-[11px] font-mono font-bold uppercase text-slate-700 mb-1">
+                        Business Name *
+                      </label>
+                      <input
+                        type="text"
+                        value={form.businessName}
+                        onChange={(e) => updateField("businessName", e.target.value)}
+                        placeholder="e.g. Shridhara Jewellers"
+                        className="w-full h-9 rounded-lg border border-slate-200 bg-white px-3 text-xs text-slate-900 outline-none focus:border-slate-400"
+                      />
+                      {errors.businessName && <p className="text-[10.5px] text-rose-600 mt-1">{errors.businessName}</p>}
                     </div>
 
-                    <input
-                      type="file"
-                      accept=".pdf,.doc,.docx"
-                      onChange={
-                        handleAgreementChange
-                      }
-                      className="hidden"
-                    />
-                  </label>
-                </div>
-              </div>
-            </Section>
-          )}
-
-          {/* ==================================================================
-              STEP 3: SUBSCRIPTION
-              ================================================================== */}
-
-          {currentStep === 3 && (
-            <div className="space-y-5">
-              {/* PLAN SELECTION */}
-
-              <Section
-                title="Service Tier Selection"
-                description="Choose the subscription plan to provision workspace capability."
-                theme={theme}
-              >
-                {subscriptionLoading ? (
-                  <LoadingBox
-                    text="Loading available plans..."
-                    theme={theme}
-                  />
-                ) : subscriptionError ? (
-                  <ErrorBox
-                    message={
-                      subscriptionError
-                    }
-                    onRetry={
-                      loadSubscriptionConfiguration
-                    }
-                    theme={theme}
-                  />
-                ) : plans.length === 0 ? (
-                  <div
-                    className="rounded-lg border border-dashed p-4 text-center text-xs"
-                    style={{
-                      borderColor:
-                        theme.border,
-
-                      color:
-                        theme.textMuted,
-                    }}
-                  >
-                    No active subscription
-                    plans are available.
+                    <div>
+                      <label className="block text-[11px] font-mono font-bold uppercase text-slate-700 mb-1">
+                        Commercial Email *
+                      </label>
+                      <input
+                        type="email"
+                        value={form.businessEmail}
+                        onChange={(e) => updateField("businessEmail", e.target.value)}
+                        placeholder="contact@enterprise.com"
+                        className="w-full h-9 rounded-lg border border-slate-200 bg-white px-3 text-xs text-slate-900 outline-none focus:border-slate-400"
+                      />
+                      {errors.businessEmail && <p className="text-[10.5px] text-rose-600 mt-1">{errors.businessEmail}</p>}
+                    </div>
                   </div>
-                ) : (
-                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                    {plans.map((plan) => {
-                      const selected =
-                        Number(
-                          selectedPlanId
-                        ) ===
-                        Number(plan.id);
 
-                      const planModules =
-                        plan.modules || [];
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-[11px] font-mono font-bold uppercase text-slate-700 mb-1">
+                        Managing Authority / Owner *
+                      </label>
+                      <input
+                        type="text"
+                        value={form.ownerName}
+                        onChange={(e) => updateField("ownerName", e.target.value)}
+                        placeholder="Proprietor Full Name"
+                        className="w-full h-9 rounded-lg border border-slate-200 bg-white px-3 text-xs text-slate-900 outline-none focus:border-slate-400"
+                      />
+                      {errors.ownerName && <p className="text-[10.5px] text-rose-600 mt-1">{errors.ownerName}</p>}
+                    </div>
 
+                    <div>
+                      <label className="block text-[11px] font-mono font-bold uppercase text-slate-700 mb-1">
+                        Owner Personal Email *
+                      </label>
+                      <input
+                        type="email"
+                        value={form.ownerEmail}
+                        onChange={(e) => updateField("ownerEmail", e.target.value)}
+                        placeholder="owner@domain.com"
+                        className="w-full h-9 rounded-lg border border-slate-200 bg-white px-3 text-xs text-slate-900 outline-none focus:border-slate-400"
+                      />
+                      {errors.ownerEmail && <p className="text-[10.5px] text-rose-600 mt-1">{errors.ownerEmail}</p>}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-[11px] font-mono font-bold uppercase text-slate-700 mb-1">
+                        PAN Tax Registration *
+                      </label>
+                      <input
+                        type="text"
+                        value={form.pan}
+                        onChange={(e) => updateField("pan", e.target.value.toUpperCase())}
+                        placeholder="ABCDE1234F"
+                        className="w-full h-9 rounded-lg border border-slate-200 bg-white px-3 text-xs text-slate-900 font-mono outline-none focus:border-slate-400"
+                      />
+                      {errors.pan && <p className="text-[10.5px] text-rose-600 mt-1">{errors.pan}</p>}
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-mono font-bold uppercase text-slate-700 mb-1">
+                        GSTIN Identification
+                      </label>
+                      <input
+                        type="text"
+                        value={form.gstin}
+                        onChange={(e) => updateField("gstin", e.target.value.toUpperCase())}
+                        placeholder="29AAAAA0000A1Z5"
+                        className="w-full h-9 rounded-lg border border-slate-200 bg-white px-3 text-xs text-slate-900 font-mono outline-none focus:border-slate-400"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* -------------------------------------------------------------
+                  STEP 2: LICENSING & BILLING
+              ------------------------------------------------------------- */}
+              {currentStep === 2 && (
+                <div className="space-y-5">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    {plans.map((p) => {
+                      const id = getPlanId(p);
+                      const isSel = String(id) === String(form.subscriptionPlanId);
                       return (
-                        <button
-                          key={plan.id}
-                          type="button"
-                          onClick={() => {
-                            const planId =
-                              String(
-                                plan.id
-                              );
-
-                            setValue(
-                              "subscriptionPlanId",
-                              planId,
-                              {
-                                shouldDirty:
-                                  true,
-
-                                shouldTouch:
-                                  true,
-
-                                shouldValidate:
-                                  true,
-                              }
-                            );
-
-                            /*
-                             * Changing plan invalidates
-                             * the previous resolved price.
-                             */
-                            setResolvedSubscription(
-                              null
-                            );
-
-                            setReferralResult(
-                              null
-                            );
-
-                            setReferralError(
-                              ""
-                            );
-                          }}
-                          className="rounded-xl border p-4 text-left transition-all"
-                          style={{
-                            backgroundColor:
-                              selected
-                                ? theme.surfaceAlt
-                                : theme.surface,
-
-                            borderColor:
-                              selected
-                                ? theme.text
-                                : theme.border,
-                          }}
+                        <div
+                          key={id}
+                          onClick={() => updateField("subscriptionPlanId", String(id))}
+                          className={`p-4 rounded-xl border text-left cursor-pointer transition-all ${
+                            isSel ? "border-slate-900 bg-white shadow-xs" : "border-slate-200 bg-[#FAFAFA] hover:border-slate-300"
+                          }`}
                         >
-                          <div className="flex items-start justify-between gap-3">
-                            <div>
-                              <p
-                                className="text-xs font-bold"
-                                style={{
-                                  color:
-                                    theme.text,
-                                }}
-                              >
-                                {plan.name}
-                              </p>
-
-                              <p
-                                className="text-[10px] font-bold uppercase tracking-wider"
-                                style={{
-                                  color:
-                                    theme.textMuted,
-                                }}
-                              >
-                                {plan.main_plan}
-                              </p>
-                            </div>
-
-                            {selected && (
-                              <div
-                                className="flex h-5 w-5 items-center justify-center rounded-full"
-                                style={{
-                                  backgroundColor:
-                                    theme.text,
-
-                                  color:
-                                    theme.surface,
-                                }}
-                              >
-                                <Check
-                                  size={12}
-                                  strokeWidth={
-                                    3
-                                  }
-                                />
-                              </div>
-                            )}
+                          <div className="flex justify-between items-start">
+                            <span className="text-xs font-bold text-slate-900">{getPlanName(p)}</span>
+                            {isSel && <Check size={14} className="text-slate-900" />}
                           </div>
-
-                          <div className="mt-3 flex flex-wrap gap-1.5">
-                            {planModules
-                              .slice(0, 6)
-                              .map(
-                                (
-                                  module
-                                ) => (
-                                  <span
-                                    key={getModuleKey(
-                                      module
-                                    )}
-                                    className="inline-flex items-center gap-1 rounded border px-2 py-0.5 text-[9px] font-semibold"
-                                    style={{
-                                      backgroundColor:
-                                        theme.surface,
-
-                                      borderColor:
-                                        theme.border,
-
-                                      color:
-                                        theme.textSoft,
-                                    }}
-                                  >
-                                    <ModuleIcon
-                                      moduleKey={getModuleKey(
-                                        module
-                                      )}
-                                      size={
-                                        10
-                                      }
-                                    />
-
-                                    {getModuleName(
-                                      module
-                                    )}
-                                  </span>
-                                )
-                              )}
-                          </div>
-                        </button>
+                          <p className="text-[11px] text-slate-500 mt-1 leading-snug">{getPlanDescription(p)}</p>
+                          <p className="text-sm font-bold font-mono text-slate-900 mt-3">
+                            {formatCurrency(getPlanPrice(p, form.billingCycle))}
+                          </p>
+                        </div>
                       );
                     })}
                   </div>
-                )}
-              </Section>
 
-              {/* BILLING CONFIGURATION */}
-
-              <Section
-                title="Billing Configuration"
-                description="Pricing is defined directly on the selected subscription plan."
-                theme={theme}
-              >
-                <div className="max-w-md">
-                  <SelectField
-                    label="Commitment Cycle"
-                    required
-                    theme={theme}
-                    value={selectedBillingCycle}
-                    onChange={(e) => {
-                      setValue("billingCycle", e.target.value, {
-                        shouldDirty: true,
-                        shouldTouch: true,
-                        shouldValidate: true,
-                      });
-                      setResolvedSubscription(null);
-                      setReferralResult(null);
-                      setReferralError("");
-                    }}
-                  >
-                    <option value="monthly">Monthly Cycle</option>
-                    <option value="annual">Annual Term</option>
-                  </SelectField>
-                </div>
-              </Section>
-
-              {/* INVOICE PREVIEW */}
-
-              <Section
-                title="Invoice Preview"
-                description="Live financial calculation including applicable taxes and promotional relief."
-                theme={theme}
-              >
-                {resolvingSubscription ? (
-                  <LoadingBox
-                    text="Calculating subscription price..."
-                    theme={theme}
-                  />
-                ) : !selectedPlanId ? (
-                  <div
-                    className="rounded-lg border border-dashed p-4 text-center text-xs"
-                    style={{
-                      borderColor:
-                        theme.border,
-
-                      color:
-                        theme.textMuted,
-                    }}
-                  >
-                    Select a subscription plan
-                    to preview cost.
-                  </div>
-                ) : !resolvedSubscription ? (
-                  <div
-                    className="rounded-lg border border-dashed p-4 text-center text-xs"
-                    style={{
-                      borderColor:
-                        theme.border,
-
-                      color:
-                        theme.textMuted,
-                    }}
-                  >
-                    No pricing configuration
-                    was found for this
-                    combination.
-                  </div>
-                ) : (
-                  <div
-                    className="rounded-xl border p-4"
-                    style={{
-                      backgroundColor:
-                        theme.surfaceAlt,
-
-                      borderColor:
-                        theme.border,
-                    }}
-                  >
-                    <div className="space-y-2 text-xs">
-                      <PriceRow
-                        label="Subscription Price"
-                        value={money(
-                          pricing.basePrice
-                        )}
-                        theme={theme}
-                      />
-
-                      {pricing.discountAmount >
-                        0 && (
-                        <PriceRow
-                          label="Promotional Credit"
-                          value={`−${money(
-                            pricing.discountAmount
-                          )}`}
-                          positive
-                          theme={theme}
-                        />
-                      )}
-
-                      <PriceRow
-                        label="Net Taxable Value"
-                        value={money(
-                          pricing.taxableAmount
-                        )}
-                        theme={theme}
-                      />
-
-                      <PriceRow
-                        label={`Statutory GST (${pricing.taxRate}%)`}
-                        value={money(
-                          pricing.taxAmount
-                        )}
-                        theme={theme}
-                      />
-
-                      <div
-                        className="mt-2 border-t pt-2.5"
-                        style={{
-                          borderColor:
-                            theme.border,
-                        }}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+                    <div>
+                      <label className="block text-[11px] font-mono font-bold uppercase text-slate-700 mb-1">
+                        Billing Term
+                      </label>
+                      <select
+                        value={form.billingCycle}
+                        onChange={(e) => updateField("billingCycle", e.target.value)}
+                        className="w-full h-9 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 outline-none"
                       >
-                        <div className="flex items-center justify-between">
-                          <span
-                            className="text-[11px] font-bold uppercase tracking-wider"
-                            style={{
-                              color:
-                                theme.text,
-                            }}
-                          >
-                            Total Due
-                          </span>
+                        <option value="MONTHLY">Monthly Billing Cycle</option>
+                        <option value="ANNUAL">Annual Enterprise License</option>
+                      </select>
+                    </div>
 
-                          <span
-                            className="text-base font-black"
-                            style={{
-                              color:
-                                theme.text,
-                            }}
-                          >
-                            {money(
-                              pricing.total
-                            )}
-                          </span>
-                        </div>
-                      </div>
+                    <div>
+                      <label className="block text-[11px] font-mono font-bold uppercase text-slate-700 mb-1">
+                        Effective Commencing Date
+                      </label>
+                      <input
+                        type="date"
+                        value={form.startDate}
+                        onChange={(e) => updateField("startDate", e.target.value)}
+                        className="w-full h-9 rounded-lg border border-slate-200 bg-white px-3 text-xs text-slate-900 outline-none"
+                      />
                     </div>
                   </div>
-                )}
-              </Section>
+                </div>
+              )}
 
-              {/* PROMOTIONAL CODE */}
+              {/* -------------------------------------------------------------
+                  STEP 3: DATABASE TENANT
+              ------------------------------------------------------------- */}
+              {currentStep === 3 && (
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-[11px] font-mono font-bold uppercase text-slate-700 mb-1">
+                      Firebase Project Container ID *
+                    </label>
+                    <input
+                      type="text"
+                      value={form.firebaseProjectId}
+                      onChange={(e) => updateField("firebaseProjectId", e.target.value)}
+                      placeholder="e.g. shridhara-vault-prod"
+                      className="w-full h-9 rounded-lg border border-slate-200 bg-white px-3 text-xs font-mono text-slate-900 outline-none focus:border-slate-400"
+                    />
+                    {errors.firebaseProjectId && (
+                      <p className="text-[10.5px] text-rose-600 mt-1">{errors.firebaseProjectId}</p>
+                    )}
+                  </div>
 
-              <Section
-                title="Promotional Redemption"
-                description="Enter an authorized partner or referral code."
-                theme={theme}
-              >
-                <div className="flex max-w-sm gap-2">
-                  <input
-                    value={referralCode}
-                    onChange={(e) =>
-                      setReferralCode(
-                        e.target.value.toUpperCase()
-                      )
-                    }
-                    placeholder="e.g. PARTNER2026"
-                    className="h-10 flex-1 rounded-lg border px-3 text-xs font-mono font-bold uppercase outline-none"
-                    style={{
-                      backgroundColor:
-                        theme.surfaceAlt,
+                  <div className="p-4 rounded-xl border border-slate-200 bg-white text-xs font-mono space-y-2">
+                    <span className="font-bold text-slate-900 uppercase">Architecture Guarantee:</span>
+                    <p className="text-slate-500 leading-relaxed">
+                      Bullion entries, stock sheets, and client balances reside exclusively inside this isolated container. Abhinava PostgreSQL serves control plane orchestration only.
+                    </p>
+                  </div>
+                </div>
+              )}
 
-                      borderColor:
-                        theme.border,
+              {/* -------------------------------------------------------------
+                  STEP 4: DOSSIER VERIFICATION
+              ------------------------------------------------------------- */}
+              {currentStep === 4 && (
+                <div className="rounded-xl border border-slate-200 bg-white p-5 space-y-3 font-mono text-xs">
+                  <div className="flex justify-between py-1 border-b border-slate-100">
+                    <span className="text-slate-400">ORGANIZATION:</span>
+                    <span className="font-bold text-slate-900">{form.businessName || "—"}</span>
+                  </div>
+                  <div className="flex justify-between py-1 border-b border-slate-100">
+                    <span className="text-slate-400">AUTHORITY:</span>
+                    <span className="text-slate-800">{form.ownerName} ({form.ownerEmail})</span>
+                  </div>
+                  <div className="flex justify-between py-1 border-b border-slate-100">
+                    <span className="text-slate-400">TAX IDENTIFIER:</span>
+                    <span className="text-slate-800">{form.pan}</span>
+                  </div>
+                  <div className="flex justify-between py-1 border-b border-slate-100">
+                    <span className="text-slate-400">PLAN TIER:</span>
+                    <span className="font-bold text-slate-900">{getPlanName(selectedPlan)}</span>
+                  </div>
+                  <div className="flex justify-between py-1">
+                    <span className="text-slate-400">DATA CONTAINER:</span>
+                    <span className="text-slate-800">{form.firebaseProjectId}</span>
+                  </div>
+                </div>
+              )}
 
-                      color:
-                        theme.text,
-                    }}
-                  />
-
-                  <button
-                    type="button"
-                    onClick={
-                      applyReferralCode
-                    }
-                    disabled={
-                      referralLoading ||
-                      !referralCode.trim()
-                    }
-                    className="h-10 rounded-lg px-4 text-xs font-bold transition disabled:opacity-50"
-                    style={{
-                      backgroundColor:
-                        theme.primary,
-
-                      color:
-                        theme.primaryText,
-                    }}
+              {/* -------------------------------------------------------------
+                  STEP 5: SERVICE AGREEMENT
+              ------------------------------------------------------------- */}
+              {currentStep === 5 && (
+                <div className="space-y-4">
+                  <label
+                    htmlFor="agreement-upload"
+                    className="flex flex-col items-center justify-center p-8 border-2 border-dashed border-slate-200 rounded-xl bg-white hover:bg-slate-50 cursor-pointer transition-colors"
                   >
-                    {referralLoading
-                      ? "Checking..."
-                      : "Redeem"}
-                  </button>
+                    <Upload size={18} className="text-slate-400 mb-2" />
+                    <span className="text-xs font-bold text-slate-800">
+                      {agreementFile ? agreementFile.name : "Select Executed PDF / Agreement"}
+                    </span>
+                    <span className="text-[10px] font-mono text-slate-400 mt-0.5">Maximum size: 25MB</span>
+                    <input
+                      id="agreement-upload"
+                      type="file"
+                      accept=".pdf,.doc,.docx"
+                      className="hidden"
+                      onChange={(e) => setAgreementFile(e.target.files?.[0] || null)}
+                    />
+                  </label>
                 </div>
+              )}
 
-                {referralError && (
-                  <p className="mt-1.5 text-[10px] font-semibold text-rose-500">
-                    {referralError}
-                  </p>
-                )}
-              </Section>
             </div>
-          )}
-
-          {/* ==================================================================
-              STEP 4: WORKSPACE
-              ================================================================== */}
-
-          {currentStep === 4 && (
-            <Section
-              title="Database Partition & Infrastructure"
-              description="Configure the dedicated project credentials for isolated tenant deployment."
-              theme={theme}
-            >
-              <div className="max-w-md space-y-4">
-                <InputField
-                  label="Firebase Project ID"
-                  placeholder="e.g. acme-jewellers-prod"
-                  required
-                  theme={theme}
-                  {...register(
-                    "firebaseProjectId",
-                    {
-                      required:
-                        "Firebase Project ID is required.",
-
-                      pattern: {
-                        value:
-                          /^[a-z0-9][a-z0-9-]*[a-z0-9]$/,
-
-                        message:
-                          "Must be a lowercase cloud project identifier.",
-                      },
-                    }
-                  )}
-                  error={
-                    errors.firebaseProjectId
-                  }
-                />
-
-                <SelectField
-                  label="Platform Domain"
-                  required
-                  theme={theme}
-                  {...register("domain")}
-                >
-                  <option value="jewelry">
-                    Jewelry ERP Architecture
-                  </option>
-
-                  <option value="general">
-                    Standard Multi-Branch Commerce
-                  </option>
-                </SelectField>
-              </div>
-            </Section>
-          )}
-
-          {/* ==================================================================
-              STEP 5: AUDIT & REVIEW
-              ================================================================== */}
-
-          {currentStep === 5 && (
-            <div className="space-y-4">
-              <ReviewSection
-                title="Identity & Ownership"
-                theme={theme}
-              >
-                <ReviewGrid
-                  theme={theme}
-                  items={[
-                    [
-                      "Business Name",
-                      watchedData.businessName,
-                    ],
-
-                    [
-                      "Legal Name",
-                      watchedData.legalBusinessName,
-                    ],
-
-                    [
-                      "Entity Type",
-                      formatBusinessType(
-                        watchedData.businessType
-                      ),
-                    ],
-
-                    [
-                      "Contact Email",
-                      watchedData.businessEmail,
-                    ],
-
-                    [
-                      "Direct Line",
-                      watchedData.businessPhone,
-                    ],
-
-                    [
-                      "Authorized Owner",
-                      watchedData.ownerName,
-                    ],
-                  ]}
-                />
-              </ReviewSection>
-
-              <ReviewSection
-                title="Statutory Verification Status"
-                theme={theme}
-              >
-                <div className="flex flex-wrap gap-2">
-                  {submittedDocuments.map(
-                    (doc) => (
-                      <span
-                        key={doc}
-                        className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-bold"
-                        style={{
-                          backgroundColor:
-                            theme.successSoft,
-
-                          color:
-                            theme.success,
-                        }}
-                      >
-                        <Check size={12} />
-                        {doc} Verified
-                      </span>
-                    )
-                  )}
-
-                  {pendingDocuments.map(
-                    (doc) => (
-                      <span
-                        key={doc}
-                        className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-bold"
-                        style={{
-                          backgroundColor:
-                            theme.warningSoft,
-
-                          color:
-                            theme.warning,
-                        }}
-                      >
-                        <AlertCircle
-                          size={12}
-                        />
-                        {doc} Pending
-                      </span>
-                    )
-                  )}
-                </div>
-              </ReviewSection>
-
-              <ReviewSection
-                title="Subscription Allocation"
-                theme={theme}
-              >
-                <ReviewGrid
-                  theme={theme}
-                  items={[
-                    [
-                      "Allocated Plan",
-                      resolvedSubscription?.subscription_plan?.name ||
-                        selectedPlan?.name || "—",
-                    ],
-                    [
-                      "Plan Type",
-                      resolvedSubscription?.subscription_plan?.main_plan ||
-                        selectedPlan?.main_plan || "—",
-                    ],
-                    [
-                      "Billing Term",
-                      formatBillingCycle(selectedBillingCycle),
-                    ],
-                    [
-                      "Monthly Price",
-                      selectedPlan ? money(selectedPlan.monthly_price) : "—",
-                    ],
-                    [
-                      "Annual Price",
-                      selectedPlan ? money(selectedPlan.annual_price) : "—",
-                    ],
-                    [
-                      "Cloud Workspace",
-                      watchedData.firebaseProjectId,
-                    ],
-                    [
-                      "Total Payable",
-                      money(pricing.total),
-                    ],
-                  ]}
-                />
-              </ReviewSection>
-            </div>
-          )}
-        </form>
-      </div>
-    </div>
-  );
-}
-
-/* ============================================================================
-   MODULAR INPUT HELPERS
-   ========================================================================== */
-
-function Section({
-  title,
-  description,
-  children,
-  theme,
-}) {
-  return (
-    <section className="mb-4">
-      <div className="mb-3">
-        <h2
-          className="text-[13px] font-bold uppercase tracking-wider"
-          style={{
-            color: theme.text,
-          }}
-        >
-          {title}
-        </h2>
-
-        {description && (
-          <p
-            className="text-[11px]"
-            style={{
-              color:
-                theme.textMuted,
-            }}
-          >
-            {description}
-          </p>
-        )}
-      </div>
-
-      <div>
-        {children}
-      </div>
-    </section>
-  );
-}
-
-function FieldLabel({
-  children,
-  required = false,
-  theme,
-}) {
-  return (
-    <label
-      className="text-[10px] font-bold uppercase tracking-wider"
-      style={{
-        color: theme.textMuted,
-      }}
-    >
-      {children}
-
-      {required && (
-        <span className="ml-1 text-rose-500">
-          *
-        </span>
-      )}
-    </label>
-  );
-}
-
-function FieldError({
-  message,
-}) {
-  if (!message) {
-    return null;
-  }
-
-  return (
-    <p className="mt-1 text-[10px] font-semibold text-rose-500">
-      {message}
-    </p>
-  );
-}
-
-const InputField =
-  React.forwardRef(
-    (
-      {
-        label,
-        required = false,
-        error,
-        theme,
-        className = "",
-        ...props
-      },
-      ref
-    ) => {
-      return (
-        <div>
-          <FieldLabel
-            required={required}
-            theme={theme}
-          >
-            {label}
-          </FieldLabel>
-
-          <input
-            ref={ref}
-            {...props}
-            className={`mt-1 h-10 w-full rounded-lg border px-3 text-xs font-medium outline-none transition focus:border-zinc-500 ${className}`}
-            style={{
-              backgroundColor:
-                theme.surfaceAlt,
-
-              borderColor:
-                theme.border,
-
-              color:
-                theme.text,
-            }}
-          />
-
-          {error && (
-            <FieldError
-              message={
-                error.message
-              }
-            />
-          )}
-        </div>
-      );
-    }
-  );
-
-InputField.displayName =
-  "InputField";
-
-const SelectField =
-  React.forwardRef(
-    (
-      {
-        label,
-        required = false,
-        error,
-        theme,
-        children,
-        ...props
-      },
-      ref
-    ) => {
-      return (
-        <div>
-          <FieldLabel
-            required={required}
-            theme={theme}
-          >
-            {label}
-          </FieldLabel>
-
-          <select
-            ref={ref}
-            {...props}
-            className="mt-1 h-10 w-full rounded-lg border px-3 text-xs font-medium outline-none transition focus:border-zinc-500"
-            style={{
-              backgroundColor:
-                theme.surfaceAlt,
-
-              borderColor:
-                theme.border,
-
-              color:
-                theme.text,
-            }}
-          >
-            {children}
-          </select>
-
-          {error && (
-            <FieldError
-              message={
-                error.message
-              }
-            />
-          )}
-        </div>
-      );
-    }
-  );
-
-SelectField.displayName =
-  "SelectField";
-
-function LoadingBox({
-  text,
-  theme,
-}) {
-  return (
-    <div
-      className="flex items-center gap-2.5 rounded-lg border px-3 py-3"
-      style={{
-        backgroundColor:
-          theme.surfaceAlt,
-
-        borderColor:
-          theme.border,
-      }}
-    >
-      <RefreshCw
-        size={14}
-        className="animate-spin"
-        style={{
-          color: theme.text,
-        }}
-      />
-
-      <span
-        className="text-xs font-medium"
-        style={{
-          color:
-            theme.textMuted,
-        }}
-      >
-        {text}
-      </span>
-    </div>
-  );
-}
-
-function ErrorBox({
-  message,
-  onRetry,
-  theme,
-}) {
-  return (
-    <div
-      className="rounded-lg border p-3.5"
-      style={{
-        backgroundColor:
-          theme.dangerSoft,
-
-        borderColor:
-          theme.danger,
-      }}
-    >
-      <div className="flex items-start gap-2.5">
-        <AlertCircle
-          size={15}
-          className="mt-0.5 shrink-0"
-          style={{
-            color: theme.danger,
-          }}
-        />
-
-        <div className="flex-1">
-          <p
-            className="text-xs font-semibold"
-            style={{
-              color:
-                theme.danger,
-            }}
-          >
-            {message}
-          </p>
-
-          <button
-            type="button"
-            onClick={onRetry}
-            className="mt-1 inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider underline"
-            style={{
-              color:
-                theme.danger,
-            }}
-          >
-            Retry
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function PriceRow({
-  label,
-  value,
-  positive = false,
-  theme,
-}) {
-  return (
-    <div className="flex items-center justify-between gap-4">
-      <span
-        className="text-[11px] font-medium"
-        style={{
-          color:
-            theme.textMuted,
-        }}
-      >
-        {label}
-      </span>
-
-      <span
-        className="text-xs font-bold"
-        style={{
-          color: positive
-            ? theme.success
-            : theme.text,
-        }}
-      >
-        {value}
-      </span>
-    </div>
-  );
-}
-
-function ReviewSection({
-  title,
-  children,
-  theme,
-}) {
-  return (
-    <div
-      className="rounded-lg border p-4"
-      style={{
-        borderColor:
-          theme.border,
-      }}
-    >
-      <h3
-        className="mb-2 text-[11px] font-bold uppercase tracking-wider"
-        style={{
-          color: theme.text,
-        }}
-      >
-        {title}
-      </h3>
-
-      {children}
-    </div>
-  );
-}
-
-function ReviewGrid({
-  items,
-  theme,
-}) {
-  return (
-    <div className="grid grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-2 lg:grid-cols-3">
-      {items.map(
-        ([label, value]) => (
-          <div key={label}>
-            <p
-              className="text-[9px] font-bold uppercase tracking-wider"
-              style={{
-                color:
-                  theme.textMuted,
-              }}
-            >
-              {label}
-            </p>
-
-            <p
-              className="mt-0.5 break-words text-xs font-semibold"
-              style={{
-                color:
-                  theme.text,
-              }}
-            >
-              {value || "—"}
-            </p>
           </div>
-        )
-      )}
+
+          {/* Sticky Console Bottom Action Bar */}
+          <div className="shrink-0 h-16 w-full border-t border-slate-200 bg-white px-6 sm:px-10 flex items-center justify-end">
+            {currentStep < 5 ? (
+              <button
+                type="button"
+                onClick={goNext}
+                className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-xs font-semibold text-white hover:bg-black active:scale-[0.98] transition-all shadow-xs"
+              >
+                <span>Proceed</span>
+                <ArrowRight size={13} />
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={handleCreateClient}
+                disabled={submitting}
+                className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-5 py-2 text-xs font-semibold text-white hover:bg-black active:scale-[0.98] transition-all shadow-xs disabled:opacity-50"
+              >
+                {submitting ? (
+                  <>
+                    <Loader2 size={13} className="animate-spin text-slate-400" />
+                    <span>Compiling Node...</span>
+                  </>
+                ) : (
+                  <>
+                    <Check size={14} strokeWidth={2.5} />
+                    <span>Initialize Tenant Ledger</span>
+                  </>
+                )}
+              </button>
+            )}
+          </div>
+
+        </main>
+
+      </div>
     </div>
   );
 }
-
-export default AddClientPage;

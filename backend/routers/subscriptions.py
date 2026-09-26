@@ -1,9 +1,7 @@
 from datetime import date
 from decimal import Decimal
-
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
-
 from database import get_db
 from models import (
     Client,
@@ -14,14 +12,8 @@ from models import (
     Invoice,
     InvoiceLineItem,
     PlatformAuditEvent,
+    PlatformUser
 )
-
-from services.platform_dependencies import (
-    get_current_platform_user,
-)
-
-from models import PlatformUser
-
 from schemas import (
     SubscriptionModuleCreate,
     SubscriptionPlanCreate,
@@ -31,6 +23,12 @@ from schemas import (
     ClientSubscriptionCreate,
     ClientSubscriptionResponse,
     ClientSubscriptionChangeRequest,
+)
+from services.platform_dependencies import (
+    get_current_platform_user,
+)
+from services.entitlements import (
+    calculate_client_entitlement,
 )
 
 
@@ -448,6 +446,40 @@ def list_subscription_plans(
             plan.id,
         )
 
+        assigned_rows = (
+            db.query(
+                ClientSubscription,
+                Client,
+            )
+            .join(
+                Client,
+                Client.id
+                == ClientSubscription.client_id,
+            )
+            .filter(
+                ClientSubscription.subscription_plan_id
+                == plan.id,
+                ClientSubscription.status
+                == "ACTIVE",
+            )
+            .order_by(
+                Client.business_name.asc()
+            )
+            .all()
+        )
+
+        assigned_clients = [
+            {
+                "client_id": subscription.client_id,
+                "business_name": client.business_name,
+                "owner_name": client.owner_name,
+                "subscription_id": subscription.id,
+                "billing_cycle": subscription.billing_cycle,
+                "status": subscription.status,
+            }
+            for subscription, client in assigned_rows
+        ]
+
         result.append(
             {
                 "id": plan.id,
@@ -459,6 +491,7 @@ def list_subscription_plans(
                 "currency": plan.currency,
                 "is_active": plan.is_active,
                 "modules": modules,
+                "assigned_clients": assigned_clients,
             }
         )
 
@@ -1764,3 +1797,87 @@ def list_client_subscriptions(
     )
 
     return subscriptions
+
+# ============================================================
+# CLIENT ENTITLEMENT
+# ============================================================
+
+@router.get(
+    "/client-subscriptions/{client_id}/entitlement"
+)
+def get_client_entitlement(
+    client_id: int,
+    db: Session = Depends(get_db),
+    platform_user: PlatformUser = Depends(
+        get_current_platform_user
+    ),
+):
+    if platform_user.role not in {
+        "OWNER",
+        "ADMIN",
+    }:
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "You do not have permission "
+                "to view client entitlements."
+            ),
+        )
+
+    client = (
+        db.query(Client)
+        .filter(
+            Client.id == client_id
+        )
+        .first()
+    )
+
+    if client is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Client not found.",
+        )
+
+    entitlement = calculate_client_entitlement(
+        db=db,
+        client=client,
+    )
+
+    return {
+        "client_id": entitlement.client_id,
+        "account_status": entitlement.account_status,
+        "firebase_ready": entitlement.firebase_ready,
+
+        "access_allowed": entitlement.access_allowed,
+        "access_reason": entitlement.access_reason,
+
+        "subscription": {
+            "id": entitlement.subscription_id,
+            "status": entitlement.subscription_status,
+            "start_date": (
+                entitlement.subscription_start_date
+            ),
+            "end_date": (
+                entitlement.subscription_end_date
+            ),
+        },
+
+        "billing": {
+            "status": entitlement.billing_status,
+            "invoice_id": entitlement.invoice_id,
+            "invoice_status": entitlement.invoice_status,
+            "invoice_total": (
+                entitlement.invoice_total
+            ),
+            "paid_amount": (
+                entitlement.paid_amount
+            ),
+            "outstanding_amount": (
+                entitlement.outstanding_amount
+            ),
+        },
+
+        "modules": list(
+            entitlement.modules
+        ),
+    }
