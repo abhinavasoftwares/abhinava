@@ -95,7 +95,7 @@ app.add_middleware(
     SessionMiddleware,
     secret_key=os.environ["ABHINAVA_AUTH_TRANSACTION_SECRET"],
     https_only=True,
-    same_site="lax",
+    same_site="none",
 )
 
 
