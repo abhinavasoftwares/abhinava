@@ -1,19 +1,56 @@
-import { useEffect, useState } from "react";
+import {
+  useEffect,
+  useState,
+} from "react";
+
 import {
   collection,
+  doc,
+  getDoc,
   getDocs,
+  limit,
+  orderBy,
+  query,
+  where,
 } from "firebase/firestore";
+
 import { getCrmFirestore } from "../../../firebase";
 
-const INVESTORS_COLLECTION = "investmentInvestors";
-const ACCOUNTS_COLLECTION = "investmentAccounts";
+const INVESTORS_COLLECTION =
+  "investmentInvestors";
+
+const ACCOUNTS_COLLECTION =
+  "investmentAccounts";
+
+const SEARCH_LIMIT = 10;
 
 function clean(value) {
-  return String(value ?? "").trim().toLowerCase();
+  return String(value ?? "")
+    .trim()
+    .toLowerCase();
 }
 
 function normalizeMobile(value) {
-  return String(value ?? "").replace(/\D/g, "");
+  return String(value ?? "")
+    .replace(/\D/g, "");
+}
+
+function prefixQuery(
+  collectionReference,
+  field,
+  value
+) {
+  return query(
+    collectionReference,
+    orderBy(field),
+    where(field, ">=", value),
+    where(
+      field,
+      "<=",
+      `${value}\uf8ff`
+    ),
+    limit(SEARCH_LIMIT)
+  );
 }
 
 export function useInvestmentSearch(search = "") {
@@ -22,9 +59,19 @@ export function useInvestmentSearch(search = "") {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    const searchValue = clean(search);
+    const rawSearch = String(search || "").trim();
 
-    if (!searchValue) {
+    if (!rawSearch) {
+      setResults([]);
+      setLoading(false);
+      setError("");
+      return;
+    }
+
+    /*
+     * Avoid useless queries for extremely short input.
+     */
+    if (rawSearch.length < 2) {
       setResults([]);
       setLoading(false);
       setError("");
@@ -33,14 +80,6 @@ export function useInvestmentSearch(search = "") {
 
     let cancelled = false;
 
-    /*
-     * ------------------------------------------------------------
-     * DEBOUNCE
-     * ------------------------------------------------------------
-     *
-     * Do not search on every keystroke.
-     * Wait until the user stops typing for 350ms.
-     */
     const timer = setTimeout(async () => {
       try {
         setLoading(true);
@@ -48,112 +87,124 @@ export function useInvestmentSearch(search = "") {
 
         const firestore = getCrmFirestore();
 
+        const investorsReference = collection(
+          firestore,
+          INVESTORS_COLLECTION
+        );
+
+        const accountsReference = collection(
+          firestore,
+          ACCOUNTS_COLLECTION
+        );
+
+        const textSearch = clean(rawSearch);
+        const mobileSearch =
+          normalizeMobile(rawSearch);
+
         /*
-         * --------------------------------------------------------
-         * LOAD INVESTORS
-         * --------------------------------------------------------
+         * ------------------------------------------------------
+         * GLOBAL INVESTOR SEARCH
+         * ------------------------------------------------------
          *
-         * Search is intentionally global.
-         * It is NOT restricted to the current 15-page dataset.
+         * Each query is executed directly by Firestore.
+         *
+         * We never download the complete investor collection.
          */
-        const investorSnapshot = await getDocs(
-          collection(
-            firestore,
-            INVESTORS_COLLECTION
+        const investorQueries = [
+          prefixQuery(
+            investorsReference,
+            "fullNameLower",
+            textSearch
+          ),
+
+          prefixQuery(
+            investorsReference,
+            "emailSearch",
+            textSearch
+          ),
+        ];
+
+        /*
+         * Mobile searches use digits only.
+         */
+        if (mobileSearch) {
+          investorQueries.push(
+            prefixQuery(
+              investorsReference,
+              "mobileNumberSearch",
+              mobileSearch
+            )
+          );
+
+          investorQueries.push(
+            prefixQuery(
+              investorsReference,
+              "alternateMobileNumberSearch",
+              mobileSearch
+            )
+          );
+        }
+
+        /*
+         * Account number is also globally searchable.
+         */
+        const accountQuery = prefixQuery(
+          accountsReference,
+          "accountNumber",
+          textSearch
+        );
+
+        const [
+          ...investorSnapshots
+        ] = await Promise.all(
+          investorQueries.map((item) =>
+            getDocs(item)
           )
         );
 
         if (cancelled) return;
 
-        const investors = investorSnapshot.docs.map(
-          (item) => ({
-            id: item.id,
-            ...item.data(),
-          })
-        );
-
-        const normalizedSearchMobile =
-          normalizeMobile(searchValue);
-
         /*
-         * --------------------------------------------------------
-         * MATCH INVESTOR PROFILE
-         * --------------------------------------------------------
+         * De-duplicate investors returned by
+         * multiple search fields.
          */
-        const matchingInvestorIds = new Set();
+        const investorMap = new Map();
 
-        investors.forEach((investor) => {
-          const name = clean(
-            investor.fullName
-          );
-
-          const mobile = normalizeMobile(
-            investor.mobileNumber
-          );
-
-          const alternateMobile =
-            normalizeMobile(
-              investor.alternateMobileNumber
-            );
-
-          const email = clean(
-            investor.email
-          );
-
-          const matches =
-            name.includes(searchValue) ||
-            email.includes(searchValue) ||
-            (
-              normalizedSearchMobile &&
-              mobile.includes(
-                normalizedSearchMobile
-              )
-            ) ||
-            (
-              normalizedSearchMobile &&
-              alternateMobile.includes(
-                normalizedSearchMobile
-              )
-            );
-
-          if (matches) {
-            matchingInvestorIds.add(
-              investor.id
+        investorSnapshots.forEach(
+          (snapshot) => {
+            snapshot.docs.forEach(
+              (item) => {
+                investorMap.set(
+                  item.id,
+                  {
+                    id: item.id,
+                    ...item.data(),
+                  }
+                );
+              }
             );
           }
-        });
-
-        /*
-         * --------------------------------------------------------
-         * SEARCH ACCOUNT NUMBERS
-         * --------------------------------------------------------
-         *
-         * Account number search is also global.
-         */
-        const accountSnapshot = await getDocs(
-          collection(
-            firestore,
-            ACCOUNTS_COLLECTION
-          )
         );
 
+        /*
+         * ------------------------------------------------------
+         * ACCOUNT NUMBER SEARCH
+         * ------------------------------------------------------
+         */
+        const accountSnapshot =
+          await getDocs(accountQuery);
+
         if (cancelled) return;
+
+        const accountInvestorIds =
+          new Set();
 
         accountSnapshot.docs.forEach(
           (item) => {
             const account = item.data();
 
-            const accountNumber = clean(
-              account.accountNumber
-            );
-
-            if (
-              accountNumber.includes(
-                searchValue
-              ) &&
-              account.investorId
-            ) {
-              matchingInvestorIds.add(
+            if (account.investorId) {
+              accountInvestorIds.add(
                 account.investorId
               );
             }
@@ -161,20 +212,70 @@ export function useInvestmentSearch(search = "") {
         );
 
         /*
-         * --------------------------------------------------------
-         * BUILD FINAL RESULTS
-         * --------------------------------------------------------
+         * Fetch investors referenced by matching
+         * account numbers.
+         *
+         * Maximum is SEARCH_LIMIT.
          */
-        const finalResults = investors.filter(
-          (investor) =>
-            matchingInvestorIds.has(
-              investor.id
+        if (accountInvestorIds.size) {
+          const accountInvestorRequests =
+            Array.from(
+              accountInvestorIds
             )
-        );
+              .slice(0, SEARCH_LIMIT)
+              .map(async (investorId) => {
+                const investorSnapshot =
+                  await getDoc(
+                    doc(
+                      firestore,
+                      INVESTORS_COLLECTION,
+                      investorId
+                    )
+                  );
+
+                if (
+                  !investorSnapshot.exists()
+                ) {
+                  return null;
+                }
+
+                return {
+                  id:
+                    investorSnapshot.id,
+                  ...investorSnapshot.data(),
+                };
+              });
+
+          const accountInvestors =
+            await Promise.all(
+              accountInvestorRequests
+            );
+
+          accountInvestors.forEach(
+            (investor) => {
+              if (investor) {
+                investorMap.set(
+                  investor.id,
+                  investor
+                );
+              }
+            }
+          );
+        }
 
         if (cancelled) return;
 
-        setResults(finalResults);
+        /*
+         * Final result is limited to 10.
+         *
+         * The search remains GLOBAL because it queries
+         * Firestore directly rather than the current page.
+         */
+        setResults(
+          Array.from(
+            investorMap.values()
+          ).slice(0, SEARCH_LIMIT)
+        );
       } catch (searchError) {
         if (cancelled) return;
 
@@ -183,18 +284,18 @@ export function useInvestmentSearch(search = "") {
           searchError
         );
 
+        setResults([]);
+
         setError(
           searchError?.message ||
             "Failed to search investors."
         );
-
-        setResults([]);
       } finally {
         if (!cancelled) {
           setLoading(false);
         }
       }
-    }, 350);
+    }, 300);
 
     return () => {
       cancelled = true;

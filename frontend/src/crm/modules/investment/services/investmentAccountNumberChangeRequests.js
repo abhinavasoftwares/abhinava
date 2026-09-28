@@ -3,15 +3,9 @@ import {
   collection,
   serverTimestamp,
 } from "firebase/firestore";
+import { getAuth } from "firebase/auth";
 
-import {
-  getCrmFirestore,
-} from "../../../firebase";
-
-import {
-  getAuth,
-} from "firebase/auth";
-
+import { getCrmFirestore } from "../../../firebase";
 
 const COLLECTION =
   "investmentAccountNumberChangeRequests";
@@ -19,23 +13,45 @@ const COLLECTION =
 const AUDIT_COLLECTION =
   "investmentAuditLogs";
 
-
 function getCurrentUser() {
   try {
-    const auth =
-      getAuth();
-
-    return auth.currentUser || null;
+    return getAuth().currentUser || null;
   } catch {
     return null;
   }
 }
 
+function getApiBaseUrl() {
+  const value =
+    import.meta.env.VITE_API_BASE_URL;
 
-// ============================================================
-// CREATE CHANGE REQUEST
-// ============================================================
+  if (!value) {
+    throw new Error(
+      "VITE_API_BASE_URL is not configured."
+    );
+  }
 
+  return value.replace(/\/+$/, "");
+}
+
+async function getFirebaseIdToken() {
+  const user = getCurrentUser();
+
+  if (!user) {
+    throw new Error(
+      "You must be signed in to submit this request."
+    );
+  }
+
+  return user.getIdToken();
+}
+
+/**
+ * Creates the Firestore request.
+ *
+ * Firestore remains the source of truth.
+ * Email notification is handled separately by the backend.
+ */
 export async function createAccountNumberChangeRequest({
   schemeId,
   schemeName,
@@ -55,13 +71,17 @@ export async function createAccountNumberChangeRequest({
     );
   }
 
-
   const firestore =
     getCrmFirestore();
 
   const user =
     getCurrentUser();
 
+  if (!user) {
+    throw new Error(
+      "You must be signed in."
+    );
+  }
 
   const requestReference =
     await addDoc(
@@ -77,14 +97,11 @@ export async function createAccountNumberChangeRequest({
 
         currentTheme: {
           prefix:
-            currentTheme?.prefix ||
-            "",
+            currentTheme?.prefix || "",
 
-          padding:
-            Number(
-              currentTheme?.padding ||
-              0
-            ),
+          padding: Number(
+            currentTheme?.padding || 0
+          ),
         },
 
         requestedTheme:
@@ -94,11 +111,9 @@ export async function createAccountNumberChangeRequest({
                   requestedTheme.prefix ||
                   "",
 
-                padding:
-                  Number(
-                    requestedTheme.padding ||
-                    0
-                  ),
+                padding: Number(
+                  requestedTheme.padding || 0
+                ),
               }
             : null,
 
@@ -109,13 +124,22 @@ export async function createAccountNumberChangeRequest({
           "PENDING",
 
         requestedBy:
-          user?.uid || null,
+          user.uid,
 
         requestedByEmail:
-          user?.email || null,
+          user.email || null,
 
         requestedAt:
           serverTimestamp(),
+
+        emailNotificationStatus:
+          "PENDING",
+
+        emailNotificationId:
+          null,
+
+        emailNotificationSentAt:
+          null,
 
         reviewedBy:
           null,
@@ -127,11 +151,6 @@ export async function createAccountNumberChangeRequest({
           null,
       }
     );
-
-
-  // ==========================================================
-  // AUDIT LOG
-  // ==========================================================
 
   await addDoc(
     collection(
@@ -168,20 +187,18 @@ export async function createAccountNumberChangeRequest({
         reason.trim(),
 
       performedBy:
-        user?.uid || null,
+        user.uid,
 
       performedByEmail:
-        user?.email || null,
+        user.email || null,
 
       performedAt:
         serverTimestamp(),
 
       source:
         "CRM_UI",
-
     }
   );
-
 
   return {
     id:
@@ -190,4 +207,68 @@ export async function createAccountNumberChangeRequest({
     status:
       "PENDING",
   };
+}
+
+/**
+ * Ask the Abhinava backend to send the Resend notification.
+ *
+ * Resend API credentials never reach the browser.
+ */
+export async function notifyAccountNumberChangeRequest({
+  crmSlug,
+  requestId,
+}) {
+  if (!crmSlug) {
+    throw new Error(
+      "CRM slug is required."
+    );
+  }
+
+  if (!requestId) {
+    throw new Error(
+      "Request ID is required."
+    );
+  }
+
+  const token =
+    await getFirebaseIdToken();
+
+  const response =
+    await fetch(
+      `${getApiBaseUrl()}/crm/${encodeURIComponent(
+        crmSlug
+      )}/investment/account-number-change-requests/${encodeURIComponent(
+        requestId
+      )}/notify`,
+      {
+        method: "POST",
+
+        headers: {
+          Authorization:
+            `Bearer ${token}`,
+
+          "Content-Type":
+            "application/json",
+        },
+      }
+    );
+
+  let payload = null;
+
+  try {
+    payload =
+      await response.json();
+  } catch {
+    payload = null;
+  }
+
+  if (!response.ok) {
+    throw new Error(
+      payload?.detail ||
+        payload?.message ||
+        "Failed to send admin notification."
+    );
+  }
+
+  return payload;
 }

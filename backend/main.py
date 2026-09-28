@@ -4,6 +4,7 @@ import resend
 from calendar import monthrange
 from datetime import date, datetime
 from decimal import Decimal, ROUND_HALF_UP
+from pydantic import BaseModel, EmailStr
 
 from typing import Any
 
@@ -66,6 +67,9 @@ from services.firebase_crm_auth import (
 
 from services.employee_email import (
     send_employee_welcome_email,
+)
+from services.investment_communication import (
+    send_investment_welcome_email,
 )
 from services.tenant_connection import (
     verify_existing_firebase_project,
@@ -133,6 +137,24 @@ def get_db():
     finally:
         db.close()
 
+class InvestmentReceiptEmailRequest(BaseModel):
+    receiptId: str
+    recipientEmail: EmailStr
+
+    language: str = "EN"
+
+    receiptNumber: str
+
+    investorName: str = ""
+    accountNumber: str = ""
+    schemeName: str = ""
+
+    transactionDate: str = ""
+
+    transactionType: str = ""
+    transactionCategory: str = ""
+
+    transactionAmount: float = 0
 
 # ============================================================
 # CRM TENANT CONFIGURATION
@@ -1107,6 +1129,847 @@ def send_welcome_email(
                 "be sent."
             ),
         }
+
+
+def build_investment_receipt_email_html(
+    *,
+    language: str,
+    receipt_number: str,
+    investor_name: str,
+    account_number: str,
+    scheme_name: str,
+    transaction_date: str,
+    transaction_type: str,
+    transaction_category: str,
+    transaction_amount: float,
+) -> str:
+
+    language = (
+        str(language or "EN")
+        .strip()
+        .upper()
+    )
+
+    if language not in {"EN", "KN"}:
+        language = "EN"
+
+    safe_receipt = str(
+        receipt_number or ""
+    )
+
+    safe_name = str(
+        investor_name or ""
+    )
+
+    safe_account = str(
+        account_number or ""
+    )
+
+    safe_scheme = str(
+        scheme_name or ""
+    )
+
+    safe_date = str(
+        transaction_date or ""
+    )
+
+    safe_type = str(
+        transaction_type or ""
+    )
+
+    safe_category = str(
+        transaction_category or ""
+    )
+
+    amount = float(
+        transaction_amount or 0
+    )
+
+    formatted_amount = (
+        f"₹{amount:,.2f}"
+    )
+
+    if language == "KN":
+
+        subject_title = "ಹೂಡಿಕೆ ರಸೀದಿ"
+
+        greeting = (
+            f"ನಮಸ್ಕಾರ {safe_name},"
+            if safe_name
+            else "ನಮಸ್ಕಾರ,"
+        )
+
+        intro = (
+            "ನಿಮ್ಮ ಹೂಡಿಕೆ ವ್ಯವಹಾರದ ರಸೀದಿ "
+            "ವಿವರಗಳನ್ನು ಕೆಳಗೆ ನೀಡಲಾಗಿದೆ."
+        )
+
+        receipt_label = "ರಸೀದಿ ಸಂಖ್ಯೆ"
+        account_label = "ಖಾತೆ ಸಂಖ್ಯೆ"
+        scheme_label = "ಯೋಜನೆ"
+        date_label = "ದಿನಾಂಕ"
+        type_label = "ವ್ಯವಹಾರ ಪ್ರಕಾರ"
+        category_label = "ವರ್ಗ"
+        amount_label = "ಮೊತ್ತ"
+
+        footer = (
+            "ಈ ಇಮೇಲ್ ಹೂಡಿಕೆ ವ್ಯವಹಾರದ "
+            "ದಾಖಲೆಯಾಗಿ ಕಳುಹಿಸಲಾಗಿದೆ."
+        )
+
+    else:
+
+        subject_title = "Investment Receipt"
+
+        greeting = (
+            f"Hello {safe_name},"
+            if safe_name
+            else "Hello,"
+        )
+
+        intro = (
+            "Please find below the receipt "
+            "details for your investment transaction."
+        )
+
+        receipt_label = "Receipt Number"
+        account_label = "Account Number"
+        scheme_label = "Scheme"
+        date_label = "Date"
+        type_label = "Transaction Type"
+        category_label = "Category"
+        amount_label = "Amount"
+
+        footer = (
+            "This email has been sent as a record "
+            "of your investment transaction."
+        )
+
+    return f"""
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{subject_title}</title>
+</head>
+
+<body style="
+    margin:0;
+    padding:0;
+    background:#f5f5f5;
+    font-family:Arial,Helvetica,sans-serif;
+">
+
+<div style="
+    max-width:640px;
+    margin:40px auto;
+    background:#ffffff;
+    border:1px solid #e5e7eb;
+">
+
+    <div style="
+        padding:28px 32px;
+        border-bottom:1px solid #e5e7eb;
+    ">
+
+        <div style="
+            font-size:20px;
+            font-weight:700;
+            color:#111827;
+        ">
+            Abhinava
+        </div>
+
+        <div style="
+            margin-top:6px;
+            font-size:12px;
+            color:#6b7280;
+        ">
+            {subject_title}
+        </div>
+
+    </div>
+
+    <div style="padding:32px;">
+
+        <p style="
+            margin:0 0 16px;
+            font-size:15px;
+            color:#111827;
+        ">
+            {greeting}
+        </p>
+
+        <p style="
+            margin:0 0 24px;
+            font-size:14px;
+            line-height:1.7;
+            color:#4b5563;
+        ">
+            {intro}
+        </p>
+
+        <table style="
+            width:100%;
+            border-collapse:collapse;
+            font-size:13px;
+        ">
+
+            <tr>
+                <td style="
+                    padding:10px 0;
+                    color:#6b7280;
+                    border-bottom:1px solid #eeeeee;
+                ">
+                    {receipt_label}
+                </td>
+
+                <td style="
+                    padding:10px 0;
+                    text-align:right;
+                    font-weight:700;
+                    color:#111827;
+                    border-bottom:1px solid #eeeeee;
+                ">
+                    {safe_receipt}
+                </td>
+            </tr>
+
+            <tr>
+                <td style="
+                    padding:10px 0;
+                    color:#6b7280;
+                    border-bottom:1px solid #eeeeee;
+                ">
+                    {account_label}
+                </td>
+
+                <td style="
+                    padding:10px 0;
+                    text-align:right;
+                    color:#111827;
+                    border-bottom:1px solid #eeeeee;
+                ">
+                    {safe_account}
+                </td>
+            </tr>
+
+            <tr>
+                <td style="
+                    padding:10px 0;
+                    color:#6b7280;
+                    border-bottom:1px solid #eeeeee;
+                ">
+                    {scheme_label}
+                </td>
+
+                <td style="
+                    padding:10px 0;
+                    text-align:right;
+                    color:#111827;
+                    border-bottom:1px solid #eeeeee;
+                ">
+                    {safe_scheme}
+                </td>
+            </tr>
+
+            <tr>
+                <td style="
+                    padding:10px 0;
+                    color:#6b7280;
+                    border-bottom:1px solid #eeeeee;
+                ">
+                    {date_label}
+                </td>
+
+                <td style="
+                    padding:10px 0;
+                    text-align:right;
+                    color:#111827;
+                    border-bottom:1px solid #eeeeee;
+                ">
+                    {safe_date}
+                </td>
+            </tr>
+
+            <tr>
+                <td style="
+                    padding:10px 0;
+                    color:#6b7280;
+                    border-bottom:1px solid #eeeeee;
+                ">
+                    {type_label}
+                </td>
+
+                <td style="
+                    padding:10px 0;
+                    text-align:right;
+                    color:#111827;
+                    border-bottom:1px solid #eeeeee;
+                ">
+                    {safe_type}
+                </td>
+            </tr>
+
+            <tr>
+                <td style="
+                    padding:10px 0;
+                    color:#6b7280;
+                    border-bottom:1px solid #eeeeee;
+                ">
+                    {category_label}
+                </td>
+
+                <td style="
+                    padding:10px 0;
+                    text-align:right;
+                    color:#111827;
+                    border-bottom:1px solid #eeeeee;
+                ">
+                    {safe_category}
+                </td>
+            </tr>
+
+            <tr>
+                <td style="
+                    padding:14px 0;
+                    font-weight:700;
+                    color:#111827;
+                ">
+                    {amount_label}
+                </td>
+
+                <td style="
+                    padding:14px 0;
+                    text-align:right;
+                    font-size:18px;
+                    font-weight:700;
+                    color:#111827;
+                ">
+                    {formatted_amount}
+                </td>
+            </tr>
+
+        </table>
+
+        <div style="
+            margin-top:28px;
+            padding-top:20px;
+            border-top:1px solid #e5e7eb;
+            font-size:12px;
+            line-height:1.6;
+            color:#9ca3af;
+        ">
+            {footer}
+        </div>
+
+    </div>
+
+</div>
+
+</body>
+</html>
+"""
+
+# ============================================================
+# INVESTMENT ACCOUNT NUMBER CHANGE REQUEST EMAIL
+# ============================================================
+
+def send_account_number_change_request_email(
+    *,
+    client,
+    request_data: dict,
+    request_id: str,
+):
+    """
+    Send an investment account-number format change request
+    to the Abhinava administrator through Resend.
+
+    Firestore remains the source of truth.
+
+    Email failure must NOT delete or roll back the request.
+    """
+
+    api_key = os.getenv("RESEND_API_KEY")
+
+    from_email = os.getenv(
+        "RESEND_FROM_EMAIL",
+        "welcome@abhinava.site",
+    )
+
+    from_name = os.getenv(
+        "RESEND_FROM_NAME",
+        "Abhinava",
+    )
+
+    recipient = "abhinavasoftwares@gmail.com"
+
+    if not api_key:
+        return {
+            "status": "NOT_CONFIGURED",
+            "message": (
+                "RESEND_API_KEY is not configured."
+            ),
+            "email_id": None,
+        }
+
+    # --------------------------------------------------------
+    # REQUEST DATA
+    # --------------------------------------------------------
+
+    scheme_name = (
+        request_data.get("schemeName")
+        or "Investment Scheme"
+    )
+
+    scheme_id = (
+        request_data.get("schemeId")
+        or ""
+    )
+
+    reason = (
+        request_data.get("reason")
+        or "No reason provided."
+    )
+
+    requested_by = (
+        request_data.get("requestedBy")
+        or "Unknown"
+    )
+
+    requested_by_email = (
+        request_data.get("requestedByEmail")
+        or "Not available"
+    )
+
+    current_theme = (
+        request_data.get("currentTheme")
+        or {}
+    )
+
+    requested_theme = (
+        request_data.get("requestedTheme")
+        or {}
+    )
+
+    current_prefix = (
+        current_theme.get("prefix")
+        or ""
+    )
+
+    current_padding = (
+        current_theme.get("padding")
+        or ""
+    )
+
+    requested_prefix = (
+        requested_theme.get("prefix")
+        or ""
+    )
+
+    requested_padding = (
+        requested_theme.get("padding")
+        or ""
+    )
+
+    # --------------------------------------------------------
+    # REQUESTED THEME
+    # --------------------------------------------------------
+
+    if requested_theme:
+        requested_theme_text = f"""
+            <p style="margin:6px 0;">
+                <strong>Requested Prefix:</strong>
+                {requested_prefix or "None"}
+            </p>
+
+            <p style="margin:6px 0;">
+                <strong>Requested Padding:</strong>
+                {requested_padding}
+            </p>
+        """
+    else:
+        requested_theme_text = """
+            <p style="margin:6px 0;color:#6b7280;">
+                No new account-number format was specified.
+            </p>
+        """
+
+    # --------------------------------------------------------
+    # EMAIL HTML
+    # --------------------------------------------------------
+
+    html = f"""
+<!DOCTYPE html>
+
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width">
+    <title>
+        Investment Account Number Change Request
+    </title>
+</head>
+
+<body style="
+    margin:0;
+    padding:0;
+    background:#f3f4f6;
+    font-family:
+        -apple-system,
+        BlinkMacSystemFont,
+        'Segoe UI',
+        Roboto,
+        Arial,
+        sans-serif;
+">
+
+    <div style="
+        max-width:680px;
+        margin:40px auto;
+        background:#ffffff;
+        border-radius:16px;
+        overflow:hidden;
+        box-shadow:
+            0 10px 30px rgba(0,0,0,0.08);
+    ">
+
+        <!-- HEADER -->
+
+        <div style="
+            padding:30px;
+            background:#111111;
+            color:#ffffff;
+        ">
+
+            <div style="
+                font-size:24px;
+                font-weight:700;
+            ">
+                Abhinava
+            </div>
+
+            <div style="
+                margin-top:7px;
+                color:#d1d5db;
+                font-size:13px;
+            ">
+                Investment Account Number Change Request
+            </div>
+
+        </div>
+
+
+        <!-- CONTENT -->
+
+        <div style="
+            padding:36px;
+        ">
+
+            <div style="
+                padding:16px 18px;
+                background:#fff7ed;
+                border-left:4px solid #ea580c;
+                border-radius:8px;
+            ">
+
+                <p style="
+                    margin:0;
+                    color:#9a3412;
+                    font-size:15px;
+                    font-weight:700;
+                ">
+                    Action Required
+                </p>
+
+                <p style="
+                    margin:7px 0 0;
+                    color:#7c2d12;
+                    font-size:13px;
+                    line-height:1.6;
+                ">
+                    An investment scheme account-number format
+                    change request has been submitted and requires
+                    administrator review.
+                </p>
+
+            </div>
+
+
+            <!-- SCHEME -->
+
+            <div style="
+                margin-top:25px;
+                padding:22px;
+                background:#f9fafb;
+                border-radius:12px;
+            ">
+
+                <h2 style="
+                    margin-top:0;
+                    font-size:17px;
+                    color:#111827;
+                ">
+                    Scheme
+                </h2>
+
+                <p style="
+                    margin:8px 0;
+                    color:#4b5563;
+                ">
+                    <strong>Scheme Name:</strong>
+                    {scheme_name}
+                </p>
+
+                <p style="
+                    margin:8px 0;
+                    color:#4b5563;
+                ">
+                    <strong>Scheme ID:</strong>
+                    {scheme_id}
+                </p>
+
+                <p style="
+                    margin:8px 0;
+                    color:#4b5563;
+                ">
+                    <strong>Request ID:</strong>
+                    {request_id}
+                </p>
+
+            </div>
+
+
+            <!-- CURRENT FORMAT -->
+
+            <div style="
+                margin-top:18px;
+                padding:22px;
+                background:#f9fafb;
+                border-radius:12px;
+            ">
+
+                <h2 style="
+                    margin-top:0;
+                    font-size:17px;
+                    color:#111827;
+                ">
+                    Current Account Number Format
+                </h2>
+
+                <p style="
+                    margin:6px 0;
+                    color:#4b5563;
+                ">
+                    <strong>Prefix:</strong>
+                    {current_prefix or "None"}
+                </p>
+
+                <p style="
+                    margin:6px 0;
+                    color:#4b5563;
+                ">
+                    <strong>Padding:</strong>
+                    {current_padding}
+                </p>
+
+            </div>
+
+
+            <!-- REQUESTED FORMAT -->
+
+            <div style="
+                margin-top:18px;
+                padding:22px;
+                background:#ecfdf5;
+                border-radius:12px;
+                border:1px solid #a7f3d0;
+            ">
+
+                <h2 style="
+                    margin-top:0;
+                    font-size:17px;
+                    color:#065f46;
+                ">
+                    Requested Account Number Format
+                </h2>
+
+                {requested_theme_text}
+
+            </div>
+
+
+            <!-- REASON -->
+
+            <div style="
+                margin-top:18px;
+                padding:22px;
+                background:#f9fafb;
+                border-radius:12px;
+            ">
+
+                <h2 style="
+                    margin-top:0;
+                    font-size:17px;
+                    color:#111827;
+                ">
+                    Reason for Change
+                </h2>
+
+                <p style="
+                    margin:0;
+                    color:#4b5563;
+                    line-height:1.7;
+                    white-space:pre-wrap;
+                ">
+                    {reason}
+                </p>
+
+            </div>
+
+
+            <!-- REQUESTER -->
+
+            <div style="
+                margin-top:18px;
+                padding:22px;
+                background:#f9fafb;
+                border-radius:12px;
+            ">
+
+                <h2 style="
+                    margin-top:0;
+                    font-size:17px;
+                    color:#111827;
+                ">
+                    Requested By
+                </h2>
+
+                <p style="
+                    margin:6px 0;
+                    color:#4b5563;
+                ">
+                    <strong>UID:</strong>
+                    {requested_by}
+                </p>
+
+                <p style="
+                    margin:6px 0;
+                    color:#4b5563;
+                ">
+                    <strong>Email:</strong>
+                    {requested_by_email}
+                </p>
+
+            </div>
+
+
+            <div style="
+                margin-top:30px;
+                padding-top:20px;
+                border-top:1px solid #e5e7eb;
+            ">
+
+                <p style="
+                    margin:0;
+                    color:#6b7280;
+                    font-size:12px;
+                    line-height:1.6;
+                ">
+                    This email was automatically generated by
+                    the Abhinava Investment Management Platform.
+                    Please review the request from the CRM before
+                    applying any account-number format change.
+                </p>
+
+            </div>
+
+        </div>
+
+
+        <!-- FOOTER -->
+
+        <div style="
+            padding:22px 36px;
+            background:#f9fafb;
+            border-top:1px solid #e5e7eb;
+        ">
+
+            <p style="
+                margin:0;
+                color:#6b7280;
+                font-size:12px;
+                text-align:center;
+            ">
+                © {datetime.utcnow().year}
+                Abhinava Softwares.
+                All rights reserved.
+            </p>
+
+        </div>
+
+    </div>
+
+</body>
+</html>
+"""
+
+    # --------------------------------------------------------
+    # SEND THROUGH RESEND
+    # --------------------------------------------------------
+
+    try:
+        resend.api_key = api_key
+
+        params = {
+            "from": (
+                f"{from_name} "
+                f"<{from_email}>"
+            ),
+
+            "to": [
+                recipient
+            ],
+
+            "subject": (
+                "Abhinava — Investment Account "
+                f"Number Change Request — {scheme_name}"
+            ),
+
+            "html": html,
+        }
+
+        result = resend.Emails.send(params)
+
+        return {
+            "status": "SENT",
+            "message": (
+                "Account number change request "
+                "email sent successfully."
+            ),
+            "email_id": (
+                result.get("id")
+                if isinstance(result, dict)
+                else None
+            ),
+        }
+
+    except Exception as exc:
+        print(
+            "Resend account-number change email failed:",
+            repr(exc),
+        )
+
+        return {
+            "status": "FAILED",
+            "message": (
+                "Request was saved, but the "
+                "notification email could not be sent."
+            ),
+            "email_id": None,
+        }
+
 # ============================================================
 # PLATFORM CLIENT MANAGEMENT
 # ============================================================
@@ -2828,15 +3691,6 @@ def save_client_firebase_config(
 # CRM FIREBASE CONFIGURATION
 # ============================================================
 
-
-# ============================================================
-# CRM FIREBASE CONFIGURATION
-# ============================================================
-
-# ============================================================
-# CRM FIREBASE CONFIGURATION
-# ============================================================
-
 @app.get("/crm/{crm_slug}/firebase-config")
 def get_crm_firebase_config(
     crm_slug: str,
@@ -2982,21 +3836,7 @@ def authorize_crm_admin_action(
     # ========================================================
     # 3. LOAD THE ADMIN USER DOCUMENT
     # ========================================================
-    #
-    # IMPORTANT:
-    #
-    # We intentionally read:
-    #
-    #     users/{uid}
-    #
-    # Therefore the Firestore document ID itself already
-    # identifies the authenticated Firebase user.
-    #
-    # The `uid` field inside the document is NOT required.
-    #
-    # The target employee's UID is also NOT required.
-    #
-    # ========================================================
+
 
     db = _get_tenant_firestore(project_id)
 
@@ -3115,17 +3955,20 @@ def authorize_crm_user(
 
     The backend verifies the Firebase identity and
     determines whether the identity belongs to an
-    ACTIVE employee.
+    authorized CRM account.
 
-    IMPORTANT:
-    The backend does NOT write tenant Firestore data.
+    First login:
+        - Firebase token is verified by the trusted backend.
+        - Active employee is resolved.
+        - Employee UID is securely bound.
+        - users/{uid} is provisioned by the trusted backend.
+        - Authorization is returned to the frontend.
 
-    On first login it returns a signed/verified
-    authorization bootstrap which the authenticated
-    browser can provision into users/{uid}.
+    Existing login:
+        - users/{uid} is validated.
+        - Authorization is returned to the frontend.
 
-    On subsequent logins this endpoint normally isn't
-    called because the frontend already has users/{uid}.
+    The browser never provisions authorization documents.
     """
 
     # --------------------------------------------------------
@@ -3141,6 +3984,10 @@ def authorize_crm_user(
         db=db,
         client=client,
     )
+
+    # Prevent unused-variable lint warnings while keeping
+    # entitlement validation explicit.
+    _ = entitlement
 
     # --------------------------------------------------------
     # FIREBASE PROJECT
@@ -3207,54 +4054,88 @@ def authorize_crm_user(
 
     try:
 
-        result = (
-            authorize_crm_firebase_user(
-                id_token=id_token,
-                project_id=(
-                    client.firebase_project_id
-                ),
-                tenant_id=(
-                    client.tenant_id
-                ),
-                crm_slug=(
-                    client.crm_slug
-                ),
-            )
+        result = authorize_crm_firebase_user(
+            id_token=id_token,
+            project_id=client.firebase_project_id,
+            tenant_id=client.tenant_id,
+            crm_slug=client.crm_slug,
         )
 
-        return {
+        # ----------------------------------------------------
+        # DEFENSIVE RESULT VALIDATION
+        # ----------------------------------------------------
+        if not isinstance(result, dict):
+            raise RuntimeError(
+                "CRM authorization service returned "
+                "an invalid response."
+            )
+
+        authorization = result.get("authorization")
+
+        if not isinstance(authorization, dict):
+            raise PermissionError(
+                "CRM authorization was not granted."
+            )
+
+        uid = result.get("uid")
+
+        if not uid:
+            raise RuntimeError(
+                "CRM authorization response is missing uid."
+            )
+
+        role = result.get("role")
+
+        if not role:
+            raise RuntimeError(
+                "CRM authorization response is missing role."
+            )
+
+        login_method = result.get("loginMethod")
+
+        if not login_method:
+            raise RuntimeError(
+                "CRM authorization response is missing "
+                "login method."
+            )
+
+        employee_id = result.get("employeeId")
+
+        if role != "ADMIN_OWNER" and not employee_id:
+            employee_id = authorization.get("employeeId")
+
+        if role != "ADMIN_OWNER" and not employee_id:
+            raise RuntimeError(
+                "CRM employee authorization response "
+                "is missing employeeId."
+            )
+
+        # ----------------------------------------------------
+        # CANONICAL RESPONSE
+        # ----------------------------------------------------
+
+        response = {
             "status": "authorized",
-
-            "firstLogin": (
-                result["firstLogin"]
+            "firstLogin": bool(
+                result.get(
+                    "firstLogin",
+                    False,
+                )
             ),
-
-            "tenantId": (
-                client.tenant_id
-            ),
-
+            "authorized": True,
+            "tenantId": client.tenant_id,
             "clientId": client.id,
-
-            "crmSlug": (
-                client.crm_slug
-            ),
-
-            "employeeId": (
-                result["employeeId"]
-            ),
-
-            "uid": result["uid"],
-
-            "role": result["role"],
-
-            "loginMethod": (
-                result["loginMethod"]
-            ),
-
-            "authorization": (
-                result["authorization"]
-            ),
+            "crmSlug": client.crm_slug,
+            "uid": uid,
+            "role": role,
+            "loginMethod": login_method,
+            "authorization": authorization,
         }
+
+        if employee_id:
+            response["employeeId"] = employee_id
+
+        return response
 
     except PermissionError as exc:
 
@@ -3270,12 +4151,42 @@ def authorize_crm_user(
             detail=str(exc),
         ) from exc
 
+    except HTTPException:
+        raise
+
     except Exception as exc:
 
         import traceback
 
         print(
-            "CRM Firebase authorization error:",
+            "=== CRM FIREBASE AUTHORIZATION ERROR ==="
+        )
+
+        print(
+            "CRM Slug:",
+            crm_slug,
+        )
+
+        print(
+            "Client ID:",
+            getattr(
+                client,
+                "id",
+                None,
+            ),
+        )
+
+        print(
+            "Tenant ID:",
+            getattr(
+                client,
+                "tenant_id",
+                None,
+            ),
+        )
+
+        print(
+            "Error:",
             repr(exc),
         )
 
@@ -3283,7 +4194,9 @@ def authorize_crm_user(
 
         raise HTTPException(
             status_code=500,
-            detail=f"CRM authorization failed: {str(exc)}",
+            detail=(
+                f"CRM authorization failed: {str(exc)}"
+            ),
         ) from exc
     
 
@@ -3611,6 +4524,316 @@ def send_crm_employee_welcome_email(
             f"{employee_email}."
         ),
     }
+
+# ============================================================
+# CRM INVESTMENT ACCOUNT NUMBER CHANGE REQUEST
+# ============================================================
+
+@app.post(
+    "/crm/{crm_slug}/investment/"
+    "account-number-change-requests/{request_id}/notify"
+)
+def notify_account_number_change_request(
+    crm_slug: str,
+    request_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """
+    Notify Abhinava administrators about an investment
+    account-number format change request.
+
+    Security:
+        - CRM tenant is resolved from crm_slug.
+        - Firebase ID token is required.
+        - Only ADMIN_OWNER can perform this action.
+        - Request is read from the tenant's Firebase project.
+        - Email is sent only by the backend through Resend.
+        - Resend credentials never reach the browser.
+    """
+
+    # ========================================================
+    # 1. RESOLVE TENANT
+    # ========================================================
+
+    client = resolve_crm_client(
+        crm_slug=crm_slug,
+        db=db,
+    )
+
+    require_crm_access(
+        db=db,
+        client=client,
+    )
+
+    # ========================================================
+    # 2. FIREBASE PROJECT
+    # ========================================================
+
+    if not client.firebase_project_id:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "CRM tenant Firebase project "
+                "is not configured."
+            ),
+        )
+
+    # ========================================================
+    # 3. READ FIREBASE AUTH TOKEN
+    # ========================================================
+
+    authorization_header = (
+        request.headers.get("Authorization")
+    )
+
+    if not authorization_header:
+        raise HTTPException(
+            status_code=401,
+            detail=(
+                "Firebase authentication token "
+                "is required."
+            ),
+        )
+
+    if not authorization_header.startswith(
+        "Bearer "
+    ):
+        raise HTTPException(
+            status_code=401,
+            detail=(
+                "Invalid Firebase authorization header."
+            ),
+        )
+
+    id_token = (
+        authorization_header[
+            len("Bearer "):
+        ]
+        .strip()
+    )
+
+    if not id_token:
+        raise HTTPException(
+            status_code=401,
+            detail=(
+                "Firebase authentication token "
+                "is required."
+            ),
+        )
+
+    # ========================================================
+    # 4. AUTHORIZE ADMIN
+    # ========================================================
+
+    try:
+        authorize_crm_admin_action(
+            id_token=id_token,
+            project_id=client.firebase_project_id,
+            tenant_id=client.tenant_id,
+            crm_slug=client.crm_slug,
+        )
+
+    except PermissionError as exc:
+        raise HTTPException(
+            status_code=403,
+            detail=str(exc),
+        ) from exc
+
+    except Exception as exc:
+        print(
+            "Investment request admin authorization failed:",
+            repr(exc),
+        )
+
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "Unable to authorize the CRM administrator."
+            ),
+        ) from exc
+
+    # ========================================================
+    # 5. LOAD TENANT FIRESTORE
+    # ========================================================
+
+    try:
+        tenant_firestore = _get_tenant_firestore(
+            client.firebase_project_id
+        )
+
+        request_ref = (
+            tenant_firestore
+            .collection(
+                "investmentAccountNumberChangeRequests"
+            )
+            .document(request_id)
+        )
+
+        request_snapshot = request_ref.get()
+
+    except Exception as exc:
+        print(
+            "Investment account-number request lookup failed:",
+            repr(exc),
+        )
+
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "Unable to load the account-number "
+                "change request."
+            ),
+        ) from exc
+
+    # ========================================================
+    # 6. REQUEST EXISTS
+    # ========================================================
+
+    if not request_snapshot.exists:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                "Account-number change request "
+                "was not found."
+            ),
+        )
+
+    request_data = (
+        request_snapshot.to_dict()
+        or {}
+    )
+
+    # ========================================================
+    # 7. VERIFY REQUEST BELONGS TO THIS TENANT
+    #
+    # Firestore itself is tenant-specific because we opened
+    # the Firebase project from the resolved CRM client.
+    #
+    # Still verify the expected request structure.
+    # ========================================================
+
+    request_scheme_id = str(
+        request_data.get("schemeId") or ""
+    ).strip()
+
+    if not request_scheme_id:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "Investment request does not contain "
+                "a valid scheme ID."
+            ),
+        )
+
+    # ========================================================
+    # 8. PREVENT ACCIDENTAL DUPLICATE EMAIL
+    # ========================================================
+
+    existing_status = str(
+        request_data.get(
+            "emailNotificationStatus"
+        )
+        or ""
+    ).upper()
+
+    if existing_status == "SENT":
+        return {
+            "success": True,
+            "status": "ALREADY_SENT",
+            "requestId": request_id,
+            "message": (
+                "The notification email for this request "
+                "has already been sent."
+            ),
+        }
+
+    # ========================================================
+    # 9. SEND EMAIL
+    # ========================================================
+
+    email_result = (
+        send_account_number_change_request_email(
+            client=client,
+            request_data=request_data,
+            request_id=request_id,
+        )
+    )
+
+    # ========================================================
+    # 10. UPDATE FIRESTORE EMAIL STATUS
+    # ========================================================
+
+    try:
+        update_data = {
+            "emailNotificationStatus": (
+                email_result["status"]
+            ),
+            "emailNotificationMessage": (
+                email_result.get("message")
+            ),
+        }
+
+        if email_result.get("email_id"):
+            update_data[
+                "emailNotificationId"
+            ] = email_result["email_id"]
+
+        if email_result["status"] == "SENT":
+            update_data[
+                "emailNotificationSentAt"
+            ] = datetime.utcnow()
+
+        request_ref.update(
+            update_data
+        )
+
+    except Exception as exc:
+        # Email itself may already have succeeded.
+        # Do not report email failure merely because the
+        # Firestore status update failed.
+
+        print(
+            "Unable to update investment request "
+            "email status:",
+            repr(exc),
+        )
+
+    # ========================================================
+    # 11. RESPONSE
+    # ========================================================
+
+    if email_result["status"] == "SENT":
+        return {
+            "success": True,
+            "status": "SENT",
+            "requestId": request_id,
+            "email": "abhinavasoftwares@gmail.com",
+            "emailId": (
+                email_result.get("email_id")
+            ),
+            "message": (
+                "Account-number change request "
+                "notification sent successfully."
+            ),
+        }
+
+    if email_result["status"] == "NOT_CONFIGURED":
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Request was saved, but Resend is "
+                "not configured on the backend."
+            ),
+        )
+
+    raise HTTPException(
+        status_code=502,
+        detail=(
+            email_result.get("message")
+            or "Unable to send the notification email."
+        ),
+    )
 # ============================================================
 # TEMPORARY RESEND TEST
 # ============================================================
@@ -3697,4 +4920,334 @@ def test_email(
         raise HTTPException(
             status_code=500,
             detail=f"Resend email failed: {str(exc)}",
+        )
+
+@app.post("/crm/{crm_slug}/investment/send-welcome-email")
+async def send_investment_welcome_email_endpoint(
+    crm_slug: str,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """
+    Send investor welcome email through Resend.
+
+    This endpoint is notification-only.
+    Business data remains in the tenant Firebase project.
+    """
+
+    try:
+        # ----------------------------------------------------
+        # 1. RESOLVE CRM TENANT
+        # ----------------------------------------------------
+
+        client = resolve_crm_client(
+            crm_slug=crm_slug,
+            db=db,
+        )
+
+        require_crm_access(
+            db=db,
+            client=client,
+        )
+
+        # ----------------------------------------------------
+        # 2. VERIFY FIREBASE PROJECT
+        # ----------------------------------------------------
+
+        if not client.firebase_project_id:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "CRM tenant Firebase project "
+                    "is not configured."
+                ),
+            )
+
+        # ----------------------------------------------------
+        # 3. FIREBASE AUTHENTICATION
+        # ----------------------------------------------------
+
+        authorization_header = request.headers.get(
+            "Authorization"
+        )
+
+        if not authorization_header:
+            raise HTTPException(
+                status_code=401,
+                detail="Authorization token is required.",
+            )
+
+        if not authorization_header.startswith("Bearer "):
+            raise HTTPException(
+                status_code=401,
+                detail="Invalid authorization header.",
+            )
+
+        id_token = authorization_header[
+            len("Bearer "):
+        ].strip()
+
+        if not id_token:
+            raise HTTPException(
+                status_code=401,
+                detail="Invalid Firebase ID token.",
+            )
+
+        # ----------------------------------------------------
+        # 4. AUTHORIZE CRM ADMIN
+        # ----------------------------------------------------
+
+        try:
+            authorize_crm_admin_action(
+                id_token=id_token,
+                project_id=client.firebase_project_id,
+                tenant_id=client.tenant_id,
+                crm_slug=client.crm_slug,
+            )
+
+        except PermissionError as exc:
+            raise HTTPException(
+                status_code=403,
+                detail=str(exc),
+            ) from exc
+
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=400,
+                detail=str(exc),
+            ) from exc
+
+        except Exception as exc:
+            print(
+                "CRM investment email authorization error:",
+                repr(exc),
+            )
+
+            raise HTTPException(
+                status_code=500,
+                detail=(
+                    "Unable to authorize the CRM administrator."
+                ),
+            ) from exc
+
+        # ----------------------------------------------------
+        # 5. REQUEST BODY
+        # ----------------------------------------------------
+
+        payload = await request.json()
+
+        recipient_email = (
+            payload.get("recipientEmail")
+            or payload.get("recipient_email")
+            or ""
+        ).strip()
+
+        if not recipient_email:
+            raise HTTPException(
+                status_code=400,
+                detail="Investor email address is required.",
+            )
+
+        # ----------------------------------------------------
+        # 6. SEND THROUGH RESEND
+        # ----------------------------------------------------
+
+        result = send_investment_welcome_email(
+            recipient_email=recipient_email,
+            investor_name=payload.get(
+                "investorName",
+                "",
+            ),
+            account_number=payload.get(
+                "accountNumber",
+                "",
+            ),
+            scheme_name=payload.get(
+                "schemeName",
+                "",
+            ),
+            start_date=payload.get(
+                "startDate",
+                "",
+            ),
+            contribution_value=payload.get(
+                "contributionValue",
+                0,
+            ),
+            login_url=payload.get(
+                "loginUrl",
+                "",
+            ),
+            language=payload.get(
+                "language",
+                "EN",
+            ),
+            client_name=payload.get(
+                "clientName",
+                "",
+            ),
+            client_logo_url=payload.get(
+                "clientLogoUrl",
+                "",
+            ),
+            client_phone=payload.get(
+                "clientPhone",
+                "",
+            ),
+            client_email=payload.get(
+                "clientEmail",
+                "",
+            ),
+            client_website=payload.get(
+                "clientWebsite",
+                "",
+            ),
+            has_initial_transaction=bool(
+                payload.get(
+                    "hasInitialTransaction",
+                    False,
+                )
+            ),
+            transaction_amount=payload.get(
+                "transactionAmount",
+            ),
+            receipt_number=payload.get(
+                "receiptNumber",
+                "",
+            ),
+            attachments=payload.get(
+                "attachments",
+                [],
+            ),
+        )
+
+        # ----------------------------------------------------
+        # 7. EMAIL RESULT
+        # ----------------------------------------------------
+
+        if result.get("status") == "FAILED":
+            return {
+                "success": False,
+                **result,
+            }
+
+        if result.get("status") == "NOT_CONFIGURED":
+            return {
+                "success": False,
+                **result,
+            }
+
+        return {
+            "success": True,
+            **result,
+        }
+
+    except HTTPException:
+        raise
+
+    except Exception as exc:
+        print(
+            "Investment welcome email error:",
+            repr(exc),
+        )
+
+        raise HTTPException(
+            status_code=500,
+            detail="Unable to send investment welcome email.",
+        ) from exc
+
+@app.post("/crm/investments/receipts/email")
+def send_investment_receipt_email(
+    payload: InvestmentReceiptEmailRequest,
+):
+    api_key = os.getenv("RESEND_API_KEY")
+
+    from_email = os.getenv(
+        "RESEND_FROM_EMAIL",
+        "welcome@abhinava.site",
+    )
+
+    from_name = os.getenv(
+        "RESEND_FROM_NAME",
+        "Abhinava",
+    )
+
+    if not api_key:
+        raise HTTPException(
+            status_code=503,
+            detail="Investment email service is not configured.",
+        )
+
+    language = (
+        str(payload.language or "EN")
+        .strip()
+        .upper()
+    )
+
+    if language not in {"EN", "KN"}:
+        language = "EN"
+
+    html = build_investment_receipt_email_html(
+        language=language,
+        receipt_number=payload.receiptNumber,
+        investor_name=payload.investorName,
+        account_number=payload.accountNumber,
+        scheme_name=payload.schemeName,
+        transaction_date=payload.transactionDate,
+        transaction_type=payload.transactionType,
+        transaction_category=payload.transactionCategory,
+        transaction_amount=payload.transactionAmount,
+    )
+
+    if language == "KN":
+        subject = (
+            f"ಹೂಡಿಕೆ ರಸೀದಿ - "
+            f"{payload.receiptNumber}"
+        )
+    else:
+        subject = (
+            f"Investment Receipt - "
+            f"{payload.receiptNumber}"
+        )
+
+    try:
+        resend.api_key = api_key
+
+        result = resend.Emails.send(
+            {
+                "from": (
+                    f"{from_name} "
+                    f"<{from_email}>"
+                ),
+                "to": [
+                    str(
+                        payload.recipientEmail
+                    )
+                ],
+                "subject": subject,
+                "html": html,
+            }
+        )
+
+        email_id = (
+            result.get("id")
+            if isinstance(result, dict)
+            else None
+        )
+
+        return {
+            "success": True,
+            "receiptId": payload.receiptId,
+            "emailId": email_id,
+            "status": "SENT",
+        }
+
+    except Exception as exc:
+
+        raise HTTPException(
+            status_code=502,
+            detail=(
+                "Investment receipt email failed: "
+                f"{str(exc)}"
+            ),
         )

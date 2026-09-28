@@ -4,8 +4,12 @@ import {
   deleteDoc,
   doc,
   getDoc,
+  getDocs,
+  limit,
+  query,
   serverTimestamp,
   updateDoc,
+  where,
 } from "firebase/firestore";
 
 import {
@@ -45,6 +49,13 @@ function normalize(input = {}) {
   const email = clean(input?.email).toLowerCase();
   const city = clean(input?.city);
 
+  const emailPreferences = {
+    enabled: input?.emailPreferences?.enabled === true,
+    language: ["EN", "KN"].includes(input?.emailPreferences?.language)
+      ? input.emailPreferences.language
+      : "EN",
+  };
+
   return {
     fullName,
     fullNameLower: fullName.toLowerCase(),
@@ -65,6 +76,7 @@ function normalize(input = {}) {
     city,
     cityLower: city.toLowerCase(),
     pincode: clean(input?.pincode),
+    emailPreferences,
   };
 }
 
@@ -123,6 +135,32 @@ export async function createInvestmentInvestor(input = {}) {
   return { id: ref.id, ...data, status: input.status || "ACTIVE" };
 }
 
+export async function findInvestmentInvestorByMobile(mobileNumber) {
+  const normalized = mobile(mobileNumber);
+
+  if (!/^[0-9]{10}$/.test(normalized)) {
+    throw new Error("Enter a valid 10-digit mobile number.");
+  }
+
+  const db = getCrmFirestore();
+
+  const snapshot = await getDocs(
+    query(
+      collection(db, COLLECTION),
+      where("mobileNumberSearch", "==", normalized),
+      limit(1)
+    )
+  );
+
+  if (snapshot.empty) return null;
+
+  const item = snapshot.docs[0];
+  return {
+    id: item.id,
+    ...item.data(),
+  };
+}
+
 export async function getInvestmentInvestor(investorId) {
   if (!investorId) throw new Error("Investor ID is required.");
 
@@ -146,7 +184,10 @@ export async function updateInvestmentInvestor(investorId, updates = {}) {
   const old = existing.data();
   const data = {};
 
-  if (updates.fullName !== undefined) data.fullName = clean(updates.fullName);
+  if (updates.fullName !== undefined) {
+    data.fullName = clean(updates.fullName);
+    data.fullNameLower = data.fullName.toLowerCase();
+  }
 
   if (updates.mobileNumber !== undefined) {
     const m = mobile(updates.mobileNumber);
@@ -154,18 +195,35 @@ export async function updateInvestmentInvestor(investorId, updates = {}) {
       throw new Error("Enter a valid 10-digit mobile number.");
     }
     data.mobileNumber = m;
+    data.mobileNumberSearch = m;
   }
 
   if (updates.alternateMobileNumber !== undefined) {
     data.alternateMobileNumber = mobile(updates.alternateMobileNumber);
+    data.alternateMobileNumberSearch = data.alternateMobileNumber;
   }
 
-  if (updates.email !== undefined) data.email = clean(updates.email).toLowerCase();
+  if (updates.email !== undefined) {
+    data.email = clean(updates.email).toLowerCase();
+    data.emailSearch = data.email;
+  }
   if (updates.dateOfBirth !== undefined) data.dateOfBirth = clean(updates.dateOfBirth);
   if (updates.gender !== undefined) data.gender = clean(updates.gender);
   if (updates.address !== undefined) data.address = clean(updates.address);
-  if (updates.city !== undefined) data.city = clean(updates.city);
+  if (updates.city !== undefined) {
+    data.city = clean(updates.city);
+    data.cityLower = data.city.toLowerCase();
+  }
   if (updates.pincode !== undefined) data.pincode = clean(updates.pincode);
+
+  if (updates.emailPreferences !== undefined) {
+    data.emailPreferences = {
+      enabled: updates.emailPreferences?.enabled === true,
+      language: ["EN", "KN"].includes(updates.emailPreferences?.language)
+        ? updates.emailPreferences.language
+        : "EN",
+    };
+  }
 
   if (!Object.keys(data).length) return { id: investorId, ...old };
 

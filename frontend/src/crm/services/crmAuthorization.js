@@ -3,6 +3,7 @@ import {
   getDoc,
   serverTimestamp,
   writeBatch,
+  runTransaction
 } from "firebase/firestore";
 
 import {
@@ -12,6 +13,8 @@ import {
 import {
   getCrmSlugFromPath,
 } from "../utils/crmRoutes";
+
+
 
 /* =========================================================
    CONSTANTS
@@ -317,6 +320,99 @@ function buildAuthorization(
   };
 }
 
+export async function ensureClientEmployeeBinding({
+  authorization,
+}) {
+  if (!authorization) {
+    throw new Error(
+      "CRM authorization is required."
+    );
+  }
+
+  const employeeId =
+    authorization.employeeId;
+
+  const uid =
+    authorization.uid;
+
+  if (!employeeId) {
+    throw new Error(
+      "CRM authorization is missing employeeId."
+    );
+  }
+
+  if (!uid) {
+    throw new Error(
+      "CRM authorization is missing uid."
+    );
+  }
+
+  const firestore =
+    getCrmFirestore();
+
+  if (!firestore) {
+    throw new Error(
+      "CRM Firestore is not initialized."
+    );
+  }
+
+  const userRef = doc(
+    firestore,
+    "users",
+    uid
+  );
+
+  await runTransaction(
+    firestore,
+    async (transaction) => {
+
+      const snapshot =
+        await transaction.get(
+          userRef
+        );
+
+      // Already provisioned for this Firebase identity.
+      if (snapshot.exists()) {
+
+        const existing =
+          snapshot.data() || {};
+
+        if (
+          existing.uid !== uid
+          ||
+          existing.employeeId !== employeeId
+        ) {
+          throw new Error(
+            "Existing CRM authorization binding does not match this employee."
+          );
+        }
+
+        return;
+      }
+
+      // Create ONLY the identity binding.
+      //
+      // Permissions are intentionally NOT copied here.
+      // Firestore rules read the current permissions from
+      // employees/{employeeId}.
+      transaction.set(
+        userRef,
+        {
+          uid,
+          employeeId,
+          status: "ACTIVE",
+          role:
+            authorization.role || "EMPLOYEE",
+        }
+      );
+    }
+  );
+
+  console.log(
+    "Client Firebase employee authorization binding ready:",
+    `users/${uid}`
+  );
+}
 
 /* =========================================================
    READ EXISTING AUTHORIZATION
@@ -647,15 +743,6 @@ export async function resolveCrmAuthorization(firebaseUser) {
 
   const bootstrap = await bindCrmFirebaseUser(firebaseUser);
 
-  console.log("=== CRM BOOTSTRAP RESPONSE ===");
-  console.log("Bootstrap:", bootstrap);
-  console.log("Bootstrap status:", bootstrap?.status);
-  console.log("Bootstrap UID:", bootstrap?.uid);
-  console.log("Bootstrap employeeId:", bootstrap?.employeeId);
-  console.log("Bootstrap role:", bootstrap?.role);
-  console.log("Bootstrap loginMethod:", bootstrap?.loginMethod);
-  console.log("Bootstrap authorization:", bootstrap?.authorization);
-
   if (bootstrap?.status !== "authorized") {
     throw new Error(
       "CRM authorization failed: backend did not authorize this Firebase user."
@@ -672,9 +759,14 @@ export async function resolveCrmAuthorization(firebaseUser) {
     firebaseUser,
     bootstrap.authorization
   );
-
-  console.log("=== CRM FINAL AUTHORIZATION ===");
-  console.log("Authorization:", authorization);
+    if (
+      authorization?.employeeId
+      && authorization?.uid
+    ) {
+      await ensureClientEmployeeBinding({
+        authorization,
+      });
+  }
 
   return authorization;
 }

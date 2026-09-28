@@ -105,7 +105,7 @@ function validatePermissions(role, permissions) {
 
     sanitized.investments = {
       read: true,
-      write: true,
+      write: false,
       delete: false,
     };
   }

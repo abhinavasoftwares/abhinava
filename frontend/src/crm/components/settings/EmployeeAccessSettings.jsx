@@ -12,9 +12,6 @@ import {
   Edit2,
   Mail,
   Phone,
-  KeyRound,
-  Lock,
-  UserCheck,
 } from "lucide-react";
 
 import {

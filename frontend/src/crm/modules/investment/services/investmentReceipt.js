@@ -1,29 +1,17 @@
 import {
+  collection,
   doc,
-  getDoc,
-  runTransaction,
+  getDocs,
+  query,
+  where,
   serverTimestamp,
 } from "firebase/firestore";
 
-import {
-  getCrmFirestore,
-} from "../../../firebase";
-
-const RECEIPT_SETTINGS_PATH =
-  "investmentSettings/receiptNumberSequence";
-
 // ============================================================
-// DEFAULT CONFIGURATION
+// COLLECTIONS
 // ============================================================
 
-const DEFAULT_RECEIPT_CONFIG = {
-  prefix: "RCP",
-  separator: "-",
-  yearEnabled: true,
-  yearDigits: 4,
-  sequencePadding: 6,
-  nextSequence: 1,
-};
+const RECEIPT_SERIES_COLLECTION = "receiptSeries";
 
 // ============================================================
 // HELPERS
@@ -33,160 +21,195 @@ function clean(value) {
   return String(value ?? "").trim();
 }
 
-function normalizeConfig(data = {}) {
-  const prefix =
-    clean(data.prefix)
-      .toUpperCase() ||
-    DEFAULT_RECEIPT_CONFIG.prefix;
+function toNumber(value, fallback = 0) {
+  const result = Number(value);
 
-  const separator =
-    data.separator !== undefined
-      ? String(data.separator)
-      : DEFAULT_RECEIPT_CONFIG.separator;
-
-  const yearEnabled =
-    data.yearEnabled !== undefined
-      ? Boolean(data.yearEnabled)
-      : DEFAULT_RECEIPT_CONFIG.yearEnabled;
-
-  const yearDigits =
-    Number.isInteger(
-      Number(data.yearDigits)
-    ) &&
-    Number(data.yearDigits) >= 2 &&
-    Number(data.yearDigits) <= 4
-      ? Number(data.yearDigits)
-      : DEFAULT_RECEIPT_CONFIG.yearDigits;
-
-  const sequencePadding =
-    Number.isInteger(
-      Number(data.sequencePadding)
-    ) &&
-    Number(data.sequencePadding) >= 1 &&
-    Number(data.sequencePadding) <= 12
-      ? Number(data.sequencePadding)
-      : DEFAULT_RECEIPT_CONFIG.sequencePadding;
-
-  const nextSequence =
-    Number.isInteger(
-      Number(data.nextSequence)
-    ) &&
-    Number(data.nextSequence) >= 1
-      ? Number(data.nextSequence)
-      : DEFAULT_RECEIPT_CONFIG.nextSequence;
-
-  return {
-    prefix,
-    separator,
-    yearEnabled,
-    yearDigits,
-    sequencePadding,
-    nextSequence,
-  };
+  return Number.isFinite(result) ? result : fallback;
 }
 
-// ============================================================
-// GET CONFIGURATION
-// ============================================================
+function padNumber(number, padding) {
+  return String(number).padStart(padding, "0");
+}
 
-export async function getInvestmentReceiptConfig() {
-  const db =
-    getCrmFirestore();
+function normalizePrefix(prefix) {
+  return clean(prefix);
+}
 
-  const reference =
-    doc(
-      db,
-      RECEIPT_SETTINGS_PATH
-    );
+function formatReceiptNumber(prefix, number, padding) {
+  return `${normalizePrefix(prefix)}${padNumber(number, padding)}`;
+}
 
-  const snapshot =
-    await getDoc(
-      reference
-    );
-
-  if (!snapshot.exists()) {
-    return {
-      ...DEFAULT_RECEIPT_CONFIG,
-    };
-  }
-
-  return normalizeConfig(
-    snapshot.data()
+function isActiveInvestmentSeries(series) {
+  return (
+    series?.status === "ACTIVE" &&
+    Array.isArray(series?.modules) &&
+    (
+      series.modules.includes("INVESTMENTS") ||
+      series.modules.includes("ALL")
+    )
   );
 }
 
-// ============================================================
-// FORMAT RECEIPT NUMBER
-// ============================================================
-
-export function formatInvestmentReceiptNumber(
-  config,
-  sequence,
-  date = new Date()
-) {
-  const normalized =
-    normalizeConfig(config);
-
-  const sequencePart =
-    String(sequence).padStart(
-      normalized.sequencePadding,
-      "0"
-    );
-
-  const parts = [
-    normalized.prefix,
-  ];
-
-  if (
-    normalized.yearEnabled
-  ) {
-    parts.push(
-      String(
-        date.getFullYear()
-      ).padStart(
-        normalized.yearDigits,
-        "0"
-      )
-    );
-  }
-
-  parts.push(
-    sequencePart
-  );
-
-  return parts.join(
-    normalized.separator
-  );
+function getApplicableSchemes(series) {
+  return Array.isArray(series?.applicableSchemes)
+    ? series.applicableSchemes.filter(Boolean)
+    : [];
 }
 
 // ============================================================
-// ALLOCATE RECEIPT INSIDE AN EXISTING FIRESTORE TRANSACTION
-// ============================================================
-//
-// IMPORTANT:
-//
-// This function does NOT create its own Firestore transaction.
-//
-// It participates in the caller's existing transaction.
-//
-// Therefore:
-//
-// Account creation
-//       +
-// Initial transaction
-//       +
-// Transfer transaction
-//       +
-// Receipt sequence
-//
-// can all commit atomically.
-//
+// FIND RECEIPT SERIES
 // ============================================================
 
-export async function allocateInvestmentReceipt(
+/**
+ * Receipt-series selection rules:
+ *
+ * 1. Active scheme-specific INVESTMENT series wins.
+ *
+ * 2. Otherwise use active overall INVESTMENT series.
+ *
+ * 3. If neither exists, transaction is rejected.
+ *
+ * This allows a client to configure:
+ *
+ * Overall:
+ *   INV/00001
+ *
+ * Scheme-specific:
+ *   GOLD/00001
+ *
+ * while keeping both within the same tenant Firebase.
+ */
+async function findInvestmentReceiptSeries(
   transaction,
-  receiptSequenceRef,
-  transactionDate = null
+  db,
+  schemeId
+) {
+  const receiptSeriesRef = collection(
+    db,
+    RECEIPT_SERIES_COLLECTION
+  );
+
+  const snapshot = await getDocs(
+  query(
+    receiptSeriesRef,
+    where("status", "==", "ACTIVE")
+  )
+);
+
+  const series = snapshot.docs
+    .map((item) => ({
+      id: item.id,
+      ...item.data(),
+    }))
+    .filter(isActiveInvestmentSeries);
+
+  if (!series.length) {
+    throw new Error(
+      "No active Investment Receipt Series is configured. Please configure Receipt Series in Settings before recording a transaction."
+    );
+  }
+
+  const normalizedSchemeId = clean(schemeId);
+
+  // ----------------------------------------------------------
+  // 1. SCHEME-SPECIFIC SERIES
+  // ----------------------------------------------------------
+
+  if (normalizedSchemeId) {
+    const schemeSeries = series.filter((item) => {
+      const schemes = getApplicableSchemes(item);
+
+      return (
+        schemes.length > 0 &&
+        schemes.includes(normalizedSchemeId)
+      );
+    });
+
+    if (schemeSeries.length > 1) {
+      throw new Error(
+        `Multiple active receipt series are configured for investment scheme ${normalizedSchemeId}. Please keep only one scheme-specific investment receipt series active.`
+      );
+    }
+
+    if (schemeSeries.length === 1) {
+      return schemeSeries[0];
+    }
+  }
+
+  // ----------------------------------------------------------
+  // 2. OVERALL INVESTMENT SERIES
+  // ----------------------------------------------------------
+
+  const overallSeries = series.filter((item) => {
+    const schemes = getApplicableSchemes(item);
+
+    return schemes.length === 0;
+  });
+
+  if (overallSeries.length > 1) {
+    throw new Error(
+      "Multiple active overall Investment Receipt Series are configured. Please keep only one overall investment receipt series active."
+    );
+  }
+
+  if (overallSeries.length === 1) {
+    return overallSeries[0];
+  }
+
+  // ----------------------------------------------------------
+  // 3. NO MATCH
+  // ----------------------------------------------------------
+
+  throw new Error(
+    normalizedSchemeId
+      ? "No active receipt series is configured for this investment scheme, and no overall Investment Receipt Series is configured."
+      : "No overall Investment Receipt Series is configured."
+  );
+}
+
+// ============================================================
+// ALLOCATE RECEIPT
+// ============================================================
+
+/**
+ * IMPORTANT:
+ *
+ * This function is called from the SAME Firestore
+ * runTransaction() used to create the investment transaction.
+ *
+ * Therefore:
+ *
+ * receipt number reservation
+ * +
+ * transaction creation
+ * +
+ * account update
+ *
+ * remain atomic.
+ *
+ * The old global sequence:
+ *
+ * investmentSettings/receiptNumberSequence
+ *
+ * is intentionally NOT used anymore.
+ */
+/**
+ * Allocate multiple Investment receipts atomically inside the caller's
+ * existing Firestore transaction.
+ *
+ * `receipts` is an array of objects:
+ *   { schemeId, transactionDate }
+ *
+ * All receipts in one call are allocated from the same resolved series.
+ * This is used by account creation because a carry-forward can create
+ * both an initial transaction receipt and a transfer receipt.
+ */
+export async function allocateInvestmentReceipts(
+  transaction,
+  db,
+  {
+    receipts = [],
+  } = {}
 ) {
   if (!transaction) {
     throw new Error(
@@ -194,218 +217,152 @@ export async function allocateInvestmentReceipt(
     );
   }
 
-  if (!receiptSequenceRef) {
+  if (!db) {
     throw new Error(
-      "Receipt sequence reference is required."
+      "Firestore database instance is required for receipt allocation."
     );
   }
 
-  const snapshot =
-    await transaction.get(
-      receiptSequenceRef
-    );
+  if (!Array.isArray(receipts) || receipts.length === 0) {
+    return [];
+  }
 
-  const config =
-    snapshot.exists()
-      ? normalizeConfig(
-          snapshot.data()
-        )
-      : normalizeConfig();
+  const firstRequest = receipts[0] || {};
 
-  const sequence =
-    config.nextSequence;
+  const series = await findInvestmentReceiptSeries(
+    transaction,
+    db,
+    firstRequest.schemeId
+  );
 
-  const date =
-    transactionDate
-      ? new Date(
-          `${transactionDate}T00:00:00`
-        )
-      : new Date();
+  // ----------------------------------------------------------
+  // SERIES VALIDATION
+  // ----------------------------------------------------------
 
-  if (
-    Number.isNaN(
-      date.getTime()
+  const prefix = normalizePrefix(
+    series.prefix
+  );
+
+  const padding = Math.max(
+    1,
+    Math.trunc(
+      toNumber(
+        series.padding,
+        5
+      )
     )
-  ) {
+  );
+
+  const firstNumber = Math.trunc(
+    toNumber(
+      series.nextNumber,
+      0
+    )
+  );
+
+  if (firstNumber <= 0) {
     throw new Error(
-      "Invalid receipt transaction date."
+      `Receipt series "${series.name || series.id}" has an invalid next receipt number.`
     );
   }
 
-  const receiptNumber =
-    formatInvestmentReceiptNumber(
-      config,
-      sequence,
-      date
-    );
+  // ----------------------------------------------------------
+  // ALLOCATE CONSECUTIVE NUMBERS IN MEMORY
+  // ----------------------------------------------------------
 
-  transaction.set(
-    receiptSequenceRef,
+  const allocated = receipts.map(
+    (item, index) => {
+      const receiptSequence =
+        firstNumber + index;
+
+      return {
+        receiptNumber:
+          formatReceiptNumber(
+            prefix,
+            receiptSequence,
+            padding
+          ),
+
+        receiptSequence,
+
+        receiptSeriesId:
+          series.id,
+
+        receiptSeriesName:
+          series.name || null,
+
+        receiptSeriesPrefix:
+          prefix,
+
+        receiptSeriesPadding:
+          padding,
+
+        transactionDate:
+          item?.transactionDate || null,
+
+        schemeId:
+          item?.schemeId || null,
+      };
+    }
+  );
+
+  // ----------------------------------------------------------
+  // ONE SERIES UPDATE
+  // ----------------------------------------------------------
+
+  const seriesRef = doc(
+    db,
+    RECEIPT_SERIES_COLLECTION,
+    series.id
+  );
+
+  transaction.update(
+    seriesRef,
     {
-      prefix:
-        config.prefix,
+      nextNumber:
+        firstNumber + receipts.length,
 
-      separator:
-        config.separator,
-
-      yearEnabled:
-        config.yearEnabled,
-
-      yearDigits:
-        config.yearDigits,
-
-      sequencePadding:
-        config.sequencePadding,
-
-      nextSequence:
-        sequence + 1,
+      usageCount:
+        toNumber(
+          series.usageCount,
+          0
+        ) + receipts.length,
 
       updatedAt:
         serverTimestamp(),
-    },
-    {
-      merge: true,
     }
   );
 
-  return {
-    receiptNumber,
-    receiptSequence:
-      sequence,
-  };
+  return allocated;
 }
 
-// ============================================================
-// LEGACY / STANDALONE RECEIPT GENERATION
-// ============================================================
-//
-// Keep this for places that genuinely need to allocate a receipt
-// outside an existing transaction.
-//
-// Account and transaction creation should use
-// allocateInvestmentReceipt() instead.
-//
-// ============================================================
-
-export async function generateInvestmentReceiptNumber(
-  transactionDate = null
+/**
+ * Allocate one Investment receipt.
+ *
+ * Kept as the public single-receipt API so normal transaction creation
+ * continues to use the same interface.
+ */
+export async function allocateInvestmentReceipt(
+  transaction,
+  db,
+  {
+    schemeId,
+    transactionDate,
+  } = {}
 ) {
-  const db =
-    getCrmFirestore();
-
-  const reference =
-    doc(
+  const receipts =
+    await allocateInvestmentReceipts(
+      transaction,
       db,
-      RECEIPT_SETTINGS_PATH
+      {
+        receipts: [
+          {
+            schemeId,
+            transactionDate,
+          },
+        ],
+      }
     );
 
-  return runTransaction(
-    db,
-    async (
-      transaction
-    ) => {
-      return allocateInvestmentReceipt(
-        transaction,
-        reference,
-        transactionDate
-      );
-    }
-  );
-}
-
-// ============================================================
-// PREVIEW
-// ============================================================
-
-export function previewInvestmentReceiptNumber(
-  config = {},
-  sequence = 1,
-  date = new Date()
-) {
-  return formatInvestmentReceiptNumber(
-    config,
-    sequence,
-    date
-  );
-}
-
-// ============================================================
-// UPDATE CONFIGURATION
-// ============================================================
-//
-// Changing the format NEVER resets nextSequence.
-//
-// ============================================================
-
-export async function updateInvestmentReceiptConfig(
-  updates = {}
-) {
-  const db =
-    getCrmFirestore();
-
-  const reference =
-    doc(
-      db,
-      RECEIPT_SETTINGS_PATH
-    );
-
-  return runTransaction(
-    db,
-    async (
-      transaction
-    ) => {
-      const snapshot =
-        await transaction.get(
-          reference
-        );
-
-      const existing =
-        snapshot.exists()
-          ? normalizeConfig(
-              snapshot.data()
-            )
-          : normalizeConfig();
-
-      const nextConfig =
-        normalizeConfig({
-          ...existing,
-          ...updates,
-
-          // Never reset sequence.
-          nextSequence:
-            existing.nextSequence,
-        });
-
-      transaction.set(
-        reference,
-        {
-          prefix:
-            nextConfig.prefix,
-
-          separator:
-            nextConfig.separator,
-
-          yearEnabled:
-            nextConfig.yearEnabled,
-
-          yearDigits:
-            nextConfig.yearDigits,
-
-          sequencePadding:
-            nextConfig.sequencePadding,
-
-          nextSequence:
-            existing.nextSequence,
-
-          updatedAt:
-            serverTimestamp(),
-        },
-        {
-          merge: true,
-        }
-      );
-
-      return nextConfig;
-    }
-  );
+  return receipts[0];
 }

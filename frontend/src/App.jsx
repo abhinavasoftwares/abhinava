@@ -647,10 +647,7 @@ function App() {
             </CrmProtectedPage>
           }
         />
-
-
         {/* INVESTOR PROFILE */}
-
         <Route
           path="investment/investors/:investorId"
           element={
@@ -659,10 +656,7 @@ function App() {
             </CrmProtectedPage>
           }
         />
-
-
         {/* INVESTMENT SECURITY TEST */}
-
         <Route
           path="investment/security-test"
           element={

@@ -14,13 +14,14 @@ import {
   requireCrmPasscode,
 } from "../../../services/crmPasscode";
 
+import {
+  allocateInvestmentReceipts,
+} from "./investmentReceipt";
+
 const ACCOUNTS = "investmentAccounts";
 const SCHEMES = "investmentSchemes";
 const INVESTORS = "investmentInvestors";
 const TRANSACTIONS = "transactions";
-
-const RECEIPT_SEQUENCE =
-  "investmentSettings/receiptNumberSequence";
 
 // ============================================================
 // HELPERS
@@ -441,7 +442,8 @@ function getActor() {
 // ============================================================
 
 export async function createInvestmentAccount({
-  investorId,
+  investorId = null,
+  investorData = null,
   scheme,
 
   contributionValue,
@@ -481,10 +483,23 @@ export async function createInvestmentAccount({
   // BASIC VALIDATION
   // ==========================================================
 
-  if (!investorId) {
+  if (!investorId && !investorData) {
     throw new Error(
       "Investor is required."
     );
+  }
+
+  if (!investorId && investorData) {
+    const newInvestorName = clean(investorData.fullName);
+    const newInvestorMobile = clean(investorData.mobileNumber).replace(/\D/g, "");
+
+    if (!newInvestorName) {
+      throw new Error("Investor name is required.");
+    }
+
+    if (!/^[0-9]{10}$/.test(newInvestorMobile)) {
+      throw new Error("Enter a valid 10-digit mobile number.");
+    }
   }
 
   if (!scheme?.id) {
@@ -625,12 +640,21 @@ export async function createInvestmentAccount({
       scheme.id
     );
 
+  // For a new investor, generate the document ID now but DO NOT write it
+  // until the same transaction that creates the account succeeds.
+  // This makes investor + account creation atomic.
+  const newInvestorRef =
+    !investorId
+      ? doc(collection(db, INVESTORS))
+      : null;
+
+  const effectiveInvestorId =
+    investorId || newInvestorRef.id;
+
   const investorRef =
-    doc(
-      db,
-      INVESTORS,
-      investorId
-    );
+    investorId
+      ? doc(db, INVESTORS, investorId)
+      : newInvestorRef;
 
   const accountRef =
     doc(
@@ -638,12 +662,6 @@ export async function createInvestmentAccount({
         db,
         ACCOUNTS
       )
-    );
-
-  const receiptSequenceRef =
-    doc(
-      db,
-      RECEIPT_SEQUENCE
     );
 
   const firstTransactionRef =
@@ -687,9 +705,9 @@ export async function createInvestmentAccount({
         );
 
       const investorSnapshot =
-        await transaction.get(
-          investorRef
-        );
+        investorId
+          ? await transaction.get(investorRef)
+          : null;
 
       if (
         !schemeSnapshot.exists()
@@ -700,6 +718,7 @@ export async function createInvestmentAccount({
       }
 
       if (
+        investorId &&
         !investorSnapshot.exists()
       ) {
         throw new Error(
@@ -1006,117 +1025,97 @@ export async function createInvestmentAccount({
       // RECEIPT ALLOCATION
       // ========================================================
       //
-      // IMPORTANT:
+      // All Investment receipts come from receiptSeries.
       //
-      // Firestore transactions require:
+      // A carry-forward can create two receipts in this same
+      // Firestore transaction:
       //
-      //     ALL READS
-      //          ↓
-      //     CALCULATIONS
-      //          ↓
-      //     ALL WRITES
+      //   1. Initial/M1 transaction receipt (when supplied)
+      //   2. Transfer receipt
       //
-      // Do NOT call allocateInvestmentReceipt() twice here.
-      // That helper performs a transaction.get() followed by
-      // a transaction.set(). Calling it a second time would
-      // attempt another READ after the first WRITE.
-      //
-      // Instead:
-      //
-      // 1. Read the global receipt sequence once.
-      // 2. Calculate all required receipt numbers in memory.
-      // 3. Write the increment once.
-      //
-      // This keeps the entire carry-forward operation atomic.
+      // Allocate both in ONE allocator call so the receipt-series
+      // document is read once and updated once.
       // ========================================================
 
-      const receiptCount =
-        Number(Boolean(transactionInput)) +
-        Number(Boolean(transferTransactionRef));
+      const receiptRequests = [];
 
-      let firstReceiptNumber = null;
-      let firstReceiptSequence = null;
+      if (transactionInput) {
+        receiptRequests.push({
+          schemeId:
+            currentScheme.id,
 
-      let transferReceiptNumber = null;
-      let transferReceiptSequence = null;
+          transactionDate:
+            transactionInput.date,
 
-      if (receiptCount > 0) {
-        // ------------------------------------------------------
-        // READ — this is the ONLY receipt-sequence read.
-        // ------------------------------------------------------
+          key:
+            "FIRST",
+        });
+      }
 
-        const receiptSnapshot =
-          await transaction.get(
-            receiptSequenceRef
-          );
+      if (transferTransactionRef) {
+        receiptRequests.push({
+          schemeId:
+            currentScheme.id,
 
-        const nextReceiptSequence =
-          Number(
-            receiptSnapshot.exists()
-              ? receiptSnapshot.data()?.nextSequence ?? 1
-              : 1
-          );
+          transactionDate:
+            normalizedStartDate,
 
-        if (
-          !Number.isInteger(
-            nextReceiptSequence
-          ) ||
-          nextReceiptSequence < 1
-        ) {
-          throw new Error(
-            "Invalid receipt number sequence."
-          );
-        }
+          key:
+            "TRANSFER",
+        });
+      }
 
-        // ------------------------------------------------------
-        // CALCULATE — no Firestore reads/writes here.
-        // ------------------------------------------------------
-
-        let receiptOffset = 0;
-
-        if (transactionInput) {
-          firstReceiptSequence =
-            nextReceiptSequence + receiptOffset;
-
-          firstReceiptNumber =
-            `RCP-${new Date().getFullYear()}-${String(
-              firstReceiptSequence
-            ).padStart(6, "0")}`;
-
-          receiptOffset += 1;
-        }
-
-        if (transferTransactionRef) {
-          transferReceiptSequence =
-            nextReceiptSequence + receiptOffset;
-
-          transferReceiptNumber =
-            `RCP-${new Date().getFullYear()}-${String(
-              transferReceiptSequence
-            ).padStart(6, "0")}`;
-
-          receiptOffset += 1;
-        }
-
-        // ------------------------------------------------------
-        // WRITE — exactly one receipt-sequence write.
-        // ------------------------------------------------------
-
-        transaction.set(
-          receiptSequenceRef,
+      const allocatedReceipts =
+        await allocateInvestmentReceipts(
+          transaction,
+          db,
           {
-            nextSequence:
-              nextReceiptSequence +
-              receiptCount,
-
-            updatedAt:
-              serverTimestamp(),
-          },
-          {
-            merge: true,
+            receipts:
+              receiptRequests,
           }
         );
-      }
+
+      const firstReceipt =
+        receiptRequests.some(
+          (item) =>
+            item.key === "FIRST"
+        )
+          ? allocatedReceipts[
+              receiptRequests.findIndex(
+                (item) =>
+                  item.key === "FIRST"
+              )
+            ] || null
+          : null;
+
+      const transferReceipt =
+        receiptRequests.some(
+          (item) =>
+            item.key === "TRANSFER"
+        )
+          ? allocatedReceipts[
+              receiptRequests.findIndex(
+                (item) =>
+                  item.key === "TRANSFER"
+              )
+            ] || null
+          : null;
+
+      const firstReceiptNumber =
+        firstReceipt?.receiptNumber ||
+        null;
+
+      const firstReceiptSequence =
+        firstReceipt?.receiptSequence ??
+        null;
+
+      const transferReceiptNumber =
+        transferReceipt?.receiptNumber ||
+        null;
+
+      const transferReceiptSequence =
+        transferReceipt?.receiptSequence ??
+        null;
 
       // ========================================================
       // OPENING BALANCE
@@ -1172,7 +1171,15 @@ export async function createInvestmentAccount({
       // ========================================================
 
       const investor =
-        investorSnapshot.data();
+        investorId
+          ? investorSnapshot.data()
+          : {
+              accountSummary: {
+                totalAccounts: 0,
+                activeAccounts: 0,
+                closedAccounts: 0,
+              },
+            };
 
       const summary =
         normalizeAccountSummary(
@@ -1249,7 +1256,7 @@ export async function createInvestmentAccount({
         // IDENTITY
         // ------------------------------------------------------
 
-        investorId,
+        investorId: effectiveInvestorId,
 
         schemeId:
           currentScheme.id,
@@ -1430,6 +1437,10 @@ export async function createInvestmentAccount({
           firstReceiptNumber ||
           null,
 
+        firstReceiptSeriesId:
+          firstReceipt?.receiptSeriesId ||
+          null,
+
         // ------------------------------------------------------
         // TRANSFER REFERENCE
         // ------------------------------------------------------
@@ -1440,6 +1451,10 @@ export async function createInvestmentAccount({
 
         transferReceiptNumber:
           transferReceiptNumber ||
+          null,
+
+        transferReceiptSeriesId:
+          transferReceipt?.receiptSeriesId ||
           null,
 
         transferGoldPrice:
@@ -1475,6 +1490,57 @@ export async function createInvestmentAccount({
       };
 
       // ========================================================
+      // CREATE / UPDATE INVESTOR
+      // ========================================================
+      // For a NEW investor this is the first write in the same
+      // transaction as the account. If anything later fails,
+      // Firestore rolls this write back automatically.
+      // ========================================================
+
+      if (!investorId) {
+        const newInvestor = investorData || {};
+        const newInvestorMobile = clean(newInvestor.mobileNumber).replace(/\D/g, "");
+        const newInvestorAlternateMobile = clean(newInvestor.alternateMobileNumber).replace(/\D/g, "");
+        const newInvestorEmail = clean(newInvestor.email).toLowerCase();
+        const newInvestorCity = clean(newInvestor.city);
+        const newInvestorName = clean(newInvestor.fullName);
+
+        transaction.set(
+          investorRef,
+          {
+            fullName: newInvestorName,
+            fullNameLower: newInvestorName.toLowerCase(),
+            mobileNumber: newInvestorMobile,
+            mobileNumberSearch: newInvestorMobile,
+            alternateMobileNumber: newInvestorAlternateMobile,
+            alternateMobileNumberSearch: newInvestorAlternateMobile,
+            email: newInvestorEmail,
+            emailSearch: newInvestorEmail,
+            dateOfBirth: clean(newInvestor.dateOfBirth),
+            gender: clean(newInvestor.gender),
+            address: clean(newInvestor.address),
+            city: newInvestorCity,
+            cityLower: newInvestorCity.toLowerCase(),
+            pincode: clean(newInvestor.pincode),
+            emailPreferences: newInvestor.emailPreferences || {
+              enabled: false,
+              language: "EN",
+            },
+            status: newInvestor.status || "ACTIVE",
+            accountSummary: nextSummary,
+            createdAt: serverTimestamp(),
+            createdByUid: actor.uid,
+            createdByEmail: actor.email,
+            createdByName: actor.name,
+            updatedAt: serverTimestamp(),
+            updatedByUid: actor.uid,
+            updatedByEmail: actor.email,
+            updatedByName: actor.name,
+          }
+        );
+      }
+
+      // ========================================================
       // CREATE DESTINATION ACCOUNT
       // ========================================================
 
@@ -1498,7 +1564,7 @@ export async function createInvestmentAccount({
             // IDENTITY
             // --------------------------------------------------
 
-            investorId,
+            investorId: effectiveInvestorId,
 
             accountId:
               accountRef.id,
@@ -1579,6 +1645,22 @@ export async function createInvestmentAccount({
             receiptSequence:
               firstReceiptSequence,
 
+            receiptSeriesId:
+              firstReceipt?.receiptSeriesId ||
+              null,
+
+            receiptSeriesName:
+              firstReceipt?.receiptSeriesName ||
+              null,
+
+            receiptSeriesPrefix:
+              firstReceipt?.receiptSeriesPrefix ||
+              null,
+
+            receiptSeriesPadding:
+              firstReceipt?.receiptSeriesPadding ||
+              null,
+
             // --------------------------------------------------
             // PAYMENT
             // --------------------------------------------------
@@ -1653,7 +1735,7 @@ export async function createInvestmentAccount({
             // IDENTITY
             // --------------------------------------------------
 
-            investorId,
+            investorId: effectiveInvestorId,
 
             accountId:
               accountRef.id,
@@ -1741,6 +1823,22 @@ export async function createInvestmentAccount({
 
             receiptSequence:
               transferReceiptSequence,
+
+            receiptSeriesId:
+              transferReceipt?.receiptSeriesId ||
+              null,
+
+            receiptSeriesName:
+              transferReceipt?.receiptSeriesName ||
+              null,
+
+            receiptSeriesPrefix:
+              transferReceipt?.receiptSeriesPrefix ||
+              null,
+
+            receiptSeriesPadding:
+              transferReceipt?.receiptSeriesPadding ||
+              null,
 
             // --------------------------------------------------
             // PAYMENT
@@ -1858,11 +1956,12 @@ export async function createInvestmentAccount({
       // UPDATE INVESTOR SUMMARY
       // ========================================================
 
-      transaction.update(
-        investorRef,
-        {
-          accountSummary:
-            nextSummary,
+      if (investorId) {
+        transaction.update(
+          investorRef,
+          {
+            accountSummary:
+              nextSummary,
 
           updatedAt:
             serverTimestamp(),
@@ -1873,10 +1972,11 @@ export async function createInvestmentAccount({
           updatedByEmail:
             actor.email,
 
-          updatedByName:
-            actor.name,
-        }
-      );
+            updatedByName:
+              actor.name,
+          }
+        );
+      }
 
       // ========================================================
       // INCREMENT ACCOUNT NUMBER
@@ -1901,7 +2001,7 @@ export async function createInvestmentAccount({
         id:
           accountRef.id,
 
-        investorId,
+        investorId: effectiveInvestorId,
 
         schemeId:
           currentScheme.id,

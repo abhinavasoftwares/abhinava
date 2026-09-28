@@ -709,7 +709,7 @@ export function useInvestmentInvestorProfile(
           investorId
         ),
         orderBy(
-          "sentAt",
+          "createdAt",
           "desc"
         )
       );

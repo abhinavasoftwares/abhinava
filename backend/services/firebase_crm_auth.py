@@ -594,13 +594,13 @@ def _build_authorization_document(
         "loginMethod": login_method,
     }
 
-
 # ============================================================
 # EXISTING USER VALIDATION
 # ============================================================
 
 def _validate_existing_user(
     *,
+    db,
     user: dict,
     uid: str,
     tenant_id: str,
@@ -611,17 +611,20 @@ def _validate_existing_user(
     """
     Validate an existing CRM authorization document.
 
-    Two supported authorization models:
+    Authorization model:
 
     1. ADMIN_OWNER
        - Owner is not an employee.
-       - employeeId is not required.
-       - users/{uid} document ID is the Firebase identity.
-       - uid field inside the document is optional for legacy Owner records.
+       - users/{uid} contains the owner authorization.
+       - Owner login method is validated from users/{uid}.
 
     2. Employee
-       - employeeId is required.
-       - uid must be bound to the employee.
+       - users/{uid} only binds Firebase UID -> employeeId.
+       - Employee authorization is ALWAYS read from:
+             employees/{employeeId}
+       - Employee loginMethods, status, role and permissions
+         remain client-owned and authoritative in employees.
+       - employees.uid is NOT required.
     """
 
     role = user.get("role")
@@ -633,46 +636,7 @@ def _validate_existing_user(
         raise PermissionError("CRM user is not active.")
 
     # ---------------------------------------------------------
-    # OWNER
-    # ---------------------------------------------------------
-
-    if role == "ADMIN_OWNER":
-        # The Firestore document itself is users/{uid}.
-        #
-        # Therefore the document ID already proves that this
-        # authorization record belongs to the authenticated
-        # Firebase identity.
-        #
-        # Legacy Owner documents may not contain a uid field.
-        stored_uid = user.get("uid")
-
-        if stored_uid and stored_uid != uid:
-            raise PermissionError("Firebase identity mismatch.")
-
-    # ---------------------------------------------------------
-    # EMPLOYEE
-    # ---------------------------------------------------------
-
-    else:
-        # Employee authorization must always have an explicit
-        # Firebase UID binding.
-        stored_uid = user.get("uid")
-
-        if not stored_uid:
-            raise PermissionError(
-                "Employee authorization is not linked to a Firebase identity."
-            )
-
-        if stored_uid != uid:
-            raise PermissionError("Firebase identity mismatch.")
-
-        if not user.get("employeeId"):
-            raise PermissionError(
-                "Employee authorization record is missing employeeId."
-            )
-
-    # ---------------------------------------------------------
-    # TENANT
+    # TENANT VALIDATION
     # ---------------------------------------------------------
 
     stored_tenant_id = user.get("tenantId")
@@ -686,109 +650,256 @@ def _validate_existing_user(
         raise PermissionError("CRM tenant mismatch.")
 
     # ---------------------------------------------------------
-    # LOGIN METHOD
+    # OWNER
     # ---------------------------------------------------------
 
-    login_methods = user.get("loginMethods") or user.get("auth") or {}
+    if role == "ADMIN_OWNER":
 
-    if login_method not in ALLOWED_LOGIN_METHODS:
-        raise PermissionError("Unsupported CRM login method.")
+        # The Firestore document ID itself is the Firebase UID.
+        #
+        # Legacy owner documents may not contain uid.
 
-    if not login_methods.get(login_method):
+        stored_uid = user.get("uid")
+
+        if stored_uid and stored_uid != uid:
+            raise PermissionError(
+                "Firebase identity mismatch."
+            )
+
+        login_methods = (
+            user.get("loginMethods")
+            or user.get("auth")
+            or {}
+        )
+
+        if login_method not in ALLOWED_LOGIN_METHODS:
+            raise PermissionError(
+                "Unsupported CRM login method."
+            )
+
+        if not login_methods.get(login_method):
+            raise PermissionError(
+                f"{login_method} login is not enabled "
+                "for this account."
+            )
+
+        # -----------------------------------------------------
+        # OWNER EMAIL / PHONE VALIDATION
+        # -----------------------------------------------------
+
+        if login_method == "google":
+
+            token_email = _normalize_email(
+                decoded_token.get("email")
+            )
+
+            stored_email = _normalize_email(
+                user.get("email")
+            )
+
+            if not token_email:
+                raise PermissionError(
+                    "Google account email could not be verified."
+                )
+
+            if (
+                stored_email
+                and stored_email != token_email
+            ):
+                raise PermissionError(
+                    "Google account does not match "
+                    "the CRM authorization."
+                )
+
+        elif login_method == "otp":
+
+            token_phone = _normalize_mobile(
+                decoded_token.get("phone_number")
+            )
+
+            stored_mobile = _normalize_mobile(
+                user.get("mobile")
+            )
+
+            if not token_phone:
+                raise PermissionError(
+                    "Phone number could not be verified."
+                )
+
+            if (
+                stored_mobile
+                and stored_mobile != token_phone
+            ):
+                raise PermissionError(
+                    "Phone number does not match "
+                    "the CRM authorization."
+                )
+
+        return {
+            key: value
+            for key, value in user.items()
+            if key not in {
+                "createdAt",
+                "updatedAt",
+            }
+        }
+
+    # ---------------------------------------------------------
+    # EMPLOYEE
+    # ---------------------------------------------------------
+    #
+    # IMPORTANT:
+    #
+    # users/{uid} is ONLY the Firebase UID -> employeeId
+    # binding.
+    #
+    # Do NOT check:
+    #     users.loginMethods
+    #     users.auth
+    #     users.permissions
+    #
+    # Those belong to employees/{employeeId}.
+    # ---------------------------------------------------------
+
+    employee_id = user.get("employeeId")
+
+    if not employee_id:
         raise PermissionError(
-            f"{login_method} login is not enabled for this account."
+            "Employee authorization record is missing employeeId."
+        )
+
+    employee_ref = (
+        db
+        .collection("employees")
+        .document(employee_id)
+    )
+
+    try:
+        employee_snapshot = employee_ref.get()
+    except Exception as exc:
+        raise RuntimeError(
+            "Unable to read employee authorization."
+        ) from exc
+
+    if not employee_snapshot.exists:
+        raise PermissionError(
+            "The employee authorization record no longer exists."
+        )
+
+    employee = (
+        employee_snapshot.to_dict()
+        or {}
+    )
+
+    employee["id"] = employee_snapshot.id
+
+    # ---------------------------------------------------------
+    # EMPLOYEE STATUS
+    # ---------------------------------------------------------
+
+    if employee.get("status") != ACTIVE_STATUS:
+        raise PermissionError(
+            "Employee CRM access is currently disabled."
         )
 
     # ---------------------------------------------------------
-    # EMAIL / PHONE IDENTITY
+    # EMPLOYEE ROLE
+    # ---------------------------------------------------------
+
+    employee_role = str(
+        employee.get("role")
+        or ""
+    ).strip()
+
+    if employee_role not in ALLOWED_ROLES:
+        raise PermissionError(
+            "Employee has an invalid CRM role."
+        )
+
+    # ---------------------------------------------------------
+    # EMPLOYEE LOGIN METHOD
+    # ---------------------------------------------------------
+
+    login_methods = (
+        employee.get("loginMethods")
+        or {}
+    )
+
+    if login_method not in ALLOWED_LOGIN_METHODS:
+        raise PermissionError(
+            "Unsupported CRM login method."
+        )
+
+    if not login_methods.get(login_method):
+        raise PermissionError(
+            f"{login_method} login is not enabled "
+            "for this employee."
+        )
+
+    # ---------------------------------------------------------
+    # EMPLOYEE IDENTITY VALIDATION
     # ---------------------------------------------------------
 
     if login_method == "google":
-        token_email = _normalize_email(decoded_token.get("email"))
-        stored_email = _normalize_email(user.get("email"))
+
+        token_email = _normalize_email(
+            decoded_token.get("email")
+        )
+
+        employee_email = _normalize_email(
+            employee.get("email")
+        )
 
         if not token_email:
             raise PermissionError(
                 "Google account email could not be verified."
             )
 
-        if stored_email and stored_email != token_email:
+        if (
+            not employee_email
+            or employee_email != token_email
+        ):
             raise PermissionError(
-                "Google account does not match the CRM authorization."
+                "Google account does not match "
+                "the employee authorization."
             )
 
     elif login_method == "otp":
-        token_phone = _normalize_mobile(decoded_token.get("phone_number"))
-        stored_mobile = _normalize_mobile(user.get("mobile"))
+
+        token_phone = _normalize_mobile(
+            decoded_token.get("phone_number")
+        )
+
+        employee_mobile = _normalize_mobile(
+            employee.get("mobile")
+        )
 
         if not token_phone:
             raise PermissionError(
                 "Phone number could not be verified."
             )
 
-        if stored_mobile and stored_mobile != token_phone:
+        if (
+            not employee_mobile
+            or employee_mobile != token_phone
+        ):
             raise PermissionError(
-                "Phone number does not match the CRM authorization."
+                "Phone number does not match "
+                "the employee authorization."
             )
 
-# ============================================================
-# FIRST-LOGIN BACKEND PROVISIONING
-# ============================================================
-
-# ============================================================
-# FIRST-LOGIN BACKEND PROVISIONING
-# ============================================================
-
-# ============================================================
-# EMPLOYEE FIRST LOGIN — READ ONLY
-# ============================================================
-
-def _authorize_employee_first_login(
-    *,
-    employee,
-    decoded_token,
-    uid,
-    tenant_id,
-    crm_slug,
-    login_method,
-):
-    """
-    Authorize an employee's first CRM login.
-
-    IMPORTANT:
-    This function performs NO Firestore writes.
-
-    BYOD MODEL:
-        - Client owns the Firebase project.
-        - Client owns the employees collection.
-        - Client creates and manages employees.
-        - Abhinava only verifies the authenticated identity
-          against the employee record.
-        - Firebase UID is NOT written into employees.
-        - users/{uid} is NOT created for employees.
-
-    The Firebase UID comes directly from the verified
-    Firebase ID token and is returned as part of the
-    authorization response.
-    """
-
-    if not employee:
-        raise PermissionError(
-            "Your account has not been authorized for this CRM."
-        )
-
-    # --------------------------------------------------------
-    # EMPLOYEE STATUS
-    # --------------------------------------------------------
-
-    if employee.get("status") != ACTIVE_STATUS:
-        raise PermissionError(
-            "Your CRM access is currently disabled."
-        )
-
-    # --------------------------------------------------------
-    # BUILD AUTHORIZATION
-    # --------------------------------------------------------
+    # ---------------------------------------------------------
+    # BUILD FRESH EMPLOYEE AUTHORIZATION
+    # ---------------------------------------------------------
+    #
+    # This is important:
+    #
+    # Every login gets the CURRENT employee role,
+    # loginMethods and permissions.
+    #
+    # Therefore if an admin changes employee permissions,
+    # the next login automatically receives the new permissions.
+    # ---------------------------------------------------------
 
     authorization = _build_authorization_document(
         employee=employee,
@@ -798,25 +909,165 @@ def _authorize_employee_first_login(
         login_method=login_method,
     )
 
-    # --------------------------------------------------------
-    # RETURN
-    # --------------------------------------------------------
+    return authorization
+
+
+
+# ============================================================
+# EMPLOYEE FIRST LOGIN — PROVISION AUTHORIZATION
+# ============================================================
+
+def _authorize_employee_first_login(
+    *,
+    db,
+    employee,
+    decoded_token,
+    uid,
+    tenant_id,
+    crm_slug,
+    login_method,
+):
+    """
+    Authorize a client employee for CRM access.
+
+    IMPORTANT:
+        This is a BYOD / client-owned Firebase flow.
+
+    Abhinava does NOT:
+        - create users/{uid}
+        - update employees/{employeeId}
+        - bind Firebase UID into the employee document
+        - create or modify employee authorization records
+        - run a Firestore write transaction
+
+    The client Firebase remains the source of truth for:
+        - employee identity
+        - employee status
+        - employee role
+        - employee permissions
+
+    The authorization returned here exists only in memory
+    for the current authenticated CRM session.
+    """
+
+    # ------------------------------------------------------------
+    # BASIC VALIDATION
+    # ------------------------------------------------------------
+
+    if not employee:
+        raise PermissionError(
+            "Your account has not been authorized for this CRM."
+        )
+
+    if not uid:
+        raise PermissionError(
+            "Firebase authentication did not return "
+            "a valid user identity."
+        )
+
+    # ------------------------------------------------------------
+    # EMPLOYEE STATUS
+    # ------------------------------------------------------------
+
+    if employee.get("status") != ACTIVE_STATUS:
+        raise PermissionError(
+            "Your CRM access is currently disabled."
+        )
+
+    # ------------------------------------------------------------
+    # EMPLOYEE ID
+    # ------------------------------------------------------------
+
+    employee_id = employee.get("id")
+
+    if not employee_id:
+        raise RuntimeError(
+            "Employee authorization record is missing employee ID."
+        )
+
+    # ------------------------------------------------------------
+    # BUILD IN-MEMORY AUTHORIZATION
+    # ------------------------------------------------------------
+
+    authorization = _build_authorization_document(
+        employee=employee,
+        uid=uid,
+        tenant_id=tenant_id,
+        crm_slug=crm_slug,
+        login_method=login_method,
+    )
+
+    if not isinstance(authorization, dict):
+        raise RuntimeError(
+            "Unable to build CRM authorization."
+        )
+
+    # ------------------------------------------------------------
+    # ENSURE CANONICAL IDENTITY FIELDS
+    # ------------------------------------------------------------
+
+    authorization["uid"] = uid
+    authorization["employeeId"] = employee_id
+
+    # ------------------------------------------------------------
+    # DO NOT WRITE TO CLIENT FIREBASE
+    # ------------------------------------------------------------
+    #
+    # No:
+    #   users/{uid}
+    #
+    # No:
+    #   employees/{employeeId}.uid
+    #
+    # No transaction.
+    #
+    # The employee document remains completely client-owned.
+    # ------------------------------------------------------------
+
+    print(
+        "=== CRM EMPLOYEE AUTHORIZATION SUCCESS ==="
+    )
+    print(
+        "Firebase UID:",
+        uid,
+    )
+    print(
+        "Employee ID:",
+        employee_id,
+    )
+    print(
+        "Login Method:",
+        login_method,
+    )
+    print(
+        "Role:",
+        authorization.get("role"),
+    )
+    print(
+        "CRM Slug:",
+        crm_slug,
+    )
+    print(
+        "Authorization source: client Firebase employee record"
+    )
+    print(
+        "No client Firebase authorization documents modified."
+    )
+
+    # ------------------------------------------------------------
+    # CANONICAL AUTHORIZATION RESPONSE
+    # ------------------------------------------------------------
 
     return {
         "authorized": True,
         "firstLogin": True,
         "uid": uid,
-        "employeeId": employee.get("id"),
-        "role": employee.get("role"),
+        "employeeId": employee_id,
+        "role": authorization.get("role"),
         "loginMethod": login_method,
         "authorization": authorization,
     }
 
-
-
-# ============================================================
-# MAIN AUTHORIZATION
-# ============================================================
 
 def authorize_crm_firebase_user(
     *,
@@ -828,31 +1079,42 @@ def authorize_crm_firebase_user(
     """
     Trusted CRM authentication boundary.
 
-    EXISTING LOGIN:
+    Client CRM authentication:
 
-        Firebase token
-            ↓
-        Backend verifies token
-            ↓
-        users/{uid} validation
-            ↓
-        Authorization returned
-
-    FIRST LOGIN:
-
-        Firebase token
-            ↓
-        Backend verifies token
-            ↓
+        Firebase Authentication
+                ↓
+        Backend verifies ID token
+                ↓
+        Identify login method
+                ↓
+        Existing client authorization record
+                ↓
+        OR
         ACTIVE employee lookup
-            ↓
-        Backend Firestore transaction
-            ├── users/{uid} created
-            └── employees/{employeeId}.uid bound
-            ↓
-        Authorization returned
+                ↓
+        In-memory authorization
+                ↓
+        CRM session
 
-    The browser never provisions authorization documents.
+    IMPORTANT:
+
+    Client employee login does NOT provision or modify
+    authorization documents.
+
+    Client Firebase remains the source of truth for:
+
+        - employees
+        - roles
+        - permissions
+        - business data
+
+    Abhinava PostgreSQL remains the source of truth for:
+
+        - tenant metadata
+        - client metadata
+        - Firebase project mapping
+        - subscriptions
+        - platform configuration
     """
 
     if not id_token:
@@ -865,33 +1127,33 @@ def authorize_crm_firebase_user(
             "Firebase project ID is required."
         )
 
-    # --------------------------------------------------------
-    # VERIFY FIREBASE TOKEN
-    # --------------------------------------------------------
+    # ------------------------------------------------------------
+    # FIREBASE ADMIN APP
+    # ------------------------------------------------------------
 
-    app = _get_firebase_admin_app(
-        project_id
-    )
+    app = _get_firebase_admin_app(project_id)
+
+    # ------------------------------------------------------------
+    # VERIFY FIREBASE ID TOKEN
+    # ------------------------------------------------------------
 
     try:
-
-        decoded_token = (
-            firebase_auth.verify_id_token(
-                id_token,
-                app=app,
-                check_revoked=True,
-            )
+        decoded_token = firebase_auth.verify_id_token(
+            id_token,
+            app=app,
+            check_revoked=True,
         )
 
     except Exception as exc:
-
         raise PermissionError(
             "Invalid or expired Firebase authentication."
         ) from exc
 
-    uid = decoded_token.get(
-        "uid"
-    )
+    # ------------------------------------------------------------
+    # FIREBASE UID
+    # ------------------------------------------------------------
+
+    uid = decoded_token.get("uid")
 
     if not uid:
         raise PermissionError(
@@ -899,26 +1161,23 @@ def authorize_crm_firebase_user(
             "a valid user identity."
         )
 
-    # --------------------------------------------------------
+    # ------------------------------------------------------------
     # LOGIN METHOD
-    # --------------------------------------------------------
+    # ------------------------------------------------------------
 
     login_method = _get_login_method(
         decoded_token
     )
 
-    if (
-        login_method
-        not in ALLOWED_LOGIN_METHODS
-    ):
+    if login_method not in ALLOWED_LOGIN_METHODS:
         raise PermissionError(
             "This authentication method is not "
             "supported for CRM access."
         )
 
-    # --------------------------------------------------------
+    # ------------------------------------------------------------
     # PROVIDER IDENTITY VALIDATION
-    # --------------------------------------------------------
+    # ------------------------------------------------------------
 
     if login_method == "google":
 
@@ -932,12 +1191,7 @@ def authorize_crm_firebase_user(
                 "does not have a usable email."
             )
 
-        if (
-            decoded_token.get(
-                "email_verified"
-            )
-            is not True
-        ):
+        if decoded_token.get("email_verified") is not True:
             raise PermissionError(
                 "The Google email address "
                 "could not be verified."
@@ -946,9 +1200,7 @@ def authorize_crm_firebase_user(
     elif login_method == "otp":
 
         phone = _normalize_mobile(
-            decoded_token.get(
-                "phone_number"
-            )
+            decoded_token.get("phone_number")
         )
 
         if not phone:
@@ -957,17 +1209,23 @@ def authorize_crm_firebase_user(
                 "could not be verified."
             )
 
-    # --------------------------------------------------------
-    # TENANT FIRESTORE
-    # --------------------------------------------------------
+    # ------------------------------------------------------------
+    # CLIENT FIREBASE
+    # ------------------------------------------------------------
 
     db = _get_tenant_firestore(
         project_id
     )
 
-    # --------------------------------------------------------
-    # USERS/{UID}
-    # --------------------------------------------------------
+    # ------------------------------------------------------------
+    # EXISTING AUTHORIZATION RECORD
+    # ------------------------------------------------------------
+    #
+    # Keep this path for existing ADMIN_OWNER / authorized
+    # users where users/{uid} already exists.
+    #
+    # Employee first login does NOT create this document.
+    # ------------------------------------------------------------
 
     user_ref = (
         db
@@ -976,30 +1234,22 @@ def authorize_crm_firebase_user(
     )
 
     try:
-
         snapshot = user_ref.get()
 
     except Exception as exc:
-
         raise RuntimeError(
             "Unable to read CRM authorization."
         ) from exc
 
-    # ========================================================
-    # EXISTING USER
-    # ========================================================
-
     if snapshot.exists:
 
-        user = (
-            snapshot.to_dict()
-            or {}
+        user = snapshot.to_dict() or {}
+
+        print(
+            "=== CRM EXISTING AUTHORIZATION ==="
         )
         print(
-        "=== CRM EXISTING USER DEBUG ==="
-        )
-        print(
-            "Firebase token UID:",
+            "Firebase UID:",
             uid,
         )
         print(
@@ -1007,31 +1257,16 @@ def authorize_crm_firebase_user(
             snapshot.id,
         )
         print(
-            "users document uid:",
-            user.get("uid"),
-        )
-        print(
             "users document employeeId:",
             user.get("employeeId"),
-        )
-        print(
-            "users document email:",
-            user.get("email"),
         )
         print(
             "users document role:",
             user.get("role"),
         )
-        print(
-            "users document tenantId:",
-            user.get("tenantId"),
-        )
-        print(
-            "users document crmSlug:",
-            user.get("crmSlug"),
-        )
 
-        _validate_existing_user(
+        authorization = _validate_existing_user(
+            db=db,
             user=user,
             decoded_token=decoded_token,
             uid=uid,
@@ -1044,25 +1279,23 @@ def authorize_crm_firebase_user(
             "authorized": True,
             "firstLogin": False,
             "uid": uid,
-            "employeeId": (
-                user.get("employeeId")
-            ),
-            "role": user.get("role"),
+            "employeeId": authorization.get("employeeId"),
+            "role": authorization.get("role"),
             "loginMethod": login_method,
-
-            "authorization": {
-                key: value
-                for key, value in user.items()
-                if key not in {
-                    "createdAt",
-                    "updatedAt",
-                }
-            },
+            "authorization": authorization,
         }
 
-    # ========================================================
-    # FIRST LOGIN — FIND ACTIVE EMPLOYEE
-    # ========================================================
+    # ------------------------------------------------------------
+    # EMPLOYEE AUTHORIZATION
+    # ------------------------------------------------------------
+    #
+    # No users/{uid} creation.
+    # No employee UID binding.
+    # No transaction.
+    #
+    # Match the authenticated Firebase identity against the
+    # client-owned employees collection.
+    # ------------------------------------------------------------
 
     employee = _find_employee(
         db=db,
@@ -1071,29 +1304,13 @@ def authorize_crm_firebase_user(
     )
 
     if not employee:
-
         raise PermissionError(
             "Your account has not been authorized "
             "for this CRM."
         )
 
-    # --------------------------------------------------------
-    # EMPLOYEE FIRST LOGIN
-    # --------------------------------------------------------
-    #
-    # BYOD:
-    # The client owns the employees collection.
-    #
-    # We DO NOT:
-    #   - create users/{uid}
-    #   - update employees/{employeeId}
-    #   - bind uid into the employee document
-    #   - run a Firestore transaction
-    #
-    # We only verify the employee and return authorization.
-    # --------------------------------------------------------
-
     return _authorize_employee_first_login(
+        db=db,
         employee=employee,
         decoded_token=decoded_token,
         uid=uid,
@@ -1101,3 +1318,4 @@ def authorize_crm_firebase_user(
         crm_slug=crm_slug,
         login_method=login_method,
     )
+
