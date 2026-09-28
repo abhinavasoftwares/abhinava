@@ -118,6 +118,8 @@ app.add_middleware(
         # Codespace
         "https://sturdy-train-77rj957xr4pp2x675-5173.app.github.dev",
         "https://sturdy-train-77rj957xr4pp2x675-5174.app.github.dev",
+        "https://abhinava-origin-7e606.web.app",
+        "https://crm.abhinava.site",
 
         # Windows local development
         "http://localhost:5173",
